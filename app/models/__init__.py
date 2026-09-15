@@ -12,7 +12,7 @@ from .teacher_check import (
     TeacherCheckResponse,
     TeacherCheckUpdate,
 )
-from .user import UserCreate, UserInDB, UserResponse, UserUpdate
+from .user import Token, UserCreate, UserInDB, UserResponse, UserUpdate
 
 __all__ = [
     "AttendEnum",
@@ -43,4 +43,5 @@ __all__ = [
     "UserUpdate",
     "UserResponse",
     "UserInDB",
+    "Token",
 ]

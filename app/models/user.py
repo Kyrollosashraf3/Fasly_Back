@@ -52,3 +52,10 @@ class UserInDB(UserResponse):
     """Stored shape — keeps the hash for login checks, never returned by the API."""
 
     password_hash: str
+
+
+class Token(BaseModel):
+    """JWT returned by /auth/login."""
+
+    access_token: str
+    token_type: str = "bearer"

@@ -8,6 +8,14 @@ class Settings(BaseSettings):
     APP_DESCRIPTION: str = "Church Sunday school follow-up: boys, attendance, teachers, follow-ups."
     CORS_ORIGINS: str = "*"
 
+    SECRET_KEY: str = "change-me-in-production"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    ADMIN_MAIL: str | None = None
+    ADMIN_PASSWORD: str | None = None
+    ADMIN_USER_NAME: str = "Admin"
+
     FIREBASE_CREDENTIALS: str
 
     COLLECTION_USER: str
