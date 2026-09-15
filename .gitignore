@@ -1,0 +1,11 @@
+.env
+*.json.enc
+_serviceAccountKey.json
+serviceAccountKey.json
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+test.json
+app.log
