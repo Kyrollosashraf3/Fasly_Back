@@ -1,0 +1,107 @@
+from datetime import date, datetime
+
+from fastapi import HTTPException, status
+from google.cloud.firestore_v1.base_query import FieldFilter
+
+from app.config.logger import get_logger
+from app.models.enums import ClassEnum, RoleEnum
+from app.models.user import UserResponse
+
+logger = get_logger(__name__)
+
+
+def where_eq(target, field: str, value):
+    """Equality filter using the `filter=` keyword (positional args are deprecated)."""
+    return target.where(filter=FieldFilter(field, "==", value))
+
+
+def ensure_admin(user: UserResponse) -> None:
+    """Raise 403 unless the acting user holds the Admin role."""
+    if user.role != RoleEnum.ADMIN:
+        logger.warning(
+            f"Admin-only operation blocked: user={user.mail} role={user.role}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can perform this operation.",
+        )
+
+
+def ensure_class_access(target_class: ClassEnum | None, user: UserResponse) -> None:
+    """Generic class boundary: Admin bypasses, amin must match own class.
+
+    Compares by value because Firestore returns raw strings ("5")
+    while the user carries ClassEnum members.
+    """
+    if user.role == RoleEnum.ADMIN:
+        return
+    if enum_value(target_class) != enum_value(user.class_name):
+        logger.warning(
+            f"Class access denied: user={user.mail} class={user.class_name} "
+            f"target_class={target_class}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You do not have access to this resource (different class, your class={user.class_name}).",
+        )
+
+
+def ensure_record_class_access(record_class: ClassEnum | None, user: UserResponse) -> None:
+    """Enforce class boundary for a single record (wrapper over ensure_class_access)."""
+    ensure_class_access(record_class, user)
+
+
+def date_to_str(value: date | None) -> str | None:
+    """Store dates as ISO strings — Firestore has no native date type."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    return value.isoformat()
+
+
+def parse_date(value) -> date | None:
+    """Read back an ISO string (or datetime) as a date."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
+
+
+def enum_value(value) -> str | None:
+    """Store enums by their value."""
+    if value is None:
+        return None
+    return value.value if hasattr(value, "value") else value
+
+
+def ensure_unique_field(
+    db,
+    collection: str,
+    field: str,
+    value: str | None,
+    exclude_id: str | None = None,
+    label: str = "Record",
+) -> None:
+    """Raise 400 if another document already uses this field value.
+
+    Used for duplicate-name checks on create/update (users, teachers, boys).
+    `exclude_id` skips the document being updated so edits keep their own name.
+    """
+    if value is None or not str(value).strip():
+        return
+    cleaned = str(value).strip()
+    docs = list(where_eq(db.collection(collection), field, cleaned).stream())
+    if exclude_id:
+        docs = [d for d in docs if d.id != exclude_id]
+    if docs:
+        logger.warning(
+            f"Duplicate {field} rejected: '{cleaned}' in collection '{collection}'"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{label} with this {field} already exists: '{cleaned}'.",
+        )

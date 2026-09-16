@@ -25,6 +25,7 @@ class TeacherCheckCreate(BaseModel):
     follow_flag: bool = Field(default=False, description="عمل followup للمجموعة؟")
     note: str | None = None
     recorded_by: str | None = Field(default=None, description="User id of the أمين who recorded the check")
+    recorded_by_name: str | None = Field(default=None, description="Denormalized for listing without a join")
 
 
 class TeacherCheckUpdate(BaseModel):
@@ -40,6 +41,7 @@ class TeacherCheckUpdate(BaseModel):
     follow_flag: bool | None = None
     note: str | None = None
     recorded_by: str | None = None
+    recorded_by_name: str | None = None
 
 
 class TeacherCheckResponse(TeacherCheckCreate):

@@ -1,7 +1,7 @@
-"""main.py - FastAPI entry point that wires all endpoints.
+"""app.py - FastAPI entry point that wires all endpoints.
 
 Run:
-    uvicorn app.main:app --reload --port 9001
+    uvicorn app.app:app --reload --port 9000
 """
 
 import traceback
@@ -52,15 +52,25 @@ def root():
     return {
         "message": f"{settings.APP_NAME} is running",
         "docs": "/docs",
-        "endpoints": ["POST /api/attendance", "GET /api/attendance"],
     }
 
 
 # Wire all endpoints into the app (one include per domain router)
-from app.routes import auth_router, router as attendance_router
+from app.routes import (
+    attendance_router,
+    auth_router,
+    boys_router,
+    follow_ups_router,
+    teacher_checks_router,
+    teachers_router,
+)
 
 app.include_router(auth_router)  # login / register / users
-app.include_router(attendance_router)  # attendance endpoints
+app.include_router(boys_router)  # boys master data
+app.include_router(teachers_router)  # servants data
+app.include_router(attendance_router)  # friday attendance
+app.include_router(follow_ups_router)  # weekly follow-ups
+app.include_router(teacher_checks_router)  # weekly servant checks
 
 logger.info("All routes registered successfully")
 
@@ -76,4 +86,4 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.app:app", host="0.0.0.0", port=9001, reload=True)
+    uvicorn.run("app.app:app", host="0.0.0.0", port=9000, reload=True)

@@ -5,7 +5,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import FollowEnum
+from app.models.enums import ClassEnum, FollowEnum
 
 COLLECTION = "follow_ups"
 
@@ -17,6 +17,7 @@ class FollowUpCreate(BaseModel):
     teacher_name: str | None = Field(default=None, description="Denormalized for listing without a join")
     boy_id: str = Field(..., min_length=1, description="Firestore document id of the boy")
     boy_name: str | None = Field(default=None, description="Denormalized for listing without a join")
+    class_name: ClassEnum | None = Field(default=None, description="Denormalized from the boy for class queries")
     action_date: date = Field(default_factory=date.today)
     status: FollowEnum = FollowEnum.CALL
     note: str | None = None
@@ -29,6 +30,7 @@ class FollowUpUpdate(BaseModel):
     teacher_name: str | None = None
     boy_id: str | None = Field(default=None, min_length=1)
     boy_name: str | None = None
+    class_name: ClassEnum | None = None
     action_date: date | None = None
     status: FollowEnum | None = None
     note: str | None = None

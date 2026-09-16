@@ -1,0 +1,211 @@
+================================================================
+MY-backend.txt — شرح شامل للباك إند (Fasly / Sunday School API)
+================================================================
+آخر تحديث: 2026-09-15
+
+1) فكرة الأب
+----------------------------------------------------------------
+باك إند لكنيسة لمتابعة أولاد مدارس الأحد كل يوم جمعة:
+- تسجيل بيانات الأولاد كلها (اسم، سن، فصل، عنوان...).
+- كل جمعة: كشف حضور لكل فصل (مين حضر Y ومين غاب N).
+- كل خادم له مجموعة أولاد بيفتقدهم بالتليفون خلال الأسبوع.
+- أمين الفصل بيتابع الخدام كل جمعة (جهز الدرس؟ حضر اللتورجيا؟
+  عمل follow-up؟ جي ولا لا؟).
+- حسابات: أدمن (كل الفصول) + أمين فصل (فصله بس).
+
+التقنيات: FastAPI + Firestore (Firebase) + JWT (bcrypt + pyjwt)
++ slowapi (rate limit) — مفيش SQL خالص.
+
+
+2) التشغيل
+----------------------------------------------------------------
+من فولدر back_fasly والـ venv شغالة:
+    .\.venv\Scripts\Activate.ps1
+    python -m uvicorn app.main:app --reload --port 9001
+
+- ملاحظة ويندوز: استخدم `python -m uvicorn` مش `uvicorn` المباشر،
+  لأن ملفات الـ .exe بتاعة الـ venv ممكن تبقى مربوطة على بايثون قديم.
+- بعد التشغيل افتح: http://localhost:9001/docs
+- أول تشغيل: الأب بيتشك على الـ 6 collections، وبينشئ حساب الأدمن
+  تلقائيًا لو ADMIN_MAIL + ADMIN_PASSWORD متظبطين في .env.
+
+
+3) هيكل الفولدرات
+----------------------------------------------------------------
+app/
+  app.py            تجميع الأب (FastAPI + CORS + rate limit + routers)
+  main.py           نقطة الدخول الرفيعة (uvicorn app.main:app)
+  config/           الإعدادات واللوجز
+  db/               الاتصال بـ Firestore
+  models/           سكيمات Pydantic (شكل الداتا لكل جدول)
+  core/auth/        الأمان (JWT + bcrpyt + صلاحيات + أدمن البداية)
+  core/data/        البيزنس لوجيك (سيرفس لكل جدول)
+  routes/           الـ endpoints (رفيعة: بتنادي السيرفس بس)
+
+
+4) config/ — الإعدادات واللوجز
+----------------------------------------------------------------
+- config/settings.py : كل الإعدادات من .env عن طريق pydantic-settings.
+  * APP_NAME / APP_VERSION / APP_DESCRIPTION : هوية الأب في الـ docs.
+  * CORS_ORIGINS : عناوين الفرونت المسموحة (default "*").
+  * SECRET_KEY / ALGORITHM / ACCESS_TOKEN_EXPIRE_MINUTES : توقيع الـ JWT.
+    (SECRET_KEY الافتراضية ضعيفة — لازم تتغير في الإنتاج!)
+  * ADMIN_MAIL / ADMIN_PASSWORD / ADMIN_USER_NAME : حساب أول أدمن.
+  * FIREBASE_CREDENTIALS : مسار ملف service account (test.json).
+  * COLLECTION_USER / BOY / TEACHER / ATTEND / FOLLOWUP / TEACHER_CHECK.
+  * ALL_COLLECTIONS : ليستة كل الجداول (للـ check عند التشغيل).
+- config/logger.py : get_logger(name) — لوجر موحد (console + logs/app.log).
+- config/__init__.py : بيصدّر get_logger و settings و get_settings.
+
+
+5) db/ — الاتصال بـ Firestore
+----------------------------------------------------------------
+- db/firebase.py :
+  * init_firebase() : بينشئ Firestore client مرة واحدة (singleton).
+  * db : نفس الـ client (زي engine في SQLAlchemy).
+  * get_db() : generator بيعمل yield للـ client (للاستخدام مع Depends).
+  * ensure_collections() : عند التشغيل بيتأكد أن كل collection
+    قابلة للوصول وبيسجل exists ولا empty. ملحوظة Firestore:
+    الـ collection مبتتخلقش فعليًا غير مع أول وثيقة، فالفاضي
+    بيتسجل "will be created on first write".
+- db/__init__.py : بيصدّر db و init_firebase و get_db.
+
+
+6) models/ — شكل الداتا (Pydantic)
+----------------------------------------------------------------
+القاعدة العامة لكل جدول: Create (للإضافة) + Update (كله optional
+للتعديل) + Response (اللي متخزن + id) + Bulk/Item للشاشات الجماعية.
+
+- models/enums.py :
+  * RoleEnum : admin / user (الأمين = user مربوط بفصل).
+  * AttendEnum : y / n.
+  * GenderEnum : m / f.
+  * ClassEnum : 1..6.
+  * FollowEnum : call / visit / no answer / other (طريقة الافتقاد).
+- models/user.py : حسابات الدخول.
+  * UserCreate (فيها password عادي) / UserUpdate / UserResponse
+    (من غير أي باسورد — اللي بيطلع في الـ API) /
+    UserInDB (فيها password_hash — للتخزين بس) / Token (JWT).
+- models/boy.py : بيانات الولد (boy_name, gender, birth_date, age,
+  phone, phone_2, address, location, class_name, note, issue_flag)
+  + created_at/updated_at + id في الـ Response.
+- models/teacher.py : بيانات الخادم (teacher_name, phone, class_name
+  اللي بيخدم فيه, duty = دوره, note) + تواريخ.
+- models/attend.py : وثيقة واحدة لكل (ولد + جمعة): boy_id, boy_name,
+  class_name, action_date, attend, note, recorded_by (+recorded_by_name).
+  + AttendItem (سطر واحد) و AttendBulkCreate (الفصل كله في request واحد).
+- models/follow_up.py : تقرير افتقاد واحد: teacher_id, teacher_name,
+  boy_id, boy_name, class_name, action_date, status, note.
+- models/teacher_check.py : متابعة خادم واحد في جمعة: teacher_id,
+  teacher_name, class_name, action_date, attend, prepare_flag (جهز الدرس؟),
+  liturgy_flag, follow_flag, note, recorded_by (+recorded_by_name).
+  + TeacherCheckItem و TeacherCheckBulkCreate.
+- models/__init__.py : بيصدّر كل السكيمات (29 اسم).
+
+
+7) core/auth/ — الأمان
+----------------------------------------------------------------
+- security.py : get_password_hash / verify_password (bcrypt) +
+  create_access_token / decode_access_token (JWT, الـ sub = id اليوزر).
+- deps.py : get_current_user (يفك التوكن ويجيب اليوزر من users) +
+  RoleChecker (factory للصلاحيات) + require_admin.
+  الـ OAuth2 tokenUrl = /auth/login.
+- bootstrap.py : ensure_bootstrap_admin() — بينشئ أول أدمن لو مش موجود،
+  وبيskip لو ADMIN_MAIL/PASSWORD مش متظبطين.
+- rate_limit.py : slowapi limiter + حدين على الـ login (لكل IP ولكل إيميل)
+  + رد JSON نظيف عند التجاوز (429).
+- __init__.py : بيصدّر كل دوال الأمان.
+
+
+8) core/data/ — البيزنس لوجيك (سيرفس لكل جدول)
+----------------------------------------------------------------
+الأسلوب: كل سيرفس كلاس مربوط بالـ db واليوزر الحالي، وكل عملية
+بتسجل لوج (info للكتابة / debug للقراءة / warning للرفض).
+
+- base.py : BaseService (db + current_user + user_id) +
+  AdminService (للأدمن فقط) + ClassScopedService (فيها resolve_class:
+  الأدمن يستخدم الفصل المطلوب، والأمين يتقفل على فصله).
+- common.py : دوال مساعدة مشتركة:
+  * ensure_admin / ensure_class_access / ensure_record_class_access (403).
+  * ensure_unique_field : منع تكرار الأسماء (users/teachers/boys)
+    في الإضافة والتعديل (مع exclude_id عشان التعديل).
+  * date_to_str / parse_date : التواريخ بتتخزن ISO string لأن
+    Firestore معندوش نوع date.
+  * enum_value : الـ enums بتتخزن بقيمتها.
+  * where_eq : فلتر Firestore بالطريقة الجديدة (filter=FieldFilter)
+    بدل الـ positional اللي بقت deprecated.
+- users.py : UserService + get_user_by_mail (للـ login).
+  إنشاء/حذف يوزرز = أدمن فقط. الأمين يشوف ويعدل فصلُه بس، وممنوع
+  يرقي لأدمن أو ينقل يوزر فصل تاني. الـ mail متفرد دايمًا.
+- boys.py : BoyService — CRUD كامل + فلترة (class_name, issue_flag).
+- teachers.py : TeacherService — CRUD كامل للخدام + فلترة بالفصل.
+- attendance.py : AttendanceService — create + create_bulk بنظام upsert
+  على (boy_id + action_date) يعني إعادة الإرسال بتحدّث مش بتضاعف.
+  boy_name/class_name بيتمَلوا تلقائيًا من جدول الولاد، وrecorded_by
+  من التوكن (مش من الفرونت).
+- teacher_checks.py : TeacherCheckService — نفس باترن الحضور بالظبط
+  (upsert على teacher_id + date + bulk).
+- follow_ups.py : FollowUpService — إنشاء تقرير افتقاد (بيحل الأسماء
+  تلقائيًا) + فلترة (class/teacher/boy/date).
+- __init__.py : بيصدّر كل السيرفسز.
+
+
+9) routes/ — الـ endpoints
+----------------------------------------------------------------
+كل راوت ملف مستقل بـ prefix خاص، والـ endpoints رفيعة (سطر واحد
+بينادي السيرفس). كلها محمية بالتوكن ما عدا /auth/login.
+
+- auth.py (prefix /auth):
+  POST /auth/login (form: username=mail, password) → Token + rate limit.
+  POST /auth/register (أدمن فقط) → إنشاء أمين/أدمن.
+  GET /auth/users → كل اليوزرز (أدمن) أو فصلُه (أمين).
+  PATCH /auth/users/{id} → تعديل حساب.
+  DELETE /auth/users/{id} (أدمن فقط).
+  GET /auth/me → بروفايل الحالي.
+- boys.py (prefix /boys): POST / GET (class_name?, issue_flag?) /
+  GET+PATCH+DELETE /{boy_id}.
+- teachers.py (prefix /teachers): نفس الـ CRUD + فلترة بالفصل.
+- attendance.py (prefix /attendance): POST (واحد) + POST /bulk
+  (الفصل كله) + GET (class_name?, action_date?) + GET+PATCH+DELETE /{id}.
+- follow_ups.py (prefix /follow-ups): POST + GET (class/teacher/boy/date)
+  + GET+PATCH+DELETE /{id}.
+- teacher_checks.py (prefix /teacher-checks): POST + POST /bulk +
+  GET (class/date) + GET+PATCH+DELETE /{id}.
+- __init__.py : بيصدّر الـ 6 راوترات.
+- app.py : بيسجلهم كلهم (واحد واحد) + CORS + limiter + bootstrap.
+
+
+10) الصلاحيات (RBAC) — المختصر
+----------------------------------------------------------------
+- أدمن (role=admin, class_name=null) : كل حاجة في كل الفصول + إدارة الحسابات.
+- أمين فصل (role=user, class_name=مربوط بفصل) : بيانات فصله بس
+  (قراءة وكتابة)، وممنوع: إنشاء حسابات، الترقية لأدمن، نقل أي حاجة
+  فصل تاني، الوصول لفصل تاني (403).
+- التنفيذ في طبقتين: الـ routes بتطلب التوكن، والـ services بتطبق
+  حدود الفصل على كل عملية.
+
+
+11) قواعد Firestore المتبعة في المشروع
+----------------------------------------------------------------
+- الربط بين الجداول بالـ Document ID (boy_id, teacher_id, recorded_by)
+  لأنه ثابت ومتفرد — مش بالاسم (الأسامي بتتكرر وبتتغير).
+- الاسم متخزن نسخة للعرض السريع (boy_name, teacher_name,
+  recorded_by_name) لأن Firestore معندوش join — والباك إند هو اللي
+  بيملاها وقت الحفظ، والفرونت مبيبعتهاش.
+- التواريخ ISO string ("2026-09-15")، والـ created_at/updated_at
+  datetime أصلي، والـ enums بقيمتها ("y", "5"...).
+- الحضور ومتابعة الخدام upsert: نفس (الشخص + التاريخ) = نفس الوثيقة.
+- تعديل الاسم لاحقًا بيأثر على الجديد بس؛ القديم snapshot تاريخي.
+
+
+12) ملفات التشغيل
+----------------------------------------------------------------
+- .env : ADMIN_MAIL/PASSWORD/USER_NAME + FIREBASE_CREDENTIALS (test.json)
+  + أسماء الـ 6 collections. (SECRET_KEY الافتراضية للتجربة بس!)
+- .env.example : نفس الشكل بقيم مثال.
+- requirements.txt : fastapi, uvicorn, firebase-admin, pydantic,
+  python-dotenv, pydantic-settings, bcrypt, pyjwt, slowapi,
+  python-multipart.
+- test.json : service account بتاع Firebase (مبيترفعش على git).
+- logs/app.log : ملف اللوجز.
+================================================================

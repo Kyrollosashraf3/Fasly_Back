@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from app.config.logger import get_logger
 from app.config.settings import settings
 from app.core.auth.security import get_password_hash
+from app.core.data.common import where_eq
 from app.db.firebase import init_firebase
 from app.models.enums import RoleEnum
 
@@ -27,7 +28,7 @@ def ensure_bootstrap_admin() -> None:
 
     col = client.collection(settings.COLLECTION_USER)
     existing = list(
-        col.where("mail", "==", settings.ADMIN_MAIL).where("role", "==", RoleEnum.ADMIN.value).limit(1).stream()
+        where_eq(where_eq(col, "mail", settings.ADMIN_MAIL), "role", RoleEnum.ADMIN.value).limit(1).stream()
     )
     if existing:
         return

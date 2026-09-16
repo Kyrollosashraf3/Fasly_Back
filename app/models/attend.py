@@ -21,6 +21,7 @@ class AttendCreate(BaseModel):
     attend: AttendEnum
     note: str | None = None
     recorded_by: str | None = Field(default=None, description="User id of the servant who took attendance")
+    recorded_by_name: str | None = Field(default=None, description="Denormalized for listing without a join")
 
 
 class AttendUpdate(BaseModel):
@@ -33,6 +34,7 @@ class AttendUpdate(BaseModel):
     attend: AttendEnum | None = None
     note: str | None = None
     recorded_by: str | None = None
+    recorded_by_name: str | None = None
 
 
 class AttendResponse(AttendCreate):
