@@ -21,12 +21,13 @@ def init_firebase():
 
     if settings.SERVICE_ACCOUNT is None:
         logger.warning(
-            "No credentials found - check FIREBASE_CREDENTIALS in .env (%s)",
-            settings.CREDENTIALS_PATH,
+            "No credentials found - set FIREBASE_CREDENTIALS_JSON (Render) "
+            "or FIREBASE_CREDENTIALS to a valid file path (local, e.g. ./test.json)"
         )
         return None
 
-    cred = credentials.Certificate(str(settings.CREDENTIALS_PATH))
+    service_account = settings.SERVICE_ACCOUNT
+    cred = credentials.Certificate(service_account)
 
     # Avoid "default app already exists" on reload / repeated startup
     try:
@@ -57,7 +58,8 @@ def ensure_collections() -> dict[str, str]:
     client = _client if _client is not None else init_firebase()
     if client is None:
         raise ConnectionError(
-            "Firebase not connected: make sure test.json (service account) exists and .env is correct"
+            "Firebase not connected: set FIREBASE_CREDENTIALS_JSON env var "
+            "(Render) or make sure the FIREBASE_CREDENTIALS file exists locally"
         )
     status: dict[str, str] = {}
     for name in settings.ALL_COLLECTIONS:
@@ -76,7 +78,8 @@ def get_db():
     client = _client if _client is not None else init_firebase()
     if client is None:
         raise ConnectionError(
-            "Firebase not connected: make sure test.json (service account) exists and .env is correct"
+            "Firebase not connected: set FIREBASE_CREDENTIALS_JSON env var "
+            "(Render) or make sure the FIREBASE_CREDENTIALS file exists locally"
         )
     logger.debug("Firestore client yielded")
     try:
