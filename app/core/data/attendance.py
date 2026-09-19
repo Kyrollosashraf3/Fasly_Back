@@ -104,6 +104,23 @@ class AttendanceService(ClassScopedService):
         """Friday flow: whole class attendance in one request."""
         self.resolve_class(data.class_name)
         action_date = data.action_date or date.today()
+        # Duplicate guard: the same boy must not appear twice in one submit
+        # (e.g. double-click / retried request built the payload twice).
+        seen: set[str] = set()
+        dupes: set[str] = set()
+        for item in data.items:
+            if item.boy_id in seen:
+                dupes.add(item.boy_id)
+            seen.add(item.boy_id)
+        if dupes:
+            logger.warning(
+                f"Attend bulk rejected: duplicate rows for boy(s) "
+                f"{sorted(dupes)} class={data.class_name} date={action_date}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Duplicate attendance rows in the same save — submit each boy only once.",
+            )
         result = []
         for item in data.items:
             boy = self._resolve_boy(item.boy_id)

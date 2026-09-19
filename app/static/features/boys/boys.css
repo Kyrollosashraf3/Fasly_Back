@@ -1,0 +1,57 @@
+.att-view-row {
+  margin-bottom: 12px;
+}
+.date-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.date-field .input {
+  width: auto;
+}
+
+.att-table td:first-child {
+  text-align: center;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+@media (max-width: 560px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+.check-field label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.details .detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-base);
+}
+.details .detail-row:last-child { border-bottom: 0; }
+.details .detail-row span:first-child {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+.details .detail-row span:last-child { text-align: right; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

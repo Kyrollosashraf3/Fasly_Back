@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fasly — Sunday School Management</title>
+  <base href="/app/" />
+  <link rel="stylesheet" href="styles/variables.css" />
+  <link rel="stylesheet" href="styles/global.css" />
+  <link rel="stylesheet" href="styles/layout.css" />
+  <link rel="stylesheet" href="styles/components.css" />
+  <link rel="stylesheet" href="styles/responsive.css" />
+  <link rel="stylesheet" href="features/auth/login.css" />
+  <link rel="stylesheet" href="features/home/home.css" />
+  <link rel="stylesheet" href="features/classes/class.css" />
+  <link rel="stylesheet" href="features/boys/boys.css" />
+  <link rel="stylesheet" href="features/teachers/teachers.css" />
+  <link rel="stylesheet" href="features/follow-up/follow-up.css" />
+  <link rel="stylesheet" href="features/profile/profile.css" />
+</head>
+<body data-layout="auth">
+  <button id="menu-toggle" class="menu-toggle" aria-label="Open menu" hidden>&#9776;</button>
+  <div id="app" class="app">
+    <aside id="sidebar" class="sidebar" aria-label="Main navigation"></aside>
+    <div class="main-col">
+      <header id="topbar" class="topbar"></header>
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+  </div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <div id="modal-root" class="modal-root"></div>
+  <script type="module" src="index.js"></script>
+</body>
+</html>

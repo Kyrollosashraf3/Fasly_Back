@@ -1,0 +1,9 @@
+.overview-grid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  margin-bottom: 20px;
+}
+.overview-links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}

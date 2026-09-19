@@ -1,0 +1,8 @@
+.section-title {
+  margin: 28px 0 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.fu-status {
+  min-width: 130px;
+}

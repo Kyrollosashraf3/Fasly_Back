@@ -1,0 +1,8 @@
+.check-table td.center,
+.check-table th.center {
+  text-align: center;
+  width: 90px;
+}
+.check-table td {
+  vertical-align: middle;
+}

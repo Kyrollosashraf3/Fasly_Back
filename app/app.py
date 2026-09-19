@@ -61,6 +61,7 @@ from app.routes import (
     auth_router,
     boys_router,
     follow_ups_router,
+    frontend_router,
     teacher_checks_router,
     teachers_router,
 )
@@ -71,6 +72,17 @@ app.include_router(teachers_router)  # servants data
 app.include_router(attendance_router)  # friday attendance
 app.include_router(follow_ups_router)  # weekly follow-ups
 app.include_router(teacher_checks_router)  # weekly servant checks
+app.include_router(frontend_router)  # GET /app -> bundled frontend UI
+
+# Serve the whole frontend (app/static: index.html + features/ + shared/ +
+# styles/) under /app so ONE server hosts API + UI (single repo deploy).
+# html=True serves index.html for /app and /app/ (SPA uses hash routing).
+from pathlib import Path
+
+from fastapi.staticfiles import StaticFiles
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/app", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
 
 logger.info("All routes registered successfully")
 

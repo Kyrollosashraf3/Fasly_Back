@@ -1,0 +1,29 @@
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+.login-box {
+  width: 100%;
+  max-width: 380px;
+}
+.login-brand {
+  font-weight: 750;
+  font-size: 22px;
+  letter-spacing: 5px;
+  margin-bottom: 20px;
+  color: var(--navy);
+}
+.login-box h1 {
+  margin-bottom: 4px;
+}
+.login-box .muted {
+  margin-bottom: 20px;
+}
+.btn-block {
+  width: 100%;
+  padding: 11px 16px;
+  margin-top: 4px;
+}

@@ -1,0 +1,38 @@
+@media (max-width: 900px) {
+  .view { padding: 20px 16px; }
+  .topbar { padding: 0 16px 0 60px; }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: none;
+  }
+  body.sidebar-open .sidebar {
+    transform: none;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.08);
+  }
+  .menu-toggle { display: block; }
+  body[data-layout="auth"] .menu-toggle { display: none; }
+
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar .toolbar-group { width: 100%; }
+  .toolbar .toolbar-group .btn { flex: 1; }
+  .search-input { max-width: none; width: 100%; }
+
+  .table th, .table td { padding: 9px 10px; }
+  .check { width: 24px; height: 24px; }
+
+  .modal-backdrop { padding: 24px 12px 12px; align-items: flex-end; }
+  .modal { max-width: none; }
+
+  .summary-bar { flex-direction: column; align-items: stretch; }
+  .summary-bar .btn { width: 100%; }
+
+  .toast-root { left: 16px; right: 16px; bottom: 16px; max-width: none; }
+}

@@ -4,6 +4,7 @@ from .attendance import router as attendance_router
 from .auth import router as auth_router
 from .boys import router as boys_router
 from .follow_ups import router as follow_ups_router
+from .frontend import router as frontend_router
 from .teacher_checks import router as teacher_checks_router
 from .teachers import router as teachers_router
 
@@ -13,5 +14,6 @@ __all__ = [
     "teachers_router",
     "attendance_router",
     "follow_ups_router",
+    "frontend_router",
     "teacher_checks_router",
 ]
