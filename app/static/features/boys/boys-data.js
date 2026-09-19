@@ -23,4 +23,8 @@ export class BoyService {
   remove(boyId) {
     return this.api.delete(`/boys/${boyId}`);
   }
+
+  importExcel(file) {
+    return this.api.upload("/boys/import", file);
+  }
 }

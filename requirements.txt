@@ -8,3 +8,4 @@ bcrypt
 pyjwt
 slowapi
 python-multipart
+openpyxl

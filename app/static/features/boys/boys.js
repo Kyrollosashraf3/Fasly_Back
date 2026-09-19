@@ -25,6 +25,10 @@ export class BoysPage {
     document.querySelector("[data-attendance-link]").href = `#/class/${this.className}/boys/attendance`;
 
     document.getElementById("add-boy").addEventListener("click", () => this.openForm());
+    document.getElementById("import-boys").addEventListener("click", () =>
+      document.getElementById("import-boys-file").click());
+    document.getElementById("import-boys-file").addEventListener("change", (e) =>
+      this.importFile(e.target.files[0]).finally(() => { e.target.value = ""; }));
     document.getElementById("boys-search").addEventListener(
       "input", debounce((e) => { this.search = e.target.value.trim().toLowerCase(); this.render(); }, 200)
     );
@@ -199,6 +203,35 @@ export class BoysPage {
       await this.load();
     } catch (err) {
       Toast.error(err.message);
+    }
+  }
+
+  async importFile(file) {
+    if (!file) return;
+    const btn = document.getElementById("import-boys");
+    btn.disabled = true;
+    btn.textContent = "Importing...";
+    try {
+      const result = await this.service.importExcel(file);
+      const failed = Array.isArray(result.failed) ? result.failed : [];
+      const failRows = failed.length
+        ? `<div class="details" style="margin-top:8px;max-height:220px;overflow:auto;">${failed.map((f) =>
+            `<div class="detail-row"><span>${escapeHtml(f.boy_name || `Row ${f.row || "?"}`)}</span><span>${escapeHtml(f.error || "Skipped")}</span></div>`
+          ).join("")}</div>`
+        : `<p class="muted">All rows imported cleanly.</p>`;
+      Modal.open({
+        title: "Import finished",
+        sub: `${file.name} — ${result.created_count} added, ${result.failed_count} skipped`,
+        body: failRows,
+        actions: [{ label: "OK", kind: "btn-primary" }],
+      });
+      Toast.success(`${result.created_count} boy(s) added from Excel.`);
+      await this.load();
+    } catch (err) {
+      Toast.error(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Import Excel";
     }
   }
 }

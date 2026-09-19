@@ -80,6 +80,27 @@ export class ApiClient {
     } catch {
       throw new ApiError(0, "Cannot reach the server. Check your connection.");
     }
+    return this.handleResponse(res);
+  }
+
+  async upload(path, file, fieldName = "file") {
+    const headers = {};
+    const token = this.getToken ? this.getToken() : null;
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const form = new FormData();
+    form.append(fieldName, file, file.name);
+
+    let res;
+    try {
+      res = await fetch(this.buildUrl(path), { method: "POST", headers, body: form });
+    } catch {
+      throw new ApiError(0, "Cannot reach the server. Check your connection.");
+    }
+    return this.handleResponse(res);
+  }
+
+  async handleResponse(res) {
 
     if (res.status === 204) return null;
 

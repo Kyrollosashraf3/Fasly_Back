@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import List
 
 from fastapi import HTTPException, status
 
@@ -75,6 +76,26 @@ class BoyService(ClassScopedService):
         )
         logger.info(f"Boy created id={doc_ref.id} name={data.boy_name} class={class_name}")
         return self.get(doc_ref.id)
+
+
+    def add_list(self, items: List[BoyCreate]) -> dict:
+        """Bulk insert (e.g. from an Excel sheet).
+
+        Inserts row by row via create() so class scoping + duplicate-name
+        checks still apply. Bad rows don't stop the rest — they are
+        collected in "failed" with their reason.
+        Returns {"created": [BoyResponse...], "failed": [{boy_name, error}]}.
+        """
+        created: list[BoyResponse] = []
+        failed: list[dict] = []
+        for item in items:
+            try:
+                created.append(self.create(item))
+            except HTTPException as exc:
+                failed.append({"boy_name": item.boy_name, "error": exc.detail})
+                logger.warning(f"Bulk boy skipped name={item.boy_name}: {exc.detail}")
+        logger.info(f"Bulk boys done: created={len(created)} failed={len(failed)}")
+        return {"created": created, "failed": failed}
 
     def get(self, boy_id: str) -> BoyResponse:
         doc = self._col().document(boy_id).get()
