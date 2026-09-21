@@ -14,16 +14,18 @@ def dashboard_summary(
     class_name: ClassEnum | None = None,
     streak_n: int = Query(default=4, ge=1, le=52),
     absent_n: int = Query(default=4, ge=0, le=52),
+    top_n: int = Query(default=5, ge=1, le=50),
     db=Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Whole-dashboard analytics in one response.
 
     Admin: all classes or one via class_name. Amin: own class only.
-    streak_n: consecutive presences threshold (default 4).
+    streak_n: consecutive presences back from the last recorded friday (default 4).
     absent_n: frequent-absence threshold, absent count > absent_n (default 4).
+    top_n: top servants count; ties with the Nth join in (default 5).
     """
-    return DashboardService(db, current_user).summary(class_name, streak_n, absent_n)
+    return DashboardService(db, current_user).summary(class_name, streak_n, absent_n, top_n)
 
 
 @router.get("/boys/{boy_id}")

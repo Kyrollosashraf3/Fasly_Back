@@ -23,4 +23,8 @@ export class TeacherService {
   remove(teacherId) {
     return this.api.delete(`/teachers/${teacherId}`);
   }
+
+  importExcel(file) {
+    return this.api.upload("/teachers/import", file);
+  }
 }

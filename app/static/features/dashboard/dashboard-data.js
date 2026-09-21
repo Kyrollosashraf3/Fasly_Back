@@ -4,8 +4,8 @@ export class DashboardService {
     this.api = api;
   }
 
-  summary({ className = null, streakN = 4, absentN = 4 } = {}) {
-    const query = { streak_n: streakN, absent_n: absentN };
+  summary({ className = null, streakN = 4, absentN = 4, topN = 5 } = {}) {
+    const query = { streak_n: streakN, absent_n: absentN, top_n: topN };
     if (className) query.class_name = className;
     return this.api.get("/dashboard/summary", query);
   }

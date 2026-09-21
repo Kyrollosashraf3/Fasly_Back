@@ -6,6 +6,7 @@ from app.config.logger import get_logger
 from app.config.settings import settings
 from app.core.data.base import ClassScopedService
 from app.core.data.common import (
+    append_boy_note,
     date_to_str,
     ensure_record_class_access,
     enum_value,
@@ -70,6 +71,7 @@ class FollowUpService(ClassScopedService):
     def create(self, data: FollowUpCreate) -> FollowUpResponse:
         teacher = self._resolve_teacher(data.teacher_id)
         boy = self._resolve_boy(data.boy_id)
+        action_date = date_to_str(data.action_date or date.today())
         _, doc_ref = self._col().add(
             {
                 "teacher_id": data.teacher_id,
@@ -77,7 +79,7 @@ class FollowUpService(ClassScopedService):
                 "boy_id": data.boy_id,
                 "boy_name": boy.get("boy_name"),
                 "class_name": boy.get("class_name"),
-                "action_date": date_to_str(data.action_date or date.today()),
+                "action_date": action_date,
                 "status": enum_value(data.status),
                 "note": data.note,
                 "recorded_by": self.user_id,
@@ -87,6 +89,8 @@ class FollowUpService(ClassScopedService):
             f"FollowUp created id={doc_ref.id} teacher={data.teacher_id} "
             f"boy={data.boy_id} status={data.status}"
         )
+        append_boy_note(self.db, data.boy_id, data.note,
+                        tag=f"{action_date} - افتقاد ({teacher.get('teacher_name') or ''})".strip())
         return self.get(doc_ref.id)
 
     def get(self, record_id: str) -> FollowUpResponse:
@@ -125,7 +129,7 @@ class FollowUpService(ClassScopedService):
         return result
 
     def update(self, record_id: str, data: FollowUpUpdate) -> FollowUpResponse:
-        self.get(record_id)
+        rec = self.get(record_id)
         updates = data.model_dump(exclude_unset=True)
         if "status" in updates and updates["status"] is not None:
             updates["status"] = enum_value(updates["status"])
@@ -136,6 +140,9 @@ class FollowUpService(ClassScopedService):
         if updates:
             self._col().document(record_id).update(updates)
         logger.info(f"FollowUp updated id={record_id} fields={sorted(updates)} by {self.current_user.mail}")
+        if updates.get("note"):
+            append_boy_note(self.db, rec.boy_id, updates["note"],
+                            tag=f"{rec.action_date or ''} - افتقاد".strip())
         return self.get(record_id)
 
     def delete(self, record_id: str) -> None:

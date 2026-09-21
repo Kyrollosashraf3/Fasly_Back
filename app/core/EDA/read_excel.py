@@ -19,6 +19,7 @@ from openpyxl import load_workbook
 from app.config.logger import get_logger
 from app.models.boy import BoyCreate
 from app.models.enums import ClassEnum, GenderEnum
+from app.models.teacher import TeacherCreate
 
 logger = get_logger(__name__)
 
@@ -174,6 +175,60 @@ def read_boys_workbook(data: bytes) -> tuple[list[BoyCreate], list[dict]]:
             items.append(_row_to_boy(record, i))
         except Exception as exc:
             errors.append({"row": i, "boy_name": _str(record.get("boy_name")), "error": str(exc)})
+            logger.warning(f"Excel row {i} skipped: {exc}")
+
+    logger.info(f"Excel parsed: valid={len(items)} errors={len(errors)}")
+    return items, errors
+
+
+TEACHER_HEADERS = ["teacher_name", "phone", "class_name", "duty", "note"]
+
+
+def _row_to_teacher(row: dict, row_num: int) -> TeacherCreate:
+    name = _str(row.get("teacher_name"))
+    if not name:
+        raise ValueError("teacher_name is required")
+    return TeacherCreate(
+        teacher_name=name,
+        phone=_str(row.get("phone")),
+        class_name=_parse_class(row.get("class_name")),
+        duty=_str(row.get("duty")),
+        note=_str(row.get("note")),
+    )
+
+
+def read_teachers_workbook(data: bytes) -> tuple[list[TeacherCreate], list[dict]]:
+    """Parse an .xlsx file (as bytes) into servants.
+
+    Header must use the teachers column names:
+        teacher_name | phone | class_name | duty | note
+    Returns (items, errors). Raises ValueError if the file/header is invalid.
+    """
+    try:
+        wb = load_workbook(BytesIO(data), read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValueError(f"cannot open Excel file: {exc}")
+    ws = wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise ValueError("Excel sheet is empty")
+    header = [(_str(c) or "") for c in rows[0]]
+    missing = [h for h in ("teacher_name", "class_name") if h not in header]
+    if missing:
+        raise ValueError(f"missing required columns: {missing} (header={header})")
+    col = {name: idx for idx, name in enumerate(header)}
+
+    items: list[TeacherCreate] = []
+    errors: list[dict] = []
+    for i, raw in enumerate(rows[1:], start=2):
+        if all(c is None or (isinstance(c, str) and not c.strip()) for c in raw):
+            continue  # skip blank rows
+        record = {h: (raw[col[h]] if h in col and col[h] < len(raw) else None) for h in TEACHER_HEADERS if h in col}
+        try:
+            items.append(_row_to_teacher(record, i))
+        except Exception as exc:
+            errors.append({"row": i, "teacher_name": _str(record.get("teacher_name")), "error": str(exc)})
             logger.warning(f"Excel row {i} skipped: {exc}")
 
     logger.info(f"Excel parsed: valid={len(items)} errors={len(errors)}")

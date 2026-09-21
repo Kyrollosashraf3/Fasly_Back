@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -8,6 +8,31 @@ from app.models.enums import ClassEnum, RoleEnum
 from app.models.user import UserResponse
 
 logger = get_logger(__name__)
+
+
+def append_boy_note(db, boy_id: str, note: str | None, tag: str | None = None) -> None:
+    """Accumulate a follow-up/attendance note into the boy's master note column.
+
+    Appends "[tag] text" to boys.note so the master record grows with every
+    new comment. Skips empty notes and exact duplicates (re-saving the same
+    date/note won't duplicate the text).
+    """
+    text = (note or "").strip()
+    if not text or not boy_id:
+        return
+    from app.config.settings import settings  # local import: avoids circulars
+
+    ref = db.collection(settings.COLLECTION_BOY).document(boy_id)
+    doc = ref.get()
+    if not doc.exists:
+        return
+    current = (doc.to_dict() or {}).get("note") or ""
+    if text in current:
+        return  # already recorded before
+    entry = f"[{tag}] {text}" if tag else text
+    ref.update({"note": f"{current}\n{entry}".strip() if current else entry,
+                "updated_at": datetime.now(timezone.utc)})
+    logger.info(f"Boy note appended id={boy_id} tag={tag}")
 
 
 def where_eq(target, field: str, value):

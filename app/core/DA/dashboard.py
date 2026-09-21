@@ -51,7 +51,8 @@ class DashboardService(ClassScopedService):
         return out
 
     # ---------------- main summary ----------------
-    def summary(self, class_name=None, streak_n: int = 4, absent_n: int = 4) -> dict:
+    def summary(self, class_name=None, streak_n: int = 4, absent_n: int = 4,
+                top_n: int = 5) -> dict:
         classes = self._scope_classes(class_name)
         single = len(classes) == 1
 
@@ -78,20 +79,32 @@ class DashboardService(ClassScopedService):
         for h in histories.values():
             h.sort(key=lambda r: str(r.get("action_date") or ""))
 
-        def max_streak(h: list[dict]) -> int:
-            best = cur = 0
-            for r in h:
-                if r.get("attend") == "y":
-                    cur += 1
-                    best = max(best, cur)
-                else:
-                    cur = 0
-            return best
+        # ---- recorded fridays (ascending). Last one = "آخر جمعة مسجلة" ----
+        dates = sorted({str(a.get("action_date") or "") for a in attends if a.get("action_date")})
+        last_date = dates[-1] if dates else None
 
-        # ---- 4) n consecutive presences ----
+        def trailing_streak(h: list[dict]) -> int:
+            """Consecutive 'y' counting BACKWARD from the last recorded friday.
+
+            The boy must have a record on the last friday itself; the count
+            stops at the first absence going back.
+            """
+            if not h or last_date is None:
+                return 0
+            if str(h[-1].get("action_date")) != last_date:
+                return 0
+            n = 0
+            for r in reversed(h):
+                if r.get("attend") == "y":
+                    n += 1
+                else:
+                    break
+            return n
+
+        # ---- 4) present n consecutive fridays up to the last recorded one ----
         streaks: dict[str, list[dict]] = {c: [] for c in classes}
         for boy_id, h in histories.items():
-            s = max_streak(h)
+            s = trailing_streak(h)
             if s >= streak_n:
                 b = boys_by_id.get(boy_id, {})
                 c = b.get("class_name") or (h[0].get("class_name") if h else None)
@@ -104,9 +117,7 @@ class DashboardService(ClassScopedService):
         for lst in streaks.values():
             lst.sort(key=lambda x: (-x["streak"], x["boy_name"]))
 
-        # ---- 5) absent last recorded friday ----
-        dates = sorted({str(a.get("action_date") or "") for a in attends if a.get("action_date")})
-        last_date = dates[-1] if dates else None
+        # ---- 5) absent on the last recorded friday ----
         last_absent: list[dict] = []
         last_present_n = 0
         if last_date:
@@ -173,17 +184,25 @@ class DashboardService(ClassScopedService):
                 s["score"] += 1
         servant_list = sorted(servants.values(),
                               key=lambda s: (-s["score"], s["teacher_name"]))
+        # Top N WITH ties: everyone tied with the Nth servant joins in,
+        # so the list may grow beyond N.
+        top_n = max(1, top_n)
+        if len(servant_list) <= top_n:
+            top_servants = servant_list
+        else:
+            cutoff = servant_list[top_n - 1]["score"]
+            top_servants = [s for s in servant_list if s["score"] >= cutoff]
 
         result = {
             "scope": {"classes": classes, "single_class": single,
-                      "streak_n": streak_n, "absent_n": absent_n},
+                      "streak_n": streak_n, "absent_n": absent_n, "top_n": top_n},
             "counts": {"boys": len(boys), "fridays": len(dates),
                        "teachers": len(servants)},
             "attendance": {"present": present, "absent": total - present,
                            "total": total, "percent": _pct(present, total),
                            "by_class": by_class},
             "servants": servant_list,
-            "top_servants": servant_list[:5],
+            "top_servants": top_servants,
             "streaks": streaks,
             "last_friday": {"date": last_date, "present_count": last_present_n,
                             "absent_count": len(last_absent),

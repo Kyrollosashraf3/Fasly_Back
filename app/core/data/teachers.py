@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import List
 
 from fastapi import HTTPException, status
 
@@ -57,6 +58,23 @@ class TeacherService(ClassScopedService):
         )
         logger.info(f"Teacher created id={doc_ref.id} name={data.teacher_name} class={class_name}")
         return self.get(doc_ref.id)
+
+    def add_list(self, items: List[TeacherCreate]) -> dict:
+        """Bulk insert (e.g. from an Excel sheet).
+
+        Bad rows don't stop the rest — collected in "failed" with reason.
+        Returns {"created": [TeacherResponse...], "failed": [{teacher_name, error}]}.
+        """
+        created: list[TeacherResponse] = []
+        failed: list[dict] = []
+        for item in items:
+            try:
+                created.append(self.create(item))
+            except HTTPException as exc:
+                failed.append({"teacher_name": item.teacher_name, "error": exc.detail})
+                logger.warning(f"Bulk teacher skipped name={item.teacher_name}: {exc.detail}")
+        logger.info(f"Bulk teachers done: created={len(created)} failed={len(failed)}")
+        return {"created": created, "failed": failed}
 
     def get(self, teacher_id: str) -> TeacherResponse:
         doc = self._col().document(teacher_id).get()

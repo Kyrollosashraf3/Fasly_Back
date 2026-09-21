@@ -24,6 +24,10 @@ export class TeachersPage {
     document.querySelector("[data-check-link]").href = `#/class/${this.className}/teachers/check`;
 
     document.getElementById("add-teacher").addEventListener("click", () => this.openForm());
+    document.getElementById("import-teachers").addEventListener("click", () =>
+      document.getElementById("import-teachers-file").click());
+    document.getElementById("import-teachers-file").addEventListener("change", (e) =>
+      this.importFile(e.target.files[0]).finally(() => { e.target.value = ""; }));
     document.getElementById("teachers-search").addEventListener(
       "input", debounce((e) => { this.search = e.target.value.trim().toLowerCase(); this.render(); }, 200)
     );
@@ -141,6 +145,35 @@ export class TeachersPage {
       await this.load();
     } catch (err) {
       Toast.error(err.message);
+    }
+  }
+
+  async importFile(file) {
+    if (!file) return;
+    const btn = document.getElementById("import-teachers");
+    btn.disabled = true;
+    btn.textContent = "جارٍ الاستيراد...";
+    try {
+      const result = await this.service.importExcel(file);
+      const failed = Array.isArray(result.failed) ? result.failed : [];
+      const failRows = failed.length
+        ? `<div class="details" style="margin-top:8px;max-height:220px;overflow:auto;">${failed.map((f) =>
+            `<div class="detail-row"><span>${escapeHtml(f.teacher_name || `صف ${f.row || "؟"}`)}</span><span>${escapeHtml(f.error || "تم التخطي")}</span></div>`
+          ).join("")}</div>`
+        : `<p class="muted">كل الصفوف اتسجلت بدون أخطاء.</p>`;
+      Modal.open({
+        title: "انتهى الاستيراد",
+        sub: `${file.name} — ${result.created_count} اتضافوا، ${result.failed_count} اتخطوا`,
+        body: failRows,
+        actions: [{ label: "تمام", kind: "btn-primary" }],
+      });
+      Toast.success(`اتضاف ${result.created_count} من ملف الإكسل.`);
+      await this.load();
+    } catch (err) {
+      Toast.error(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "استيراد إكسل";
     }
   }
 }

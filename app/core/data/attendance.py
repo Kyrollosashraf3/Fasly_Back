@@ -6,6 +6,7 @@ from app.config.logger import get_logger
 from app.config.settings import settings
 from app.core.data.base import ClassScopedService
 from app.core.data.common import (
+    append_boy_note,
     date_to_str,
     ensure_record_class_access,
     enum_value,
@@ -84,9 +85,11 @@ class AttendanceService(ClassScopedService):
             doc_id = existing[0].id
             self._col().document(doc_id).update(payload)
             logger.info(f"Attend upserted (updated) boy={boy_id} date={date_str} attend={attend}")
+            append_boy_note(self.db, boy_id, note, tag=f"{date_str} - حضور")
             return _doc_to_response(doc_id, payload)
         _, doc_ref = self._col().add(payload)
         logger.info(f"Attend upserted (created) boy={boy_id} date={date_str} attend={attend}")
+        append_boy_note(self.db, boy_id, note, tag=f"{date_str} - حضور")
         return _doc_to_response(doc_ref.id, payload)
 
     def create(self, data: AttendCreate) -> AttendResponse:

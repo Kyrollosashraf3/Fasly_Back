@@ -12,6 +12,7 @@ export class DashboardPage {
     this.className = "";
     this.streakN = 4;
     this.absentN = 4;
+    this.topN = 5;
     this.data = null;
   }
 
@@ -42,6 +43,7 @@ export class DashboardPage {
         className: this.className || null,
         streakN: this.streakN,
         absentN: this.absentN,
+        topN: this.topN,
       });
       this.render();
     } catch (err) {
@@ -92,13 +94,16 @@ export class DashboardPage {
 
   topServants(d) {
     if (!d.top_servants.length) {
-      return `<div class="dash-section"><h2>أشطر 5 خدام</h2>
+      return `<div class="dash-section"><h2>أشطر الخدام</h2>
         ${emptyState("لا توجد متابعات بعد", "سجّل متابعة الخدام أولًا لتظهر هنا.")}</div>`;
     }
     return `
       <div class="dash-section">
-        <h2>أشطر 5 خدام</h2>
-        <p class="dash-hint">النقاط = مجموع (الحضور + تحضير الدرس + القداس + الافتقاد) في كل المتابعات.</p>
+        <h2>أشطر الخدام</h2>
+        <p class="dash-hint">النقاط = مجموع (الحضور + تحضير الدرس + القداس + الافتقاد) في كل المتابعات. المتعادلون مع المركز الأخير يدخلون معه.</p>
+        <label class="n-field">عدد الأوائل:
+          <input class="input" id="dash-top-n" type="number" min="1" max="50" value="${d.scope.top_n}" />
+        </label>
         <ul class="name-list">
           ${d.top_servants.map((s, i) => `
             <li><span><span class="rank rank-${i + 1}">${i + 1}</span>
@@ -149,7 +154,7 @@ export class DashboardPage {
     return `
       <div class="dash-section">
         <h2>المواظبون على الحضور</h2>
-        <p class="dash-hint">الأولاد الذين حضروا جمعات متواصلة (بدون غياب في النص).</p>
+        <p class="dash-hint">الحاضرون جمعات متواصلة حتى آخر جمعة مسجلة (${d.last_friday.date ? escapeHtml(formatDate(d.last_friday.date)) : "—"}).</p>
         <label class="n-field">عدد الجمع المتواصلة:
           <input class="input" id="dash-streak-n" type="number" min="1" max="52" value="${d.scope.streak_n}" />
         </label>
@@ -209,20 +214,24 @@ export class DashboardPage {
   bindNInputs() {
     const s = document.getElementById("dash-streak-n");
     const a = document.getElementById("dash-absent-n");
-    let t = null;
+    const t = document.getElementById("dash-top-n");
+    let timer = null;
     const apply = () => {
-      clearTimeout(t);
-      t = setTimeout(async () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
         const ns = Math.max(1, Number(s?.value) || 4);
         const na = Math.max(0, Number(a?.value) || 0);
-        if (ns === this.streakN && na === this.absentN) return;
+        const nt = Math.max(1, Number(t?.value) || 5);
+        if (ns === this.streakN && na === this.absentN && nt === this.topN) return;
         this.streakN = ns;
         this.absentN = na;
+        this.topN = nt;
         await this.load();
       }, 600);
     };
     s?.addEventListener("input", apply);
     a?.addEventListener("input", apply);
+    t?.addEventListener("input", apply);
   }
 
   bindBoyButtons() {
