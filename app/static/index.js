@@ -66,6 +66,7 @@ function renderSidebar(ctx) {
 
   let html = `<div class="brand"><a href="#/home">فصلي</a></div><hr />`;
   html += navLink("/home", "الرئيسية", path === "/home");
+  html += navLink("/dashboard", "لوحة المتابعة", path === "/dashboard");
 
   if (inClass && auth.canAccess(inClass)) {
     html += `<hr />
@@ -140,6 +141,7 @@ const { AttendancePage } = await import("./features/boys/attendance.js");
 const { TeachersPage } = await import("./features/teachers/teachers.js");
 const { TeacherCheckPage } = await import("./features/teachers/teacher-check.js");
 const { FollowUpPage } = await import("./features/follow-up/follow-up.js");
+const { DashboardPage } = await import("./features/dashboard/dashboard.js");
 const { ProfilePage } = await import("./features/profile/profile.js");
 
 function mount(Page, title) {
@@ -153,6 +155,7 @@ function mount(Page, title) {
 router
   .add("/login", mount(LoginPage, "تسجيل الدخول"), { public: true })
   .add("/home", mount(HomePage, "الرئيسية"))
+  .add("/dashboard", mount(DashboardPage, "لوحة المتابعة"))
   .add("/class/:className", mount(ClassPage, (c) => classLabel(c.params.className)))
   .add("/class/:className/boys", mount(BoysPage, (c) => `${classLabel(c.params.className)} / بيانات الأولاد`))
   .add("/class/:className/boys/attendance", mount(AttendancePage, (c) => `${classLabel(c.params.className)} / الحضور`))

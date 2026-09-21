@@ -60,6 +60,7 @@ from app.routes import (
     attendance_router,
     auth_router,
     boys_router,
+    dashboard_router,
     follow_ups_router,
     frontend_router,
     teacher_checks_router,
@@ -72,6 +73,7 @@ app.include_router(teachers_router)  # servants data
 app.include_router(attendance_router)  # friday attendance
 app.include_router(follow_ups_router)  # weekly follow-ups
 app.include_router(teacher_checks_router)  # weekly servant checks
+app.include_router(dashboard_router)  # analytics summary + boy drill-down
 app.include_router(frontend_router)  # GET /app -> bundled frontend UI
 
 # Serve the whole frontend (app/static: index.html + features/ + shared/ +
