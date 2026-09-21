@@ -68,6 +68,7 @@ function renderSidebar(ctx) {
   html += navLink("/home", "الرئيسية", path === "/home");
   html += navLink("/dashboard/boys", "أداء الأولاد", path === "/dashboard/boys");
   html += navLink("/dashboard/teachers", "أداء الخدام", path === "/dashboard/teachers");
+  html += navLink("/reveal", "اكشفلي", path === "/reveal");
 
   if (inClass && auth.canAccess(inClass)) {
     html += `<hr />
@@ -144,6 +145,7 @@ const { TeacherCheckPage } = await import("./features/teachers/teacher-check.js"
 const { FollowUpPage } = await import("./features/follow-up/follow-up.js");
 const { BoysPerformancePage } = await import("./features/dashboard/boys-performance.js");
 const { TeachersPerformancePage } = await import("./features/dashboard/teachers-performance.js");
+const { RevealPage } = await import("./features/reveal/reveal.js");
 const { ProfilePage } = await import("./features/profile/profile.js");
 
 function mount(Page, title) {
@@ -160,6 +162,7 @@ router
   .add("/dashboard", mount(BoysPerformancePage, "أداء الأولاد"))
   .add("/dashboard/boys", mount(BoysPerformancePage, "أداء الأولاد"))
   .add("/dashboard/teachers", mount(TeachersPerformancePage, "أداء الخدام"))
+  .add("/reveal", mount(RevealPage, "اكشفلي"))
   .add("/class/:className", mount(ClassPage, (c) => classLabel(c.params.className)))
   .add("/class/:className/boys", mount(BoysPage, (c) => `${classLabel(c.params.className)} / بيانات الأولاد`))
   .add("/class/:className/boys/attendance", mount(AttendancePage, (c) => `${classLabel(c.params.className)} / الحضور`))

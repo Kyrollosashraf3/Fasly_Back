@@ -39,6 +39,32 @@ def _is_past_friday(date_str: str) -> bool:
         return False
 
 
+def _season_start() -> "date":
+    """First Friday of the church service year (fixed around 18 Sep,
+    the Friday after Nayrouz feast). If 18 Sep isn't a Friday, take the
+    next Friday. If this year's hasn't come yet, use last year's."""
+    from datetime import date as _date
+    today = _date.today()
+    start = _date(today.year, 9, 18)
+    if today < start:
+        start = _date(today.year - 1, 9, 18)
+    while start.weekday() != 4:  # advance to Friday
+        from datetime import timedelta as _td
+        start += _td(days=1)
+    return start
+
+
+def _fridays_between(start, end) -> list[str]:
+    """Every Friday from start to end (inclusive) as ISO strings."""
+    from datetime import timedelta as _td
+    out = []
+    d = start
+    while d <= end:
+        out.append(d.isoformat())
+        d += _td(days=7)
+    return out
+
+
 class DashboardService(ClassScopedService):
     """Dashboard analytics. Admin: any/all classes. Amin: own class only."""
 
@@ -263,6 +289,34 @@ class DashboardService(ClassScopedService):
         notes = [r.get("note") for r in recs if r.get("note")]
         if boy.get("note"):
             notes.insert(0, f"ملاحظة الملف: {boy.get('note')}")
+
+        # ---- season table: every Friday since season start -> present/absent ----
+        from datetime import date as _date
+        season_start = _season_start()
+        last_friday = _date.today()
+        while last_friday.weekday() != 4:
+            from datetime import timedelta as _td
+            last_friday -= _td(days=1)
+        by_date = {str(r.get("action_date")): r for r in recs}
+        season_fridays = [
+            {"action_date": d,
+             "attend": (by_date[d].get("attend") if d in by_date else "n"),
+             "note": (by_date[d].get("note") if d in by_date else None)}
+            for d in _fridays_between(season_start, last_friday)
+        ]
+        season_present = sum(1 for f in season_fridays if f["attend"] == "y")
+        season_total = len(season_fridays)
+
+        # ---- follow-up log for this boy (newest first) ----
+        fu_recs = [d.to_dict() or {} for d in
+                   where_eq(self.db.collection(settings.COLLECTION_FOLLOWUP),
+                            "boy_id", boy_id).stream()]
+        fu_recs.sort(key=lambda r: str(r.get("action_date") or ""), reverse=True)
+        followups = [{"action_date": r.get("action_date"),
+                      "teacher_name": r.get("teacher_name"),
+                      "status": r.get("status"),
+                      "note": r.get("note")} for r in fu_recs]
+
         return {
             "boy": {"id": boy_id, "boy_name": boy.get("boy_name"),
                     "gender": boy.get("gender"), "birth_date": boy.get("birth_date"),
@@ -275,4 +329,9 @@ class DashboardService(ClassScopedService):
             "present": present, "absent": len(recs) - present,
             "total": len(recs), "percent": _pct(present, len(recs)),
             "notes": notes,
+            "season": {"start": season_start.isoformat(),
+                       "present": season_present, "total": season_total,
+                       "percent": _pct(season_present, season_total),
+                       "fridays": season_fridays},
+            "followups": followups,
         }

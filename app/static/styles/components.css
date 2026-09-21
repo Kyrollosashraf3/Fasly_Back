@@ -193,21 +193,27 @@ table.table {
   text-decoration: none;
   text-align: center;
   padding: 28px 20px;
+  background: var(--navy);
+  border-color: var(--navy);
 }
 .stat-card .stat-num {
   font-size: 34px;
   font-weight: 700;
   line-height: 1.1;
-  color: var(--navy);
+  color: var(--accent);
 }
 .stat-card .stat-label {
-  color: var(--text-secondary);
+  color: #c9d3ea;
   font-size: var(--text-base);
   margin-top: 4px;
 }
 a.card:hover, button.card:hover {
   border-color: var(--accent-hover);
   background: var(--accent-soft);
+}
+a.stat-card:hover {
+  border-color: var(--accent);
+  background: var(--navy-hover);
 }
 
 /* ---------- Modal ---------- */
