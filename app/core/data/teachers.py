@@ -1,12 +1,16 @@
 from datetime import datetime, timezone
-from typing import List
-
-from fastapi import HTTPException, status
 
 from app.config.logger import get_logger
 from app.config.settings import settings
 from app.core.data.base import ClassScopedService
-from app.core.data.common import ensure_record_class_access, ensure_unique_field, enum_value, where_eq
+from app.core.data.common import (
+    bulk_create,
+    ensure_record_class_access,
+    ensure_unique_field,
+    enum_value,
+    get_doc_or_404,
+    where_eq,
+)
 from app.models.enums import RoleEnum
 from app.models.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
 
@@ -59,30 +63,16 @@ class TeacherService(ClassScopedService):
         logger.info(f"Teacher created id={doc_ref.id} name={data.teacher_name} class={class_name}")
         return self.get(doc_ref.id)
 
-    def add_list(self, items: List[TeacherCreate]) -> dict:
+    def add_list(self, items: list[TeacherCreate]) -> dict:
         """Bulk insert (e.g. from an Excel sheet).
 
         Bad rows don't stop the rest — collected in "failed" with reason.
         Returns {"created": [TeacherResponse...], "failed": [{teacher_name, error}]}.
         """
-        created: list[TeacherResponse] = []
-        failed: list[dict] = []
-        for item in items:
-            try:
-                created.append(self.create(item))
-            except HTTPException as exc:
-                failed.append({"teacher_name": item.teacher_name, "error": exc.detail})
-                logger.warning(f"Bulk teacher skipped name={item.teacher_name}: {exc.detail}")
-        logger.info(f"Bulk teachers done: created={len(created)} failed={len(failed)}")
-        return {"created": created, "failed": failed}
+        return bulk_create(self.create, items, label="teachers", name_attr="teacher_name")
 
     def get(self, teacher_id: str) -> TeacherResponse:
-        doc = self._col().document(teacher_id).get()
-        if not doc.exists:
-            logger.warning(f"Teacher lookup failed: id={teacher_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found."
-            )
+        doc = get_doc_or_404(self._col(), teacher_id, "Teacher")
         teacher = _doc_to_response(doc.id, doc.to_dict())
         ensure_record_class_access(teacher.class_name, self.current_user)
         logger.debug(f"Teacher fetched id={teacher_id} name={teacher.teacher_name}")

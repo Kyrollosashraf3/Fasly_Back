@@ -5,7 +5,6 @@ Provides centralized logging configuration.
 import logging
 import sys
 from pathlib import Path
-from typing import Any
 
 
 def get_logger(name: str) -> logging.Logger:

@@ -103,6 +103,35 @@ def enum_value(value) -> str | None:
     return value.value if hasattr(value, "value") else value
 
 
+def get_doc_or_404(collection_ref, doc_id: str, label: str = "Record"):
+    """Fetch a document or raise 404 — shared by all service get() methods."""
+    doc = collection_ref.document(doc_id).get()
+    if not doc.exists:
+        logger.warning(f"{label} lookup failed: id={doc_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"{label} not found."
+        )
+    return doc
+
+
+def bulk_create(create_fn, items: list, *, label: str, name_attr: str) -> dict:
+    """Insert items one by one via create_fn, collecting per-row failures.
+
+    Row-level errors (duplicates, class violations) don't stop the rest.
+    Returns {"created": [...], "failed": [{<name_attr>, "error"}]}.
+    """
+    created: list = []
+    failed: list[dict] = []
+    for item in items:
+        try:
+            created.append(create_fn(item))
+        except HTTPException as exc:
+            failed.append({name_attr: getattr(item, name_attr), "error": exc.detail})
+            logger.warning(f"Bulk {label} skipped: {exc.detail}")
+    logger.info(f"Bulk {label} done: created={len(created)} failed={len(failed)}")
+    return {"created": created, "failed": failed}
+
+
 def ensure_unique_field(
     db,
     collection: str,

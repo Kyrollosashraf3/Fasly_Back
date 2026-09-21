@@ -1,5 +1,3 @@
-from typing import List
-
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -18,17 +16,7 @@ reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def _doc_to_user(doc_id: str, data: dict) -> UserResponse:
     """Build a safe user shape from a Firestore document."""
-    kwargs: dict = {
-        "id": doc_id,
-        "user_name": data.get("user_name", ""),
-        "mail": data.get("mail", ""),
-        "phone": data.get("phone"),
-        "role": data.get("role", RoleEnum.USER),
-        "class_name": data.get("class_name"),
-    }
-    if data.get("created_at"):
-        kwargs["created_at"] = data["created_at"]
-    return UserResponse(**kwargs)
+    return UserResponse.from_doc(doc_id, data)
 
 
 def get_current_user(
@@ -71,7 +59,7 @@ def get_current_user(
 class RoleChecker:
     """Dependency factory restricting access to the given roles."""
 
-    def __init__(self, allowed_roles: List[RoleEnum]):
+    def __init__(self, allowed_roles: list[RoleEnum]):
         self.allowed_roles = allowed_roles
 
     def __call__(self, user: UserResponse = Depends(get_current_user)) -> UserResponse:

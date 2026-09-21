@@ -1,7 +1,7 @@
 """app.py - FastAPI entry point that wires all endpoints.
 
 Run:
-    uvicorn app.app:app --reload --port 9000
+    uvicorn app.main:app --reload --port 9001
 """
 
 import traceback
@@ -9,10 +9,24 @@ import traceback
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_logger, settings
+from app.core.auth.bootstrap import ensure_bootstrap_admin
 from app.core.auth.rate_limit import limiter, rate_limit_exceeded_handler
+from app.db.firebase import ensure_collections, init_firebase
+from app.routes import (
+    STATIC_DIR,
+    attendance_router,
+    auth_router,
+    boys_router,
+    dashboard_router,
+    follow_ups_router,
+    frontend_router,
+    teacher_checks_router,
+    teachers_router,
+)
 
 logger = get_logger(__name__)
 
@@ -36,9 +50,6 @@ app.add_middleware(
 )
 
 # Database (Firebase/Firestore singleton + startup collection check)
-from app.core.auth.bootstrap import ensure_bootstrap_admin
-from app.db.firebase import ensure_collections, init_firebase
-
 init_firebase()
 ensure_collections()
 ensure_bootstrap_admin()
@@ -56,17 +67,6 @@ def root():
 
 
 # Wire all endpoints into the app (one include per domain router)
-from app.routes import (
-    attendance_router,
-    auth_router,
-    boys_router,
-    dashboard_router,
-    follow_ups_router,
-    frontend_router,
-    teacher_checks_router,
-    teachers_router,
-)
-
 app.include_router(auth_router)  # login / register / users
 app.include_router(boys_router)  # boys master data
 app.include_router(teachers_router)  # servants data
@@ -79,11 +79,6 @@ app.include_router(frontend_router)  # GET /app -> bundled frontend UI
 # Serve the whole frontend (app/static: index.html + features/ + shared/ +
 # styles/) under /app so ONE server hosts API + UI (single repo deploy).
 # html=True serves index.html for /app and /app/ (SPA uses hash routing).
-from pathlib import Path
-
-from fastapi.staticfiles import StaticFiles
-
-STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/app", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
 
 logger.info("All routes registered successfully")
@@ -100,4 +95,4 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.app:app", host="0.0.0.0", port=9000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=9001, reload=True)

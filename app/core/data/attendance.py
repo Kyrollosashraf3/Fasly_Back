@@ -1,30 +1,7 @@
-from datetime import date
-
-from fastapi import HTTPException, status
-
-from app.config.logger import get_logger
 from app.config.settings import settings
-from app.core.data.base import ClassScopedService
-from app.core.data.common import (
-    append_boy_note,
-    date_to_str,
-    ensure_record_class_access,
-    enum_value,
-    parse_date,
-    where_eq,
-)
-from app.models.attend import (
-    AttendBulkCreate,
-    AttendCreate,
-    AttendResponse,
-    AttendUpdate,
-)
-from app.models.enums import RoleEnum
-
-logger = get_logger(__name__)
-
-COLLECTION = settings.COLLECTION_ATTEND
-BOYS_COLLECTION = settings.COLLECTION_BOY
+from app.core.data.base import PersonCheckService
+from app.core.data.common import append_boy_note, parse_date
+from app.models.attend import AttendResponse
 
 
 def _doc_to_response(doc_id: str, data: dict) -> AttendResponse:
@@ -41,148 +18,24 @@ def _doc_to_response(doc_id: str, data: dict) -> AttendResponse:
     )
 
 
-class AttendanceService(ClassScopedService):
+class AttendanceService(PersonCheckService):
     """Friday attendance: one document per (boy, date), upserted.
 
     Admin: any class. Amin: only own class (class_name auto-stamped from the boy).
     """
 
-    def _col(self):
-        return self.db.collection(COLLECTION)
+    COLLECTION = settings.COLLECTION_ATTEND
+    PERSON_COLLECTION = settings.COLLECTION_BOY
+    PERSON_KIND = "Boy"
+    ID_FIELD = "boy_id"
+    NAME_FIELD = "boy_name"
+    PERSON_NOT_FOUND = "Boy id={id} not found."
+    RECORD_NOT_FOUND = "Attendance record not found."
 
-    def _resolve_boy(self, boy_id: str) -> dict:
-        """Fetch the boy and enforce class access. Returns raw doc data."""
-        doc = self.db.collection(BOYS_COLLECTION).document(boy_id).get()
-        if not doc.exists:
-            logger.warning(f"Attend rejected: boy id={boy_id} not found")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Boy id={boy_id} not found.",
-            )
-        data = doc.to_dict()
-        ensure_record_class_access(data.get("class_name"), self.current_user)
-        return data
+    @staticmethod
+    def to_response(doc_id: str, data: dict) -> AttendResponse:
+        return _doc_to_response(doc_id, data)
 
-    def _upsert(self, boy_id: str, boy_name: str, class_name: str, action_date: date, attend, note: str | None) -> AttendResponse:
-        """Insert or overwrite the (boy, date) record — resubmits never duplicate."""
-        date_str = date_to_str(action_date)
-        existing = list(
-            where_eq(where_eq(self._col(), "boy_id", boy_id), "action_date", date_str)
-            .limit(1)
-            .stream()
-        )
-        payload = {
-            "boy_id": boy_id,
-            "boy_name": boy_name,
-            "class_name": class_name,
-            "action_date": date_str,
-            "attend": enum_value(attend),
-            "note": note,
-            "recorded_by": self.user_id,
-            "recorded_by_name": self.current_user.user_name,
-        }
-        if existing:
-            doc_id = existing[0].id
-            self._col().document(doc_id).update(payload)
-            logger.info(f"Attend upserted (updated) boy={boy_id} date={date_str} attend={attend}")
-            append_boy_note(self.db, boy_id, note, tag=f"{date_str} - حضور")
-            return _doc_to_response(doc_id, payload)
-        _, doc_ref = self._col().add(payload)
-        logger.info(f"Attend upserted (created) boy={boy_id} date={date_str} attend={attend}")
-        append_boy_note(self.db, boy_id, note, tag=f"{date_str} - حضور")
-        return _doc_to_response(doc_ref.id, payload)
-
-    def create(self, data: AttendCreate) -> AttendResponse:
-        boy = self._resolve_boy(data.boy_id)
-        return self._upsert(
-            boy_id=data.boy_id,
-            boy_name=boy.get("boy_name"),
-            class_name=boy.get("class_name"),
-            action_date=data.action_date or date.today(),
-            attend=data.attend,
-            note=data.note,
-        )
-
-    def create_bulk(self, data: AttendBulkCreate) -> list[AttendResponse]:
-        """Friday flow: whole class attendance in one request."""
-        self.resolve_class(data.class_name)
-        action_date = data.action_date or date.today()
-        # Duplicate guard: the same boy must not appear twice in one submit
-        # (e.g. double-click / retried request built the payload twice).
-        seen: set[str] = set()
-        dupes: set[str] = set()
-        for item in data.items:
-            if item.boy_id in seen:
-                dupes.add(item.boy_id)
-            seen.add(item.boy_id)
-        if dupes:
-            logger.warning(
-                f"Attend bulk rejected: duplicate rows for boy(s) "
-                f"{sorted(dupes)} class={data.class_name} date={action_date}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Duplicate attendance rows in the same save — submit each boy only once.",
-            )
-        result = []
-        for item in data.items:
-            boy = self._resolve_boy(item.boy_id)
-            result.append(
-                self._upsert(
-                    boy_id=item.boy_id,
-                    boy_name=boy.get("boy_name"),
-                    class_name=boy.get("class_name"),
-                    action_date=action_date,
-                    attend=item.attend,
-                    note=item.note,
-                )
-            )
-        logger.info(
-            f"Attend bulk saved class={data.class_name} date={action_date} "
-            f"count={len(result)} by {self.current_user.mail}"
-        )
-        return result
-
-    def get(self, record_id: str) -> AttendResponse:
-        doc = self._col().document(record_id).get()
-        if not doc.exists:
-            logger.warning(f"Attend lookup failed: id={record_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Attendance record not found."
-            )
-        record = _doc_to_response(doc.id, doc.to_dict())
-        ensure_record_class_access(record.class_name, self.current_user)
-        logger.debug(f"Attend fetched id={record_id}")
-        return record
-
-    def list(self, class_name=None, action_date: date | None = None) -> list[AttendResponse]:
-        query = self._col()
-        if self.current_user.role == RoleEnum.ADMIN:
-            if class_name:
-                query = where_eq(query, "class_name", enum_value(class_name))
-        else:
-            query = where_eq(query, "class_name", enum_value(self.current_user.class_name))
-        if action_date:
-            query = where_eq(query, "action_date", date_to_str(action_date))
-        result = [_doc_to_response(d.id, d.to_dict()) for d in query.stream()]
-        logger.debug(f"Listed attendance count={len(result)} class={class_name!r} date={action_date!r}")
-        return result
-
-    def update(self, record_id: str, data: AttendUpdate) -> AttendResponse:
-        record = self.get(record_id)
-        updates = data.model_dump(exclude_unset=True)
-        if "attend" in updates and updates["attend"] is not None:
-            updates["attend"] = enum_value(updates["attend"])
-        if "action_date" in updates and updates["action_date"] is not None:
-            updates["action_date"] = date_to_str(updates["action_date"])
-        if "class_name" in updates and updates["class_name"] is not None:
-            updates["class_name"] = enum_value(updates["class_name"])
-        if updates:
-            self._col().document(record_id).update(updates)
-        logger.info(f"Attend updated id={record_id} fields={sorted(updates)} by {self.current_user.mail}")
-        return self.get(record_id)
-
-    def delete(self, record_id: str) -> None:
-        self.get(record_id)
-        self._col().document(record_id).delete()
-        logger.info(f"Attend deleted id={record_id} by {self.current_user.mail}")
+    def after_upsert(self, person_id: str, payload: dict) -> None:
+        append_boy_note(self.db, person_id, payload.get("note"),
+                        tag=f"{payload.get('action_date')} - حضور")

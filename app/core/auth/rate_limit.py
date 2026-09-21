@@ -3,6 +3,7 @@
 """
 
 from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -40,8 +41,6 @@ async def rate_limit_exceeded_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
     """Return a clean JSON response when a client exceeds a rate limit."""
-    from slowapi.errors import RateLimitExceeded
-
     if isinstance(exc, RateLimitExceeded):
         return JSONResponse(
             status_code=429,

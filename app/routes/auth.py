@@ -1,6 +1,4 @@
 from datetime import timedelta
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -62,7 +60,7 @@ def register_user(
     return user
 
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/users", response_model=list[UserResponse])
 def list_users(
     db=Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),

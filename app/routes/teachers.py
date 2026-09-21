@@ -1,9 +1,8 @@
-from typing import List
-
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 
 from app.core.auth.deps import get_current_user
 from app.core.data.teachers import TeacherService
+from app.core.EDA.importer import run_import
 from app.core.EDA.read_excel import read_teachers_workbook
 from app.db.firebase import get_db
 from app.models.enums import ClassEnum
@@ -40,36 +39,11 @@ def import_teachers(
     Admin: any class. Amin: only rows of his own class (others fail per-row).
     Returns {total_rows, created_count, failed_count, created, failed}.
     """
-    name = (file.filename or "").lower()
-    if not name.endswith((".xlsx", ".xlsm")):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only .xlsx files are accepted.",
-        )
-    data = file.file.read()
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty."
-        )
-    try:
-        items, parse_errors = read_teachers_workbook(data)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-    result = TeacherService(db, current_user).add_list(items)
-    failed = [
-        {"row": e["row"], "teacher_name": e["teacher_name"], "error": e["error"]}
-        for e in parse_errors
-    ] + result["failed"]
-    return {
-        "total_rows": len(items) + len(parse_errors),
-        "created_count": len(result["created"]),
-        "failed_count": len(failed),
-        "created": result["created"],
-        "failed": failed,
-    }
+    return run_import(file, reader=read_teachers_workbook,
+                      service=TeacherService(db, current_user), name_key="teacher_name")
 
 
-@router.get("", response_model=List[TeacherResponse])
+@router.get("", response_model=list[TeacherResponse])
 def list_teachers(
     class_name: ClassEnum | None = None,
     db=Depends(get_db),

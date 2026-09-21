@@ -1,16 +1,15 @@
 from datetime import datetime, timezone
-from typing import List
-
-from fastapi import HTTPException, status
 
 from app.config.logger import get_logger
 from app.config.settings import settings
 from app.core.data.base import ClassScopedService
 from app.core.data.common import (
+    bulk_create,
     date_to_str,
     ensure_record_class_access,
     ensure_unique_field,
     enum_value,
+    get_doc_or_404,
     parse_date,
     where_eq,
 )
@@ -78,7 +77,7 @@ class BoyService(ClassScopedService):
         return self.get(doc_ref.id)
 
 
-    def add_list(self, items: List[BoyCreate]) -> dict:
+    def add_list(self, items: list[BoyCreate]) -> dict:
         """Bulk insert (e.g. from an Excel sheet).
 
         Inserts row by row via create() so class scoping + duplicate-name
@@ -86,24 +85,10 @@ class BoyService(ClassScopedService):
         collected in "failed" with their reason.
         Returns {"created": [BoyResponse...], "failed": [{boy_name, error}]}.
         """
-        created: list[BoyResponse] = []
-        failed: list[dict] = []
-        for item in items:
-            try:
-                created.append(self.create(item))
-            except HTTPException as exc:
-                failed.append({"boy_name": item.boy_name, "error": exc.detail})
-                logger.warning(f"Bulk boy skipped name={item.boy_name}: {exc.detail}")
-        logger.info(f"Bulk boys done: created={len(created)} failed={len(failed)}")
-        return {"created": created, "failed": failed}
+        return bulk_create(self.create, items, label="boys", name_attr="boy_name")
 
     def get(self, boy_id: str) -> BoyResponse:
-        doc = self._col().document(boy_id).get()
-        if not doc.exists:
-            logger.warning(f"Boy lookup failed: id={boy_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Boy not found."
-            )
+        doc = get_doc_or_404(self._col(), boy_id, "Boy")
         boy = _doc_to_response(doc.id, doc.to_dict())
         ensure_record_class_access(boy.class_name, self.current_user)
         logger.debug(f"Boy fetched id={boy_id} name={boy.boy_name}")

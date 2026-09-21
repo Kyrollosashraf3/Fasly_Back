@@ -1,6 +1,4 @@
 from datetime import date
-from typing import List
-
 from fastapi import APIRouter, Depends, status
 
 from app.core.auth.deps import get_current_user
@@ -30,7 +28,7 @@ def create_attendance(
     return AttendanceService(db, current_user).create(data)
 
 
-@router.post("/bulk", response_model=List[AttendResponse], status_code=status.HTTP_201_CREATED)
+@router.post("/bulk", response_model=list[AttendResponse], status_code=status.HTTP_201_CREATED)
 def create_attendance_bulk(
     data: AttendBulkCreate,
     db=Depends(get_db),
@@ -42,7 +40,7 @@ def create_attendance_bulk(
     return AttendanceService(db, current_user).create_bulk(data)
 
 
-@router.get("", response_model=List[AttendResponse])
+@router.get("", response_model=list[AttendResponse])
 def list_attendance(
     class_name: ClassEnum | None = None,
     action_date: date | None = None,

@@ -1,6 +1,4 @@
 from datetime import date
-from typing import List
-
 from fastapi import APIRouter, Depends, status
 
 from app.core.auth.deps import get_current_user
@@ -30,7 +28,7 @@ def create_teacher_check(
     return TeacherCheckService(db, current_user).create(data)
 
 
-@router.post("/bulk", response_model=List[TeacherCheckResponse], status_code=status.HTTP_201_CREATED)
+@router.post("/bulk", response_model=list[TeacherCheckResponse], status_code=status.HTTP_201_CREATED)
 def create_teacher_check_bulk(
     data: TeacherCheckBulkCreate,
     db=Depends(get_db),
@@ -42,7 +40,7 @@ def create_teacher_check_bulk(
     return TeacherCheckService(db, current_user).create_bulk(data)
 
 
-@router.get("", response_model=List[TeacherCheckResponse])
+@router.get("", response_model=list[TeacherCheckResponse])
 def list_teacher_checks(
     class_name: ClassEnum | None = None,
     action_date: date | None = None,

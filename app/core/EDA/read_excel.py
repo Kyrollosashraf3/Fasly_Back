@@ -1,18 +1,18 @@
-"""read_excel.py - Read a boys Excel sheet into BoyCreate objects.
+"""read_excel.py - Read Excel sheets into Create models.
 
-Expected sheet: first row = header, column names EXACTLY the boys fields:
-    boy_name | gender | birth_date | age | phone | phone_2 |
-    address | location | class_name | note | issue_flag
+Expected sheet: first row = header with the collection's column names
+(boys: boy_name | gender | ... | issue_flag — teachers: a subset).
 
 - Fully empty rows are skipped.
 - Cell values are coerced (gender m/f, class 1..6, dates, bools).
-- Returns (items, errors): valid BoyCreate list + per-row parse errors
-  [{row, boy_name, error}] so the caller can insert the good rows and
+- Returns (items, errors): valid models + per-row parse errors
+  [{row, <name_key>, error}] so the caller can insert the good rows and
   report the bad ones instead of failing the whole file.
 """
 
 from datetime import date, datetime
 from io import BytesIO
+from typing import Callable
 
 from openpyxl import load_workbook
 
@@ -23,7 +23,7 @@ from app.models.teacher import TeacherCreate
 
 logger = get_logger(__name__)
 
-HEADERS = [
+BOY_HEADERS = [
     "boy_name",
     "gender",
     "birth_date",
@@ -36,6 +36,8 @@ HEADERS = [
     "note",
     "issue_flag",
 ]
+
+TEACHER_HEADERS = ["teacher_name", "phone", "class_name", "duty", "note"]
 
 _GENDER_MAP = {
     "m": GenderEnum.MALE,
@@ -126,7 +128,7 @@ def _parse_flag(value) -> bool:
     raise ValueError(f"bad issue_flag {value!r} (use true/false)")
 
 
-def _row_to_boy(row: dict, row_num: int) -> BoyCreate:
+def _row_to_boy(row: dict) -> BoyCreate:
     name = _str(row.get("boy_name"))
     if not name:
         raise ValueError("boy_name is required")
@@ -145,46 +147,7 @@ def _row_to_boy(row: dict, row_num: int) -> BoyCreate:
     )
 
 
-def read_boys_workbook(data: bytes) -> tuple[list[BoyCreate], list[dict]]:
-    """Parse an .xlsx file (as bytes) into boys.
-
-    Returns (items, errors). Raises ValueError if the file/header is invalid.
-    """
-    try:
-        wb = load_workbook(BytesIO(data), read_only=True, data_only=True)
-    except Exception as exc:
-        raise ValueError(f"cannot open Excel file: {exc}")
-    ws = wb.active
-
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
-        raise ValueError("Excel sheet is empty")
-    header = [(_str(c) or "") for c in rows[0]]
-    missing = [h for h in ("boy_name", "class_name") if h not in header]
-    if missing:
-        raise ValueError(f"missing required columns: {missing} (header={header})")
-    col = {name: idx for idx, name in enumerate(header)}
-
-    items: list[BoyCreate] = []
-    errors: list[dict] = []
-    for i, raw in enumerate(rows[1:], start=2):
-        if all(c is None or (isinstance(c, str) and not c.strip()) for c in raw):
-            continue  # skip blank rows
-        record = {h: (raw[col[h]] if h in col and col[h] < len(raw) else None) for h in HEADERS if h in col}
-        try:
-            items.append(_row_to_boy(record, i))
-        except Exception as exc:
-            errors.append({"row": i, "boy_name": _str(record.get("boy_name")), "error": str(exc)})
-            logger.warning(f"Excel row {i} skipped: {exc}")
-
-    logger.info(f"Excel parsed: valid={len(items)} errors={len(errors)}")
-    return items, errors
-
-
-TEACHER_HEADERS = ["teacher_name", "phone", "class_name", "duty", "note"]
-
-
-def _row_to_teacher(row: dict, row_num: int) -> TeacherCreate:
+def _row_to_teacher(row: dict) -> TeacherCreate:
     name = _str(row.get("teacher_name"))
     if not name:
         raise ValueError("teacher_name is required")
@@ -197,11 +160,15 @@ def _row_to_teacher(row: dict, row_num: int) -> TeacherCreate:
     )
 
 
-def read_teachers_workbook(data: bytes) -> tuple[list[TeacherCreate], list[dict]]:
-    """Parse an .xlsx file (as bytes) into servants.
+def _is_blank(raw: tuple) -> bool:
+    return all(c is None or (isinstance(c, str) and not c.strip()) for c in raw)
 
-    Header must use the teachers column names:
-        teacher_name | phone | class_name | duty | note
+
+def read_workbook(data: bytes, *, headers: list[str], required: tuple[str, ...],
+                  name_key: str, build_row: Callable[[dict], object],
+                  entity: str) -> tuple[list, list[dict]]:
+    """Generic .xlsx reader shared by all import flows.
+
     Returns (items, errors). Raises ValueError if the file/header is invalid.
     """
     try:
@@ -214,22 +181,41 @@ def read_teachers_workbook(data: bytes) -> tuple[list[TeacherCreate], list[dict]
     if not rows:
         raise ValueError("Excel sheet is empty")
     header = [(_str(c) or "") for c in rows[0]]
-    missing = [h for h in ("teacher_name", "class_name") if h not in header]
+    missing = [h for h in required if h not in header]
     if missing:
         raise ValueError(f"missing required columns: {missing} (header={header})")
     col = {name: idx for idx, name in enumerate(header)}
 
-    items: list[TeacherCreate] = []
+    items: list = []
     errors: list[dict] = []
     for i, raw in enumerate(rows[1:], start=2):
-        if all(c is None or (isinstance(c, str) and not c.strip()) for c in raw):
+        if _is_blank(raw):
             continue  # skip blank rows
-        record = {h: (raw[col[h]] if h in col and col[h] < len(raw) else None) for h in TEACHER_HEADERS if h in col}
+        record = {h: (raw[col[h]] if h in col and col[h] < len(raw) else None)
+                  for h in headers if h in col}
         try:
-            items.append(_row_to_teacher(record, i))
+            items.append(build_row(record))
         except Exception as exc:
-            errors.append({"row": i, "teacher_name": _str(record.get("teacher_name")), "error": str(exc)})
+            errors.append({"row": i, name_key: _str(record.get(name_key)), "error": str(exc)})
             logger.warning(f"Excel row {i} skipped: {exc}")
 
-    logger.info(f"Excel parsed: valid={len(items)} errors={len(errors)}")
+    logger.info(f"Excel parsed ({entity}): valid={len(items)} errors={len(errors)}")
     return items, errors
+
+
+def read_boys_workbook(data: bytes) -> tuple[list[BoyCreate], list[dict]]:
+    """Parse an .xlsx file (as bytes) into boys."""
+    return read_workbook(data, headers=BOY_HEADERS,
+                         required=("boy_name", "class_name"), name_key="boy_name",
+                         build_row=_row_to_boy, entity="boys")
+
+
+def read_teachers_workbook(data: bytes) -> tuple[list[TeacherCreate], list[dict]]:
+    """Parse an .xlsx file (as bytes) into servants."""
+    return read_workbook(data, headers=TEACHER_HEADERS,
+                         required=("teacher_name", "class_name"), name_key="teacher_name",
+                         build_row=_row_to_teacher, entity="teachers")
+
+
+# Backwards-compatible alias (old constant name).
+HEADERS = BOY_HEADERS

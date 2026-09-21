@@ -10,6 +10,7 @@ from app.core.data.common import (
     date_to_str,
     ensure_record_class_access,
     enum_value,
+    get_doc_or_404,
     parse_date,
     where_eq,
 )
@@ -94,12 +95,7 @@ class FollowUpService(ClassScopedService):
         return self.get(doc_ref.id)
 
     def get(self, record_id: str) -> FollowUpResponse:
-        doc = self._col().document(record_id).get()
-        if not doc.exists:
-            logger.warning(f"FollowUp lookup failed: id={record_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Follow up not found."
-            )
+        doc = get_doc_or_404(self._col(), record_id, "Follow up")
         record = _doc_to_response(doc.id, doc.to_dict())
         ensure_record_class_access(record.class_name, self.current_user)
         logger.debug(f"FollowUp fetched id={record_id}")

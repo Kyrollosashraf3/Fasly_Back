@@ -1,6 +1,4 @@
 from datetime import date
-from typing import List
-
 from fastapi import APIRouter, Depends, status
 
 from app.core.auth.deps import get_current_user
@@ -25,7 +23,7 @@ def create_follow_up(
     return FollowUpService(db, current_user).create(data)
 
 
-@router.get("", response_model=List[FollowUpResponse])
+@router.get("", response_model=list[FollowUpResponse])
 def list_follow_ups(
     class_name: ClassEnum | None = None,
     teacher_id: str | None = None,

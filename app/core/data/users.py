@@ -6,7 +6,7 @@ from app.config.logger import get_logger
 from app.config.settings import settings
 from app.core.auth.security import get_password_hash
 from app.core.data.base import BaseService
-from app.core.data.common import ensure_admin, ensure_class_access, ensure_unique_field, enum_value, where_eq
+from app.core.data.common import ensure_admin, ensure_class_access, ensure_unique_field, enum_value, get_doc_or_404, where_eq
 from app.models.enums import RoleEnum
 from app.models.user import UserCreate, UserResponse, UserUpdate
 
@@ -16,17 +16,7 @@ COLLECTION = settings.COLLECTION_USER
 
 
 def _doc_to_response(doc_id: str, data: dict) -> UserResponse:
-    kwargs: dict = {
-        "id": doc_id,
-        "user_name": data.get("user_name", ""),
-        "mail": data.get("mail", ""),
-        "phone": data.get("phone"),
-        "role": data.get("role", RoleEnum.USER),
-        "class_name": data.get("class_name"),
-    }
-    if data.get("created_at"):
-        kwargs["created_at"] = data["created_at"]
-    return UserResponse(**kwargs)
+    return UserResponse.from_doc(doc_id, data)
 
 
 def get_user_by_mail(db, mail: str) -> tuple[str, dict] | None:
@@ -73,17 +63,13 @@ class UserService(BaseService):
         return _doc_to_response(doc_ref.id, created)
 
     def get_user(self, user_id: str) -> UserResponse:
-        doc = self._col().document(user_id).get()
-        if not doc.exists:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        doc = get_doc_or_404(self._col(), user_id, "User")
         user = _doc_to_response(doc.id, doc.to_dict())
         ensure_class_access(user.class_name, self.current_user)
         return user
 
     def update_user(self, user_id: str, data: UserUpdate) -> UserResponse:
-        doc = self._col().document(user_id).get()
-        if not doc.exists:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+        doc = get_doc_or_404(self._col(), user_id, "User")
         current = _doc_to_response(doc.id, doc.to_dict())
         ensure_class_access(current.class_name, self.current_user)
 
@@ -128,8 +114,6 @@ class UserService(BaseService):
 
     def delete_user(self, user_id: str) -> None:
         ensure_admin(self.current_user)
-        doc_ref = self._col().document(user_id)
-        if not doc_ref.get().exists:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
-        doc_ref.delete()
+        doc = get_doc_or_404(self._col(), user_id, "User")
+        doc.reference.delete()
         logger.info(f"User deleted id={user_id} by {self.current_user.mail}")

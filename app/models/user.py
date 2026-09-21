@@ -47,6 +47,21 @@ class UserResponse(BaseModel):
     class_name: ClassEnum | None = None
     created_at: datetime = Field(default_factory=_now)
 
+    @classmethod
+    def from_doc(cls, doc_id: str, data: dict) -> "UserResponse":
+        """Build a safe user shape from a Firestore document."""
+        kwargs: dict = {
+            "id": doc_id,
+            "user_name": data.get("user_name", ""),
+            "mail": data.get("mail", ""),
+            "phone": data.get("phone"),
+            "role": data.get("role", RoleEnum.USER),
+            "class_name": data.get("class_name"),
+        }
+        if data.get("created_at"):
+            kwargs["created_at"] = data["created_at"]
+        return cls(**kwargs)
+
 
 class UserInDB(UserResponse):
     """Stored shape — keeps the hash for login checks, never returned by the API."""
