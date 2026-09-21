@@ -18,25 +18,25 @@ export class LoginPage {
       const mail = form.mail.value.trim();
       const password = form.password.value;
       if (!mail || !password) {
-        errorBox.innerHTML = `<div class="form-error">Please enter your email and password.</div>`;
+        errorBox.innerHTML = `<div class="form-error">من فضلك أدخل البريد الإلكتروني وكلمة المرور.</div>`;
         return;
       }
       errorBox.innerHTML = "";
       submit.disabled = true;
-      submit.textContent = "Logging in...";
+      submit.textContent = "جارٍ الدخول...";
       try {
         await this.app.auth.login(mail, password);
-        Toast.success("Welcome back.");
+        Toast.success("مرحبًا بعودتك.");
         this.app.router.navigate("/home");
       } catch (err) {
         const message =
           err.status === 401
-            ? "Incorrect email or password."
-            : err.message || "Login failed. Please try again.";
+            ? "البريد الإلكتروني أو كلمة المرور غير صحيحة."
+            : err.message || "فشل الدخول. حاول مجددًا.";
         errorBox.innerHTML = `<div class="form-error">${message}</div>`;
       } finally {
         submit.disabled = false;
-        submit.textContent = "Login";
+        submit.textContent = "دخول";
       }
     });
   }

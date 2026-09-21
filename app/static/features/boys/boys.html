@@ -1,21 +1,21 @@
 <div class="page-head">
-  <div class="crumb"><a href="#/home">Classes</a> / <a data-crumb-class href="#">Class</a></div>
-  <h1>Boys Data</h1>
-  <p class="sub">Master records of the boys in this class.</p>
+  <div class="crumb"><a href="#/home">الفصول</a> / <a data-crumb-class href="#">الفصل</a></div>
+  <h1>بيانات الأولاد</h1>
+  <p class="sub">السجل الأساسي لأولاد هذا الفصل.</p>
 </div>
 <div class="toolbar">
   <div class="toolbar-group">
-    <input class="input search-input" id="boys-search" type="search" placeholder="Search boys..." autocomplete="off" />
-    <div class="filter-tabs" id="boys-flag-tabs" role="tablist" aria-label="Issue filter">
-      <button data-flag="" class="active">All</button>
-      <button data-flag="true">Flagged</button>
+    <input class="input search-input" id="boys-search" type="search" placeholder="ابحث بالاسم أو التليفون..." autocomplete="off" />
+    <div class="filter-tabs" id="boys-flag-tabs" role="tablist" aria-label="فلتر المتابعة">
+      <button data-flag="" class="active">الكل</button>
+      <button data-flag="true">محتاج متابعة</button>
     </div>
   </div>
   <div class="toolbar-group">
-    <a class="btn btn-secondary" data-attendance-link href="#">Attendance</a>
-    <button class="btn btn-secondary" id="import-boys">Import Excel</button>
+    <a class="btn btn-secondary" data-attendance-link href="#">الحضور</a>
+    <button class="btn btn-secondary" id="import-boys">استيراد إكسل</button>
     <input type="file" id="import-boys-file" accept=".xlsx,.xlsm" hidden />
-    <button class="btn btn-primary" id="add-boy">+ Add Boy</button>
+    <button class="btn btn-primary" id="add-boy">+ إضافة ولد</button>
   </div>
 </div>
 <div id="boys-content"></div>

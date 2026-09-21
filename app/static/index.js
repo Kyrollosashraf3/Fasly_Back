@@ -45,7 +45,7 @@ function setTopbar(title) {
   topbar.innerHTML = `
     <div class="topbar-title">${escapeHtml(title)}</div>
     <div class="user-chip">
-      ${user ? `<span>Welcome, <strong>${escapeHtml(user.user_name)}</strong></span>` : ""}
+      ${user ? `<span>أهلًا، <strong>${escapeHtml(user.user_name)}</strong></span>` : ""}
     </div>`;
 }
 
@@ -64,30 +64,30 @@ function renderSidebar(ctx) {
   const inClass = ctx.params.className;
   const cls = (c) => `/class/${c}`;
 
-  let html = `<div class="brand"><a href="#/home">FASLY</a></div><hr />`;
-  html += navLink("/home", "Home", path === "/home");
+  let html = `<div class="brand"><a href="#/home">فصلي</a></div><hr />`;
+  html += navLink("/home", "الرئيسية", path === "/home");
 
   if (inClass && auth.canAccess(inClass)) {
     html += `<hr />
-      <a class="nav-link nav-back" href="#/home">&larr; Classes</a>
+      <a class="nav-link nav-back" href="#/home">&rarr; الفصول</a>
       <div class="class-title">${escapeHtml(classLabel(inClass))}</div>
-      <div class="nav-label">Manage</div>`;
-    html += navLink(cls(inClass), "Overview", path === cls(inClass));
-    html += navLink(`${cls(inClass)}/boys`, "Boys Data", path === `${cls(inClass)}/boys`);
-    html += navLink(`${cls(inClass)}/boys/attendance`, "Attendance", path === `${cls(inClass)}/boys/attendance`);
-    html += navLink(`${cls(inClass)}/teachers`, "Teachers", path === `${cls(inClass)}/teachers`);
-    html += navLink(`${cls(inClass)}/teachers/check`, "Teacher Check", path === `${cls(inClass)}/teachers/check`);
-    html += navLink(`${cls(inClass)}/follow-up`, "Follow Up", path === `${cls(inClass)}/follow-up`);
+      <div class="nav-label">إدارة</div>`;
+    html += navLink(cls(inClass), "نظرة عامة", path === cls(inClass));
+    html += navLink(`${cls(inClass)}/boys`, "بيانات الأولاد", path === `${cls(inClass)}/boys`);
+    html += navLink(`${cls(inClass)}/boys/attendance`, "الحضور", path === `${cls(inClass)}/boys/attendance`);
+    html += navLink(`${cls(inClass)}/teachers`, "الخدام", path === `${cls(inClass)}/teachers`);
+    html += navLink(`${cls(inClass)}/teachers/check`, "متابعة الخدام", path === `${cls(inClass)}/teachers/check`);
+    html += navLink(`${cls(inClass)}/follow-up`, "الافتقاد", path === `${cls(inClass)}/follow-up`);
   } else {
-    html += `<div class="nav-label">Classes</div>`;
+    html += `<div class="nav-label">الفصول</div>`;
     for (const c of classes) {
       html += navLink(cls(c), classLabel(c), path.startsWith(cls(c)));
     }
   }
 
   html += `<hr /><div class="spacer"></div>`;
-  html += navLink("/profile", "Account", path === "/profile");
-  html += `<a class="nav-link" href="#/login" id="logout-link">Logout</a>`;
+  html += navLink("/profile", "الحساب", path === "/profile");
+  html += `<a class="nav-link" href="#/login" id="logout-link">تسجيل الخروج</a>`;
   sidebar.innerHTML = html;
 
   const logout = document.getElementById("logout-link");
@@ -151,14 +151,14 @@ function mount(Page, title) {
 }
 
 router
-  .add("/login", mount(LoginPage, "Login"), { public: true })
-  .add("/home", mount(HomePage, "Home"))
+  .add("/login", mount(LoginPage, "تسجيل الدخول"), { public: true })
+  .add("/home", mount(HomePage, "الرئيسية"))
   .add("/class/:className", mount(ClassPage, (c) => classLabel(c.params.className)))
-  .add("/class/:className/boys", mount(BoysPage, (c) => `${classLabel(c.params.className)} / Boys`))
-  .add("/class/:className/boys/attendance", mount(AttendancePage, (c) => `${classLabel(c.params.className)} / Attendance`))
-  .add("/class/:className/teachers", mount(TeachersPage, (c) => `${classLabel(c.params.className)} / Teachers`))
-  .add("/class/:className/teachers/check", mount(TeacherCheckPage, (c) => `${classLabel(c.params.className)} / Teacher Check`))
-  .add("/class/:className/follow-up", mount(FollowUpPage, (c) => `${classLabel(c.params.className)} / Follow Up`))
-  .add("/profile", mount(ProfilePage, "Account"));
+  .add("/class/:className/boys", mount(BoysPage, (c) => `${classLabel(c.params.className)} / بيانات الأولاد`))
+  .add("/class/:className/boys/attendance", mount(AttendancePage, (c) => `${classLabel(c.params.className)} / الحضور`))
+  .add("/class/:className/teachers", mount(TeachersPage, (c) => `${classLabel(c.params.className)} / الخدام`))
+  .add("/class/:className/teachers/check", mount(TeacherCheckPage, (c) => `${classLabel(c.params.className)} / متابعة الخدام`))
+  .add("/class/:className/follow-up", mount(FollowUpPage, (c) => `${classLabel(c.params.className)} / الافتقاد`))
+  .add("/profile", mount(ProfilePage, "الحساب"));
 
 router.start();

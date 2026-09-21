@@ -64,7 +64,7 @@ export class Modal {
           if (action.onClick) await action.onClick({ close, button: btn, body: bodyEl });
           else close();
         } catch (err) {
-          Toast.error(err.message || "Something went wrong.");
+          Toast.error(err.message || "حدث خطأ. حاول مجددًا.");
         }
       });
       actionsEl.appendChild(btn);
@@ -76,13 +76,13 @@ export class Modal {
     return { close, body: bodyEl };
   }
 
-  static confirm({ title = "Are you sure?", message = "", confirmLabel = "Delete" }) {
+  static confirm({ title = "هل أنت متأكد؟", message = "", confirmLabel = "حذف" }) {
     return new Promise((resolve) => {
       const { close } = this.open({
         title,
         body: `<p class="muted" style="margin:0">${escapeHtml(message)}</p>`,
         actions: [
-          { label: "Cancel", onClick: () => { close(); resolve(false); } },
+          { label: "إلغاء", onClick: () => { close(); resolve(false); } },
           {
             label: confirmLabel,
             kind: "btn-danger",
@@ -94,7 +94,7 @@ export class Modal {
     });
   }
 
-  static note({ title = "Note", value = "" }) {
+  static note({ title = "ملاحظة", value = "" }) {
     return new Promise((resolve) => {
       const body = document.createElement("div");
       body.innerHTML = `
@@ -105,9 +105,9 @@ export class Modal {
       this.open({
         title,
         actions: [
-          { label: "Cancel", onClick: ({ close }) => { close(); resolve(null); } },
+          { label: "إلغاء", onClick: ({ close }) => { close(); resolve(null); } },
           {
-            label: "Save",
+            label: "حفظ",
             kind: "btn-primary",
             onClick: ({ close }) => { close(); resolve(ta.value.trim()); },
           },
@@ -137,7 +137,7 @@ export function emptyState(title, message, actionHtml = "") {
     </div>`;
 }
 
-export function loadingBlock(message = "Loading...") {
+export function loadingBlock(message = "جارٍ التحميل...") {
   return `<div class="loading-block" role="status">${escapeHtml(message)}</div>`;
 }
 
@@ -148,8 +148,8 @@ export function skeletonTable(rows = 5) {
 export function errorBlock(message, retryHtml = "") {
   return `
     <div class="error-block">
-      <h3>Something went wrong</h3>
-      <p style="margin:0 0 14px">${escapeHtml(message || "Please try again.")}</p>
+      <h3>حدث خطأ</h3>
+      <p style="margin:0 0 14px">${escapeHtml(message || "حاول مجددًا.")}</p>
       ${retryHtml}
     </div>`;
 }

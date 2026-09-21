@@ -15,13 +15,13 @@ export class HomePage {
 
     if (!classes.length) {
       box.innerHTML = emptyState(
-        "No classes assigned",
-        "Your account has no class assigned yet. Please contact an administrator."
+        "لا توجد فصول مسندة",
+        "حسابك غير مسند لأي فصل بعد. تواصل مع الإدارة."
       );
       return;
     }
 
-    box.innerHTML = loadingBlock("Loading classes...");
+    box.innerHTML = loadingBlock("جارٍ تحميل الفصول...");
     const counts = {};
     await Promise.all(
       classes.map(async (c) => {
@@ -42,7 +42,7 @@ export class HomePage {
           <a class="card class-card" href="#/class/${c}">
             <div class="class-card-name">${escapeHtml(classLabel(c))}</div>
             <div class="class-card-count">${
-              counts[c] === null ? "—" : `${counts[c]} boy${counts[c] === 1 ? "" : "s"}`
+              counts[c] === null ? "—" : `${counts[c]} أولاد`
             }</div>
           </a>`
           )

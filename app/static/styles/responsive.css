@@ -36,3 +36,32 @@
 
   .toast-root { left: 16px; right: 16px; bottom: 16px; max-width: none; }
 }
+
+/* ---------- RTL (Arabic) adjustments ---------- */
+[dir="rtl"] .sidebar { border-right: 0; border-left: 1px solid var(--border); }
+[dir="rtl"] .sidebar .nav-link.active { box-shadow: inset -3px 0 0 var(--accent); }
+[dir="rtl"] .sidebar .brand { letter-spacing: 0; }
+[dir="rtl"] .table th { text-align: right; }
+[dir="rtl"] .table .cell-actions { text-align: left; }
+[dir="rtl"] .filter-tabs button { border-right: 0; border-left: 1px solid var(--border); }
+[dir="rtl"] .filter-tabs button:last-child { border-left: 0; }
+[dir="rtl"] .flag-dot { margin-right: 0; margin-left: 6px; }
+[dir="rtl"] .toast-root { right: auto; left: 20px; }
+[dir="rtl"] .modal .modal-actions { justify-content: flex-start; }
+[dir="rtl"] .menu-toggle { left: auto; right: 12px; }
+
+@media (max-width: 900px) {
+  [dir="rtl"] .topbar { padding: 0 60px 0 16px; }
+}
+
+@media (max-width: 768px) {
+  [dir="rtl"] .sidebar {
+    left: auto;
+    right: 0;
+    transform: translateX(100%);
+  }
+  [dir="rtl"] body.sidebar-open .sidebar {
+    transform: none;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
+  }
+}

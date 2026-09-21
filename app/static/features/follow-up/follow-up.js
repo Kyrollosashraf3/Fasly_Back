@@ -34,7 +34,9 @@ export class FollowUpService {
   }
 }
 
-const STATUS_BADGE = { call: "", visit: "yellow", "no answer": "red", other: "green" };
+const STATUS_BADGE = { call: "", visit: "yellow", whatsapp: "green", "no answer": "red", other: "green" };
+const STATUS_LABEL = Object.fromEntries(FOLLOW_STATUS.map((s) => [s.value, s.label]));
+const statusLabel = (v) => STATUS_LABEL[v] || v || "—";
 
 export class FollowUpPage {
   constructor(app) {
@@ -101,7 +103,7 @@ export class FollowUpPage {
       this.allTeachers = Array.isArray(teachers) ? teachers : [];
       const sel = document.getElementById("fu-teacher");
       sel.innerHTML =
-        `<option value="">Select teacher...</option>` +
+        `<option value="">اختر الخادم...</option>` +
         this.allTeachers.map((t) => `<option value="${t.id}">${escapeHtml(t.teacher_name)}</option>`).join("");
       await this.reloadRows();
       await this.reloadHistory();
@@ -113,8 +115,8 @@ export class FollowUpPage {
   async reloadRows() {
     if (!this.teacherId || !this.date || !this.allBoys.length) {
       this.box.innerHTML = emptyState(
-        "Select a teacher and date",
-        "Choose the teacher and week date above to log follow-ups."
+        "اختر الخادم والتاريخ",
+        "اختر الخادم وتاريخ الأسبوع من الأعلى لتسجيل الافتقاد."
       );
       document.getElementById("fu-summary").hidden = true;
       return;
@@ -143,17 +145,17 @@ export class FollowUpPage {
     const rows = this.allBoys.filter((b) =>
       !this.search || `${b.boy_name || ""}`.toLowerCase().includes(this.search));
     if (!rows.length) {
-      this.box.innerHTML = emptyState("No boys found", "There are no boys in this class yet.");
+      this.box.innerHTML = emptyState("لا يوجد أولاد", "لم يتم تسجيل أولاد في هذا الفصل بعد.");
       return;
     }
     this.box.innerHTML = table(
-      ["Boy", "Follow Up", "Note"],
+      ["الولد", "الافتقاد", "ملاحظة"],
       rows.map((b) => {
         const d = this.draft.get(b.id) || { status: "", note: "" };
         return `<tr>
           <td><strong>${escapeHtml(b.boy_name)}</strong></td>
           <td>
-            <select class="input fu-status" data-id="${b.id}" aria-label="Follow up method">
+            <select class="input fu-status" data-id="${b.id}" aria-label="طريقة الافتقاد">
               <option value="">—</option>
               ${FOLLOW_STATUS.map((s) =>
                 `<option value="${s.value}"${d.status === s.value ? " selected" : ""}>${s.label}</option>`).join("")}
@@ -173,7 +175,7 @@ export class FollowUpPage {
       btn.addEventListener("click", async () => {
         const d = this.draft.get(btn.dataset.note);
         const boy = this.allBoys.find((b) => b.id === btn.dataset.note);
-        const value = await Modal.note({ title: `Note — ${boy?.boy_name || ""}`, value: d.note });
+        const value = await Modal.note({ title: `ملاحظة — ${boy?.boy_name || ""}`, value: d.note });
         if (value === null) return;
         d.note = value;
         btn.innerHTML = value ? "&#9998; *" : "&#9998;";
@@ -189,18 +191,18 @@ export class FollowUpPage {
       if (d.status) n += 1;
     }
     document.getElementById("fu-count").textContent =
-      `${n} follow-up${n === 1 ? "" : "s"} • ${formatDate(this.date)}`;
+      `${n} افتقاد • ${formatDate(this.date)}`;
   }
 
   async save() {
     const teacher = this.allTeachers.find((t) => t.id === this.teacherId);
     if (!teacher) {
-      Toast.error("Please select a teacher.");
+      Toast.error("من فضلك اختر الخادم.");
       return;
     }
     const btn = document.getElementById("fu-save");
     btn.disabled = true;
-    btn.textContent = "Saving...";
+    btn.textContent = "جارٍ الحفظ...";
     try {
       let saved = 0;
       for (const boy of this.allBoys) {
@@ -225,14 +227,14 @@ export class FollowUpPage {
           saved += 1;
         }
       }
-      Toast.success(saved ? `${saved} follow-up${saved === 1 ? "" : "s"} saved.` : "Nothing new to save.");
+      Toast.success(saved ? `تم حفظ ${saved} افتقاد.` : "لا يوجد جديد للحفظ.");
       await this.reloadRows();
       await this.reloadHistory();
     } catch (err) {
       Toast.error(err.message);
     } finally {
       btn.disabled = false;
-      btn.textContent = "Save Follow Ups";
+      btn.textContent = "حفظ الافتقاد";
     }
   }
 
@@ -247,21 +249,21 @@ export class FollowUpPage {
         .sort((a, b) => String(b.action_date || "").localeCompare(String(a.action_date || "")))
         .slice(0, 50);
       if (!list.length) {
-        this.histBox.innerHTML = emptyState("No follow-ups yet", "Saved follow-ups will appear here.");
+        this.histBox.innerHTML = emptyState("لا يوجد افتقاد بعد", "الافتقاد المحفوظ سيظهر هنا.");
         return;
       }
       this.histBox.innerHTML = table(
-        ["Date", "Teacher", "Boy", "Method", "Note", "Actions"],
+        ["التاريخ", "الخادم", "الولد", "الطريقة", "ملاحظة", "إجراءات"],
         list.map((r) => `
           <tr>
             <td>${escapeHtml(r.action_date || "—")}</td>
             <td>${escapeHtml(r.teacher_name || "—")}</td>
             <td>${escapeHtml(r.boy_name || "—")}</td>
-            <td>${badge(r.status || "—", STATUS_BADGE[r.status] || "")}</td>
-            <td>${r.note ? `<span class="note-indicator" title="${escapeHtml(r.note)}">View</span>` : `<span class="muted">—</span>`}</td>
+            <td>${badge(statusLabel(r.status), STATUS_BADGE[r.status] || "")}</td>
+            <td>${r.note ? `<span class="note-indicator" title="${escapeHtml(r.note)}">عرض</span>` : `<span class="muted">—</span>`}</td>
             <td class="cell-actions">
-              <button class="btn-link" data-hact="edit" data-id="${r.id}">Edit</button>
-              <button class="btn-link danger" data-hact="del" data-id="${r.id}">Delete</button>
+              <button class="btn-link" data-hact="edit" data-id="${r.id}">تعديل</button>
+              <button class="btn-link danger" data-hact="del" data-id="${r.id}">حذف</button>
             </td>
           </tr>`).join("")
       );
@@ -281,23 +283,23 @@ export class FollowUpPage {
   editRecord(rec) {
     const body = document.createElement("div");
     body.innerHTML = `
-      <div class="field"><label>Method</label>
+      <div class="field"><label>الطريقة</label>
         <select class="input" id="hist-status">
           ${FOLLOW_STATUS.map((s) =>
             `<option value="${s.value}"${rec.status === s.value ? " selected" : ""}>${s.label}</option>`).join("")}
         </select>
       </div>
-      <div class="field"><label>Note</label>
+      <div class="field"><label>ملاحظة</label>
         <textarea class="input" id="hist-note" rows="3">${escapeHtml(rec.note || "")}</textarea>
       </div>`;
     Modal.open({
-      title: `Edit — ${rec.boy_name || ""}`,
+      title: `تعديل — ${rec.boy_name || ""}`,
       sub: `${rec.teacher_name || ""} • ${rec.action_date || ""}`,
       body,
       actions: [
-        { label: "Cancel" },
+        { label: "إلغاء" },
         {
-          label: "Save changes",
+          label: "حفظ التعديلات",
           kind: "btn-primary",
           onClick: async ({ close, button }) => {
             button.disabled = true;
@@ -306,7 +308,7 @@ export class FollowUpPage {
                 status: body.querySelector("#hist-status").value,
                 note: body.querySelector("#hist-note").value.trim() || null,
               });
-              Toast.success("Follow-up updated.");
+              Toast.success("تم تعديل الافتقاد.");
               close();
               await this.reloadRows();
               await this.reloadHistory();
@@ -322,13 +324,13 @@ export class FollowUpPage {
 
   async deleteRecord(rec) {
     const ok = await Modal.confirm({
-      title: "Delete follow-up?",
-      message: `Follow-up for "${rec.boy_name}" on ${rec.action_date} will be removed.`,
+      title: "حذف الافتقاد؟",
+      message: `افتقاد "${rec.boy_name}" بتاريخ ${rec.action_date} سيتم حذفه.`,
     });
     if (!ok) return;
     try {
       await this.service.remove(rec.id);
-      Toast.success("Follow-up deleted.");
+      Toast.success("تم حذف الافتقاد.");
       await this.reloadRows();
       await this.reloadHistory();
     } catch (err) {

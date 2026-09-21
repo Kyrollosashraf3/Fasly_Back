@@ -8,16 +8,16 @@ export class ApiError extends Error {
 }
 
 function formatDetail(detail) {
-  if (!detail) return "Something went wrong. Please try again.";
+  if (!detail) return "حدث خطأ. حاول مجددًا.";
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     const first = detail[0];
-    if (!first) return "Invalid request. Please check your input.";
+    if (!first) return "طلب غير صحيح. راجع البيانات المدخلة.";
     if (typeof first === "string") return first;
     const loc = Array.isArray(first.loc)
       ? first.loc.filter((p) => p !== "body").join(".")
       : "";
-    const msg = first.msg || "Invalid value";
+    const msg = first.msg || "قيمة غير صحيحة";
     return loc ? `${loc}: ${msg}` : msg;
   }
   if (typeof detail === "object") return detail.msg || JSON.stringify(detail);
@@ -25,13 +25,13 @@ function formatDetail(detail) {
 }
 
 const FRIENDLY = {
-  400: "Invalid request. Please check your input.",
-  401: "Your session has expired. Please log in again.",
-  403: "You do not have permission to do that.",
-  404: "Record not found. It may have been deleted.",
-  422: "Some fields are invalid. Please review the form.",
-  429: "Too many requests. Please wait a moment and try again.",
-  500: "Server error. Please try again later.",
+  400: "طلب غير صحيح. راجع البيانات المدخلة.",
+  401: "انتهت الجلسة. سجّل الدخول مرة أخرى.",
+  403: "لا تملك صلاحية لهذا الإجراء.",
+  404: "السجل غير موجود. ربما تم حذفه.",
+  422: "بعض الحقول غير صحيحة. راجع النموذج.",
+  429: "طلبات كثيرة. انتظر قليلًا وحاول مجددًا.",
+  500: "خطأ في السيرفر. حاول لاحقًا.",
 };
 
 export class ApiClient {
@@ -78,7 +78,7 @@ export class ApiClient {
         body: payload,
       });
     } catch {
-      throw new ApiError(0, "Cannot reach the server. Check your connection.");
+      throw new ApiError(0, "لا يمكن الوصول للسيرفر. تأكد من الاتصال.");
     }
     return this.handleResponse(res);
   }
@@ -95,7 +95,7 @@ export class ApiClient {
     try {
       res = await fetch(this.buildUrl(path), { method: "POST", headers, body: form });
     } catch {
-      throw new ApiError(0, "Cannot reach the server. Check your connection.");
+      throw new ApiError(0, "لا يمكن الوصول للسيرفر. تأكد من الاتصال.");
     }
     return this.handleResponse(res);
   }
@@ -124,14 +124,13 @@ export class ApiClient {
       (typeof detail === "string" && detail) ||
       FRIENDLY[res.status] ||
       formatDetail(detail) ||
-      `Request failed (${res.status})`;
+      `فشل الطلب (${res.status})`;
     throw new ApiError(
       res.status,
       res.status === 422 ? formatDetail(detail) : message,
       res.status === 422 ? detail : null
     );
   }
-
   get(path, query) {
     return this.request("GET", path, { query });
   }

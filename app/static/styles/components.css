@@ -17,11 +17,11 @@
   cursor: not-allowed;
 }
 .btn-primary {
-  background: var(--accent);
-  color: var(--text);
-  font-weight: 600;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
 }
-.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
 .btn-secondary {
   background: var(--bg);
   border-color: var(--border-strong);

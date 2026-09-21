@@ -24,10 +24,10 @@ export class TeacherCheckService {
 }
 
 const COLS = [
-  { key: "attend", label: "Present" },
-  { key: "prepare_flag", label: "Lesson" },
-  { key: "liturgy_flag", label: "Liturgy" },
-  { key: "follow_flag", label: "Follow-up" },
+  { key: "attend", label: "حاضر" },
+  { key: "prepare_flag", label: "تحضير الدرس" },
+  { key: "liturgy_flag", label: "القداس" },
+  { key: "follow_flag", label: "افتقاد" },
 ];
 
 export class TeacherCheckPage {
@@ -50,24 +50,24 @@ export class TeacherCheckPage {
   render_shell() {
     this.app.setView(`
       <div class="page-head">
-        <div class="crumb"><a href="#/home">Classes</a> / <a href="#/class/${this.className}">${escapeHtml(classLabel(this.className))}</a></div>
-        <h1>Teacher Check</h1>
-        <p class="sub">Weekly checklist for each teacher. Saving the same date again updates it.</p>
+        <div class="crumb"><a href="#/home">الفصول</a> / <a href="#/class/${this.className}">${escapeHtml(classLabel(this.className))}</a></div>
+        <h1>متابعة الخدام</h1>
+        <p class="sub">المتابعة الأسبوعية لكل خادم: الحضور وتحضير الدرس والقداس والافتقاد. حفظ نفس التاريخ يحدّث البيانات.</p>
       </div>
       <div class="toolbar">
         <div class="toolbar-group">
-          <label class="date-field">Date
+          <label class="date-field">التاريخ
             <input class="input" id="check-date" type="date" value="${this.date}" />
           </label>
         </div>
         <div class="toolbar-group">
-          <input class="input search-input" id="check-search" type="search" placeholder="Search teachers..." autocomplete="off" />
+          <input class="input search-input" id="check-search" type="search" placeholder="ابحث بالاسم..." autocomplete="off" />
         </div>
       </div>
       <div id="check-content"></div>
       <div class="summary-bar" id="check-summary" hidden>
         <div class="counts"><span id="check-count" class="muted small"></span></div>
-        <button class="btn btn-primary" id="check-save">Save</button>
+        <button class="btn btn-primary" id="check-save">حفظ</button>
       </div>`);
     this.box = document.getElementById("check-content");
 
@@ -107,9 +107,9 @@ export class TeacherCheckPage {
       this.render();
       document.getElementById("check-summary").hidden = !this.allTeachers.length;
     } catch (err) {
-      this.box.innerHTML = `<div class="error-block"><h3>Something went wrong</h3>
+      this.box.innerHTML = `<div class="error-block"><h3>حدث خطأ</h3>
         <p>${escapeHtml(err.message)}</p>
-        <button class="btn btn-secondary" id="retry">Try again</button></div>`;
+        <button class="btn btn-secondary" id="retry">حاول مجددًا</button></div>`;
       document.getElementById("retry")?.addEventListener("click", () => this.reload());
     }
   }
@@ -119,14 +119,14 @@ export class TeacherCheckPage {
       !this.search || `${t.teacher_name || ""}`.toLowerCase().includes(this.search));
     if (!rows.length) {
       this.box.innerHTML = this.allTeachers.length
-        ? emptyState("No teachers match", "Try a different search.")
-        : emptyState("No teachers found", "Add teachers to this class before recording checks.");
+        ? emptyState("لا توجد نتائج", "جرّب بحثًا مختلفًا.")
+        : emptyState("لا يوجد خدام", "سجّل خدام هذا الفصل أولًا قبل المتابعة.");
       return;
     }
     this.box.innerHTML = `
       <div class="table-wrap">
         <table class="table check-table">
-          <thead><tr><th>Teacher</th>${COLS.map((c) => `<th class="center">${c.label}</th>`).join("")}<th>Note</th></tr></thead>
+          <thead><tr><th>الخادم</th>${COLS.map((c) => `<th class="center">${c.label}</th>`).join("")}<th>ملاحظة</th></tr></thead>
           <tbody>
             ${rows.map((t) => {
               const s = this.state.get(t.id);
@@ -143,7 +143,7 @@ export class TeacherCheckPage {
           </tbody>
         </table>
       </div>
-      <p class="muted small" style="margin-top:8px">${escapeHtml(formatDate(this.date))} — present, prepared lesson, attended liturgy, followed up with group.</p>`;
+      <p class="muted small" style="margin-top:8px">${escapeHtml(formatDate(this.date))} — الحضور، تحضير الدرس، حضور القداس، وافتقاد المجموعة.</p>`;
 
     this.box.querySelectorAll("input[data-col]").forEach((cb) => {
       cb.addEventListener("change", () => {
@@ -159,19 +159,19 @@ export class TeacherCheckPage {
       btn.addEventListener("click", async () => {
         const s = this.state.get(btn.dataset.note);
         const teacher = this.allTeachers.find((t) => t.id === btn.dataset.note);
-        const value = await Modal.note({ title: `Note — ${teacher?.teacher_name || ""}`, value: s.note });
+        const value = await Modal.note({ title: `ملاحظة — ${teacher?.teacher_name || ""}`, value: s.note });
         if (value === null) return;
         s.note = value;
         btn.innerHTML = value ? "&#9998; *" : "&#9998;";
       });
     });
     document.getElementById("check-count").textContent =
-      `${this.allTeachers.length} teacher${this.allTeachers.length === 1 ? "" : "s"} • ${formatDate(this.date)}`;
+      `${this.allTeachers.length} خدام • ${formatDate(this.date)}`;
   }
 
   async save() {
     if (!this.date) {
-      Toast.error("Please choose a date.");
+      Toast.error("من فضلك اختر التاريخ.");
       return;
     }
     const btn = document.getElementById("check-save");
@@ -184,16 +184,16 @@ export class TeacherCheckPage {
       note: s.note || null,
     }));
     btn.disabled = true;
-    btn.textContent = "Saving...";
+    btn.textContent = "جارٍ الحفظ...";
     try {
       const user = this.app.auth.currentUser();
       await this.service.saveBulk(this.className, this.date, items, user?.id || null);
-      Toast.success(`Teacher check saved for ${formatDate(this.date)}.`);
+      Toast.success(`تم حفظ متابعة الخدام في ${formatDate(this.date)}.`);
     } catch (err) {
       Toast.error(err.message);
     } finally {
       btn.disabled = false;
-      btn.textContent = "Save";
+      btn.textContent = "حفظ";
     }
   }
 }

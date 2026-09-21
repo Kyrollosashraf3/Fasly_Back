@@ -52,7 +52,7 @@ export class BoysPage {
       this.boys = Array.isArray(data) ? data : [];
       this.render();
     } catch (err) {
-      box.innerHTML = errorBlock(err.message, `<button class="btn btn-secondary" id="retry">Try again</button>`);
+      box.innerHTML = errorBlock(err.message, `<button class="btn btn-secondary" id="retry">حاول مجددًا</button>`);
       document.getElementById("retry")?.addEventListener("click", () => this.load());
     }
   }
@@ -71,30 +71,30 @@ export class BoysPage {
     const rows = this.filtered();
     if (!rows.length) {
       box.innerHTML = this.boys.length
-        ? emptyState("No boys match", "Try a different search.")
+        ? emptyState("لا توجد نتائج", "جرّب بحثًا مختلفًا.")
         : emptyState(
-            "No boys found",
-            "There are no boys registered in this class yet.",
-            `<button class="btn btn-primary" id="empty-add">+ Add Boy</button>`
+            "لا يوجد أولاد",
+            "لم يتم تسجيل أي أولاد في هذا الفصل بعد.",
+            `<button class="btn btn-primary" id="empty-add">+ إضافة ولد</button>`
           );
       document.getElementById("empty-add")?.addEventListener("click", () => this.openForm());
       return;
     }
     box.innerHTML = table(
-      ["Name", "Gender", "Age", "Phone", "Note", "Actions"],
+      ["الاسم", "النوع", "السن", "التليفون", "ملاحظة", "إجراءات"],
       rows.map((b) => `
         <tr>
-          <td><strong>${b.issue_flag ? `<span class="flag-dot" title="Flagged"></span>` : ""}${escapeHtml(b.boy_name)}</strong></td>
+          <td><strong>${b.issue_flag ? `<span class="flag-dot" title="محتاج متابعة"></span>` : ""}${escapeHtml(b.boy_name)}</strong></td>
           <td>${escapeHtml(GENDER_LABELS[b.gender] || b.gender || "—")}</td>
           <td>${escapeHtml(calcAge(b.birth_date, b.age))}</td>
           <td>${escapeHtml(b.phone || "—")}</td>
           <td>${b.note
-            ? `<span class="note-indicator" title="${escapeHtml(b.note)}">Has note</span>`
+            ? `<span class="note-indicator" title="${escapeHtml(b.note)}">يوجد ملاحظة</span>`
             : `<span class="muted">—</span>`}</td>
           <td class="cell-actions">
-            <button class="btn-link" data-act="view" data-id="${b.id}">View</button>
-            <button class="btn-link" data-act="edit" data-id="${b.id}">Edit</button>
-            <button class="btn-link danger" data-act="del" data-id="${b.id}">Delete</button>
+            <button class="btn-link" data-act="view" data-id="${b.id}">عرض</button>
+            <button class="btn-link" data-act="edit" data-id="${b.id}">تعديل</button>
+            <button class="btn-link danger" data-act="del" data-id="${b.id}">حذف</button>
           </td>
         </tr>`).join("")
     );
@@ -114,20 +114,20 @@ export class BoysPage {
       `<div class="detail-row"><span>${k}</span><span>${v || "—"}</span></div>`;
     Modal.open({
       title: b.boy_name,
-      sub: `${classLabel(this.className)}${b.issue_flag ? " • Flagged" : ""}`,
+      sub: `${classLabel(this.className)}${b.issue_flag ? " • محتاج متابعة" : ""}`,
       body: `<div class="details">
-        ${row("Gender", escapeHtml(GENDER_LABELS[b.gender] || b.gender || "—"))}
-        ${row("Birth date", escapeHtml(b.birth_date || "—"))}
-        ${row("Age", escapeHtml(calcAge(b.birth_date, b.age)))}
-        ${row("Phone", escapeHtml(b.phone || "—"))}
-        ${row("Phone 2", escapeHtml(b.phone_2 || "—"))}
-        ${row("Address", escapeHtml(b.address || "—"))}
-        ${row("Location", b.location ? `<a href="${escapeHtml(b.location)}" target="_blank" rel="noopener">Open map</a>` : "—")}
-        ${row("Note", escapeHtml(b.note || "—"))}
+        ${row("النوع", escapeHtml(GENDER_LABELS[b.gender] || b.gender || "—"))}
+        ${row("تاريخ الميلاد", escapeHtml(b.birth_date || "—"))}
+        ${row("السن", escapeHtml(calcAge(b.birth_date, b.age)))}
+        ${row("التليفون", escapeHtml(b.phone || "—"))}
+        ${row("تليفون آخر", escapeHtml(b.phone_2 || "—"))}
+        ${row("العنوان", escapeHtml(b.address || "—"))}
+        ${row("الموقع", b.location ? `<a href="${escapeHtml(b.location)}" target="_blank" rel="noopener">فتح الخريطة</a>` : "—")}
+        ${row("ملاحظة", escapeHtml(b.note || "—"))}
       </div>`,
       actions: [
-        { label: "Close" },
-        { label: "Edit", kind: "btn-primary", onClick: ({ close }) => { close(); this.openForm(b); } },
+        { label: "إغلاق" },
+        { label: "تعديل", kind: "btn-primary", onClick: ({ close }) => { close(); this.openForm(b); } },
       ],
     });
   }
@@ -138,31 +138,31 @@ export class BoysPage {
     const body = document.createElement("form");
     body.id = "boy-form";
     body.innerHTML = `
-      ${field({ name: "boy_name", label: "Full name", value: v.boy_name || "", required: true })}
+      ${field({ name: "boy_name", label: "الاسم بالكامل", value: v.boy_name || "", required: true })}
       <div class="form-grid">
-        ${field({ name: "gender", label: "Gender", value: v.gender || "m", options: [
-          { value: "m", label: "Boy" }, { value: "f", label: "Girl" }] })}
-        ${field({ name: "birth_date", label: "Birth date", type: "date", value: v.birth_date || "" })}
+        ${field({ name: "gender", label: "النوع", value: v.gender || "m", options: [
+          { value: "m", label: "ولد" }, { value: "f", label: "بنت" }] })}
+        ${field({ name: "birth_date", label: "تاريخ الميلاد", type: "date", value: v.birth_date || "" })}
       </div>
       <div class="form-grid">
-        ${field({ name: "age", label: "Age", type: "number", value: v.age ?? "", attrs: 'min="0" max="30"' })}
-        ${field({ name: "phone", label: "Phone", type: "tel", value: v.phone || "" })}
+        ${field({ name: "age", label: "السن", type: "number", value: v.age ?? "", attrs: 'min="0" max="30"' })}
+        ${field({ name: "phone", label: "التليفون", type: "tel", value: v.phone || "" })}
       </div>
-      ${field({ name: "phone_2", label: "Second phone", type: "tel", value: v.phone_2 || "" })}
-      ${field({ name: "address", label: "Address", value: v.address || "" })}
-      ${field({ name: "location", label: "Location (map link)", value: v.location || "" })}
-      ${field({ name: "note", label: "Note", type: "textarea", value: v.note || "" })}
+      ${field({ name: "phone_2", label: "تليفون آخر", type: "tel", value: v.phone_2 || "" })}
+      ${field({ name: "address", label: "العنوان", value: v.address || "" })}
+      ${field({ name: "location", label: "الموقع (لينك الخريطة)", value: v.location || "" })}
+      ${field({ name: "note", label: "ملاحظة", type: "textarea", value: v.note || "" })}
       <div class="field check-field">
-        <label><input type="checkbox" class="check" name="issue_flag"${v.issue_flag ? " checked" : ""} /> Flag for follow-up</label>
+        <label><input type="checkbox" class="check" name="issue_flag"${v.issue_flag ? " checked" : ""} /> محتاج متابعة</label>
       </div>`;
     Modal.open({
-      title: isEdit ? "Edit boy" : "Add boy",
+      title: isEdit ? "تعديل بيانات ولد" : "إضافة ولد",
       sub: classLabel(this.className),
       body,
       actions: [
-        { label: "Cancel" },
+        { label: "إلغاء" },
         {
-          label: isEdit ? "Save changes" : "Add boy",
+          label: isEdit ? "حفظ التعديلات" : "إضافة",
           kind: "btn-primary",
           onClick: async ({ close, button }) => {
             const form = document.getElementById("boy-form");
@@ -174,10 +174,10 @@ export class BoysPage {
             try {
               if (isEdit) {
                 await this.service.update(boy.id, compact(values));
-                Toast.success("Boy updated.");
+                Toast.success("تم تعديل البيانات.");
               } else {
                 await this.service.create({ ...compact(values), class_name: this.className });
-                Toast.success("Boy added.");
+                Toast.success("تمت إضافة الولد.");
               }
               close();
               await this.load();
@@ -193,13 +193,13 @@ export class BoysPage {
 
   async remove(boy) {
     const ok = await Modal.confirm({
-      title: "Delete boy?",
-      message: `"${boy.boy_name}" will be permanently removed.`,
+      title: "حذف الولد؟",
+      message: `"${boy.boy_name}" سيتم حذفه نهائيًا.`,
     });
     if (!ok) return;
     try {
       await this.service.remove(boy.id);
-      Toast.success("Boy deleted.");
+      Toast.success("تم حذف الولد.");
       await this.load();
     } catch (err) {
       Toast.error(err.message);
@@ -210,28 +210,28 @@ export class BoysPage {
     if (!file) return;
     const btn = document.getElementById("import-boys");
     btn.disabled = true;
-    btn.textContent = "Importing...";
+    btn.textContent = "جارٍ الاستيراد...";
     try {
       const result = await this.service.importExcel(file);
       const failed = Array.isArray(result.failed) ? result.failed : [];
       const failRows = failed.length
         ? `<div class="details" style="margin-top:8px;max-height:220px;overflow:auto;">${failed.map((f) =>
-            `<div class="detail-row"><span>${escapeHtml(f.boy_name || `Row ${f.row || "?"}`)}</span><span>${escapeHtml(f.error || "Skipped")}</span></div>`
+            `<div class="detail-row"><span>${escapeHtml(f.boy_name || `صف ${f.row || "؟"}`)}</span><span>${escapeHtml(f.error || "تم التخطي")}</span></div>`
           ).join("")}</div>`
-        : `<p class="muted">All rows imported cleanly.</p>`;
+        : `<p class="muted">كل الصفوف اتسجلت بدون أخطاء.</p>`;
       Modal.open({
-        title: "Import finished",
-        sub: `${file.name} — ${result.created_count} added, ${result.failed_count} skipped`,
+        title: "انتهى الاستيراد",
+        sub: `${file.name} — ${result.created_count} اتضافوا، ${result.failed_count} اتخطوا`,
         body: failRows,
-        actions: [{ label: "OK", kind: "btn-primary" }],
+        actions: [{ label: "تمام", kind: "btn-primary" }],
       });
-      Toast.success(`${result.created_count} boy(s) added from Excel.`);
+      Toast.success(`اتضاف ${result.created_count} من ملف الإكسل.`);
       await this.load();
     } catch (err) {
       Toast.error(err.message);
     } finally {
       btn.disabled = false;
-      btn.textContent = "Import Excel";
+      btn.textContent = "استيراد إكسل";
     }
   }
 }

@@ -30,5 +30,6 @@ class FollowEnum(str, Enum):
 
     CALL = "call"
     VISIT = "visit"
+    WHATSAPP = "whatsapp"
     NO_ANSWER = "no answer"
     OTHER = "other"

@@ -38,7 +38,7 @@ export class TeachersPage {
       this.teachers = Array.isArray(data) ? data : [];
       this.render();
     } catch (err) {
-      box.innerHTML = errorBlock(err.message, `<button class="btn btn-secondary" id="retry">Try again</button>`);
+      box.innerHTML = errorBlock(err.message, `<button class="btn btn-secondary" id="retry">حاول مجددًا</button>`);
       document.getElementById("retry")?.addEventListener("click", () => this.load());
     }
   }
@@ -51,28 +51,28 @@ export class TeachersPage {
     });
     if (!rows.length) {
       box.innerHTML = this.teachers.length
-        ? emptyState("No teachers match", "Try a different search.")
+        ? emptyState("لا توجد نتائج", "جرّب بحثًا مختلفًا.")
         : emptyState(
-            "No teachers found",
-            "There are no teachers registered in this class yet.",
-            `<button class="btn btn-primary" id="empty-add">+ Add Teacher</button>`
+            "لا يوجد خدام",
+            "لم يتم تسجيل أي خدام في هذا الفصل بعد.",
+            `<button class="btn btn-primary" id="empty-add">+ إضافة خادم</button>`
           );
       document.getElementById("empty-add")?.addEventListener("click", () => this.openForm());
       return;
     }
     box.innerHTML = table(
-      ["Name", "Phone", "Duty", "Note", "Actions"],
+      ["الاسم", "التليفون", "الدور", "ملاحظة", "إجراءات"],
       rows.map((t) => `
         <tr>
           <td><strong>${escapeHtml(t.teacher_name)}</strong></td>
           <td>${escapeHtml(t.phone || "—")}</td>
           <td>${escapeHtml(t.duty || "—")}</td>
           <td>${t.note
-            ? `<span class="note-indicator" title="${escapeHtml(t.note)}">Has note</span>`
+            ? `<span class="note-indicator" title="${escapeHtml(t.note)}">يوجد ملاحظة</span>`
             : `<span class="muted">—</span>`}</td>
           <td class="cell-actions">
-            <button class="btn-link" data-act="edit" data-id="${t.id}">Edit</button>
-            <button class="btn-link danger" data-act="del" data-id="${t.id}">Delete</button>
+            <button class="btn-link" data-act="edit" data-id="${t.id}">تعديل</button>
+            <button class="btn-link danger" data-act="del" data-id="${t.id}">حذف</button>
           </td>
         </tr>`).join("")
     );
@@ -92,18 +92,18 @@ export class TeachersPage {
     const body = document.createElement("form");
     body.id = "teacher-form";
     body.innerHTML = `
-      ${field({ name: "teacher_name", label: "Full name", value: v.teacher_name || "", required: true })}
-      ${field({ name: "phone", label: "Phone", type: "tel", value: v.phone || "" })}
-      ${field({ name: "duty", label: "Duty", value: v.duty || "", hint: "e.g. class teacher, group leader, assistant" })}
-      ${field({ name: "note", label: "Note", type: "textarea", value: v.note || "" })}`;
+      ${field({ name: "teacher_name", label: "الاسم بالكامل", value: v.teacher_name || "", required: true })}
+      ${field({ name: "phone", label: "التليفون", type: "tel", value: v.phone || "" })}
+      ${field({ name: "duty", label: "الدور", value: v.duty || "", hint: "مثال: أمين الفصل، قائد مجموعة، مساعد" })}
+      ${field({ name: "note", label: "ملاحظة", type: "textarea", value: v.note || "" })}`;
     Modal.open({
-      title: isEdit ? "Edit teacher" : "Add teacher",
+      title: isEdit ? "تعديل بيانات خادم" : "إضافة خادم",
       sub: classLabel(this.className),
       body,
       actions: [
-        { label: "Cancel" },
+        { label: "إلغاء" },
         {
-          label: isEdit ? "Save changes" : "Add teacher",
+          label: isEdit ? "حفظ التعديلات" : "إضافة",
           kind: "btn-primary",
           onClick: async ({ close, button }) => {
             const form = document.getElementById("teacher-form");
@@ -112,10 +112,10 @@ export class TeachersPage {
             try {
               if (isEdit) {
                 await this.service.update(teacher.id, compact(formValues(form)));
-                Toast.success("Teacher updated.");
+                Toast.success("تم تعديل بيانات الخادم.");
               } else {
                 await this.service.create({ ...compact(formValues(form)), class_name: this.className });
-                Toast.success("Teacher added.");
+                Toast.success("تمت إضافة الخادم.");
               }
               close();
               await this.load();
@@ -131,13 +131,13 @@ export class TeachersPage {
 
   async remove(teacher) {
     const ok = await Modal.confirm({
-      title: "Delete teacher?",
-      message: `"${teacher.teacher_name}" will be permanently removed.`,
+      title: "حذف الخادم؟",
+      message: `"${teacher.teacher_name}" سيتم حذفه نهائيًا.`,
     });
     if (!ok) return;
     try {
       await this.service.remove(teacher.id);
-      Toast.success("Teacher deleted.");
+      Toast.success("تم حذف الخادم.");
       await this.load();
     } catch (err) {
       Toast.error(err.message);

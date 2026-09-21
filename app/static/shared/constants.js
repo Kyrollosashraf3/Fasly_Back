@@ -15,12 +15,12 @@ export const STORAGE_KEYS = {
 export const CLASSES = ["1", "2", "3", "4", "5", "6"];
 
 export const CLASS_LABELS = {
-  1: "Grade 1",
-  2: "Grade 2",
-  3: "Grade 3",
-  4: "Grade 4",
-  5: "Grade 5",
-  6: "Grade 6",
+  1: "الصف الأول",
+  2: "الصف الثاني",
+  3: "الصف الثالث",
+  4: "الصف الرابع",
+  5: "الصف الخامس",
+  6: "الصف السادس",
 };
 
 export const ROLES = {
@@ -38,15 +38,20 @@ export const GENDER = {
   FEMALE: "f",
 };
 
-export const GENDER_LABELS = { m: "Boy", f: "Girl" };
+export const GENDER_LABELS = { m: "ولد", f: "بنت" };
+
+export const ATTEND_LABELS = { y: "حاضر", n: "غائب" };
+
+export const ROLE_LABELS = { admin: "أدمن", user: "أمين فصل" };
 
 export const FOLLOW_STATUS = [
-  { value: "call", label: "Call" },
-  { value: "visit", label: "Visit" },
-  { value: "no answer", label: "No Answer" },
-  { value: "other", label: "Other" },
+  { value: "call", label: "مكالمة" },
+  { value: "visit", label: "زيارة منزل" },
+  { value: "whatsapp", label: "واتساب" },
+  { value: "no answer", label: "لا يوجد رد" },
+  { value: "other", label: "أخرى" },
 ];
 
 export function classLabel(className) {
-  return CLASS_LABELS[String(className)] || `Grade ${className}`;
+  return CLASS_LABELS[String(className)] || `صف ${className}`;
 }

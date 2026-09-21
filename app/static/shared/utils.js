@@ -27,15 +27,15 @@ export function lastFridayISO() {
   return toISO(d);
 }
 
-/** "2026-09-19" -> "Fri 19 Sep 2026" */
+/** "2026-09-19" -> "الجمعة 19 سبتمبر 2026" */
 export function formatDate(iso) {
   if (!iso) return "";
   const d = new Date(`${iso}T12:00:00`);
   if (Number.isNaN(d.getTime())) return String(iso);
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const days = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
   const months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+    "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
   ];
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }

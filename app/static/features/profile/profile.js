@@ -19,23 +19,23 @@ export class ProfilePage {
     box.innerHTML = `
       <div class="card-grid profile-grid">
         <div class="card">
-          <h3 style="margin-bottom:12px">Profile</h3>
+          <h3 style="margin-bottom:12px">الملف الشخصي</h3>
           <div class="details">
-            <div class="detail-row"><span>Name</span><span>${escapeHtml(user.user_name)}</span></div>
-            <div class="detail-row"><span>Email</span><span>${escapeHtml(user.mail)}</span></div>
-            <div class="detail-row"><span>Phone</span><span>${escapeHtml(user.phone || "—")}</span></div>
-            <div class="detail-row"><span>Role</span><span>${badge(user.role === ROLES.ADMIN ? "Admin" : "Class Secretary", user.role === ROLES.ADMIN ? "yellow" : "")}</span></div>
-            <div class="detail-row"><span>Class</span><span>${escapeHtml(user.class_name ? classLabel(user.class_name) : user.role === ROLES.ADMIN ? "All classes" : "—")}</span></div>
+            <div class="detail-row"><span>الاسم</span><span>${escapeHtml(user.user_name)}</span></div>
+            <div class="detail-row"><span>البريد الإلكتروني</span><span>${escapeHtml(user.mail)}</span></div>
+            <div class="detail-row"><span>التليفون</span><span>${escapeHtml(user.phone || "—")}</span></div>
+            <div class="detail-row"><span>الدور</span><span>${badge(user.role === ROLES.ADMIN ? "أدمن" : "أمين فصل", user.role === ROLES.ADMIN ? "yellow" : "")}</span></div>
+            <div class="detail-row"><span>الفصل</span><span>${escapeHtml(user.class_name ? classLabel(user.class_name) : user.role === ROLES.ADMIN ? "كل الفصول" : "—")}</span></div>
           </div>
         </div>
         <div class="card">
-          <h3 style="margin-bottom:12px">Change password</h3>
+          <h3 style="margin-bottom:12px">تغيير كلمة المرور</h3>
           <form id="pw-form">
             <div class="field">
-              <label for="pw-new">New password (min 6 characters)</label>
+              <label for="pw-new">كلمة المرور الجديدة (6 حروف على الأقل)</label>
               <input class="input" id="pw-new" name="password" type="password" minlength="6" required autocomplete="new-password" />
             </div>
-            <button class="btn btn-secondary" type="submit" id="pw-submit">Update password</button>
+            <button class="btn btn-secondary" type="submit" id="pw-submit">تحديث كلمة المرور</button>
           </form>
         </div>
       </div>`;
@@ -49,7 +49,7 @@ export class ProfilePage {
       try {
         await this.app.api.patch(`/auth/users/${user.id}`, { password: input.value });
         input.value = "";
-        Toast.success("Password updated.");
+        Toast.success("تم تحديث كلمة المرور.");
       } catch (err) {
         Toast.error(err.message);
       } finally {
@@ -64,9 +64,9 @@ export class ProfilePage {
 
   async renderUsers() {
     const section = document.getElementById("users-section");
-    section.innerHTML = `<h2 class="section-title">Users</h2>
+    section.innerHTML = `<h2 class="section-title">المستخدمون</h2>
       <div class="toolbar"><div class="toolbar-group"></div>
-      <div class="toolbar-group"><button class="btn btn-primary" id="add-user">+ Add User</button></div></div>
+      <div class="toolbar-group"><button class="btn btn-primary" id="add-user">+ إضافة مستخدم</button></div></div>
       <div id="users-content">${skeletonTable(4)}</div>`;
     document.getElementById("add-user").addEventListener("click", () => this.openUserForm());
     const box = document.getElementById("users-content");
@@ -74,20 +74,20 @@ export class ProfilePage {
       const users = await this.app.api.get("/auth/users");
       const list = Array.isArray(users) ? users : [];
       if (!list.length) {
-        box.innerHTML = emptyState("No users", "No accounts found.");
+        box.innerHTML = emptyState("لا يوجد مستخدمون", "لا توجد حسابات مسجلة.");
         return;
       }
       box.innerHTML = table(
-        ["Name", "Email", "Role", "Class", "Actions"],
+        ["الاسم", "البريد الإلكتروني", "الدور", "الفصل", "إجراءات"],
         list.map((u) => `
           <tr>
             <td><strong>${escapeHtml(u.user_name)}</strong></td>
             <td>${escapeHtml(u.mail)}</td>
-            <td>${badge(u.role === ROLES.ADMIN ? "Admin" : "Secretary", u.role === ROLES.ADMIN ? "yellow" : "")}</td>
+            <td>${badge(u.role === ROLES.ADMIN ? "أدمن" : "أمين فصل", u.role === ROLES.ADMIN ? "yellow" : "")}</td>
             <td>${escapeHtml(u.class_name ? classLabel(u.class_name) : "—")}</td>
             <td class="cell-actions">
-              <button class="btn-link" data-uact="edit" data-id="${u.id}">Edit</button>
-              <button class="btn-link danger" data-uact="del" data-id="${u.id}" data-mail="${escapeHtml(u.mail)}">Delete</button>
+              <button class="btn-link" data-uact="edit" data-id="${u.id}">تعديل</button>
+              <button class="btn-link danger" data-uact="del" data-id="${u.id}" data-mail="${escapeHtml(u.mail)}">حذف</button>
             </td>
           </tr>`).join("")
       );
@@ -110,22 +110,22 @@ export class ProfilePage {
     const body = document.createElement("form");
     body.id = "user-form";
     body.innerHTML = `
-      ${field({ name: "user_name", label: "Name", value: v.user_name || "", required: !isEdit })}
-      ${field({ name: "mail", label: "Email", type: "email", value: v.mail || "", required: !isEdit })}
-      ${isEdit ? "" : field({ name: "password", label: "Password", type: "password", value: "", required: true, attrs: 'minlength="6" autocomplete="new-password"' })}
-      ${field({ name: "phone", label: "Phone", type: "tel", value: v.phone || "" })}
-      ${field({ name: "role", label: "Role", value: v.role || "user", options: [
-        { value: "user", label: "Class Secretary" }, { value: "admin", label: "Admin" }] })}
-      ${field({ name: "class_name", label: "Class", value: v.class_name || "", options: [
-        { value: "", label: "None (admin)" },
+      ${field({ name: "user_name", label: "الاسم", value: v.user_name || "", required: !isEdit })}
+      ${field({ name: "mail", label: "البريد الإلكتروني", type: "email", value: v.mail || "", required: !isEdit })}
+      ${isEdit ? "" : field({ name: "password", label: "كلمة المرور", type: "password", value: "", required: true, attrs: 'minlength="6" autocomplete="new-password"' })}
+      ${field({ name: "phone", label: "التليفون", type: "tel", value: v.phone || "" })}
+      ${field({ name: "role", label: "الدور", value: v.role || "user", options: [
+        { value: "user", label: "أمين فصل" }, { value: "admin", label: "أدمن" }] })}
+      ${field({ name: "class_name", label: "الفصل", value: v.class_name || "", options: [
+        { value: "", label: "بدون (أدمن)" },
         ...CLASSES.map((c) => ({ value: c, label: classLabel(c) }))] })}`;
     Modal.open({
-      title: isEdit ? "Edit user" : "Add user",
+      title: isEdit ? "تعديل مستخدم" : "إضافة مستخدم",
       body,
       actions: [
-        { label: "Cancel" },
+        { label: "إلغاء" },
         {
-          label: isEdit ? "Save changes" : "Add user",
+          label: isEdit ? "حفظ التعديلات" : "إضافة",
           kind: "btn-primary",
           onClick: async ({ close, button }) => {
             const form = document.getElementById("user-form");
@@ -135,12 +135,12 @@ export class ProfilePage {
               if (isEdit) {
                 const data = compact(formValues(form));
                 await this.app.api.patch(`/auth/users/${user.id}`, data);
-                Toast.success("User updated.");
+                Toast.success("تم تعديل المستخدم.");
               } else {
                 const data = compact(formValues(form));
                 if (!data.class_name) delete data.class_name;
                 await this.app.api.post("/auth/register", data);
-                Toast.success("User created.");
+                Toast.success("تم إنشاء المستخدم.");
               }
               await this.app.auth.me(true);
               close();
@@ -158,17 +158,17 @@ export class ProfilePage {
   async deleteUser(user) {
     const me = this.app.auth.currentUser();
     if (me && me.id === user.id) {
-      Toast.error("You cannot delete your own account.");
+      Toast.error("لا يمكنك حذف حسابك الخاص.");
       return;
     }
     const ok = await Modal.confirm({
-      title: "Delete user?",
-      message: `"${user.mail}" will be permanently removed.`,
+      title: "حذف المستخدم؟",
+      message: `"${user.mail}" سيتم حذفه نهائيًا.`,
     });
     if (!ok) return;
     try {
       await this.app.api.delete(`/auth/users/${user.id}`);
-      Toast.success("User deleted.");
+      Toast.success("تم حذف المستخدم.");
       await this.renderUsers();
     } catch (err) {
       Toast.error(err.message);

@@ -45,36 +45,36 @@ export class AttendancePage {
   render_shell() {
     this.app.setView(`
       <div class="page-head">
-        <div class="crumb"><a href="#/home">Classes</a> / <a href="#/class/${this.className}">${escapeHtml(classLabel(this.className))}</a></div>
-        <h1>Attendance</h1>
-        <p class="sub">Check who is present. Saving the same date again updates it.</p>
+        <div class="crumb"><a href="#/home">الفصول</a> / <a href="#/class/${this.className}">${escapeHtml(classLabel(this.className))}</a></div>
+        <h1>الحضور</h1>
+        <p class="sub">علّم على الحاضرين بعلامة ✓. حفظ نفس التاريخ مرة أخرى يحدّث الكشف.</p>
       </div>
       <div class="toolbar">
         <div class="toolbar-group">
-          <label class="date-field">Date
+          <label class="date-field">التاريخ
             <input class="input" id="att-date" type="date" value="${this.date}" />
           </label>
         </div>
         <div class="toolbar-group">
-          <input class="input search-input" id="att-search" type="search" placeholder="Search boys..." autocomplete="off" />
+          <input class="input search-input" id="att-search" type="search" placeholder="ابحث بالاسم..." autocomplete="off" />
           <div class="filter-tabs" id="att-gender-tabs">
-            <button data-g="" class="active">All</button>
-            <button data-g="m">Boys</button>
-            <button data-g="f">Girls</button>
+            <button data-g="" class="active">الكل</button>
+            <button data-g="m">أولاد</button>
+            <button data-g="f">بنات</button>
           </div>
         </div>
       </div>
       <div class="att-view-row">
-        <div class="filter-tabs" id="att-view-tabs" role="tablist" aria-label="Attendance view">
-          <button data-view="remaining" class="active">Remaining (<span id="n-remaining">0</span>)</button>
-          <button data-view="present">Present (<span id="n-present">0</span>)</button>
-          <button data-view="all">All</button>
+        <div class="filter-tabs" id="att-view-tabs" role="tablist" aria-label="عرض الحضور">
+          <button data-view="remaining" class="active">المتبقي (<span id="n-remaining">0</span>)</button>
+          <button data-view="present">الحاضرون (<span id="n-present">0</span>)</button>
+          <button data-view="all">الكل</button>
         </div>
       </div>
       <div id="att-content"></div>
       <div class="summary-bar" id="att-summary" hidden>
-        <div class="counts"><span>Present: <strong id="count-present">0</strong></span><span>Absent: <strong id="count-absent">0</strong></span></div>
-        <button class="btn btn-primary" id="att-save">Save Attendance</button>
+        <div class="counts"><span>حاضر: <strong id="count-present">0</strong></span><span>غائب: <strong id="count-absent">0</strong></span></div>
+        <button class="btn btn-primary" id="att-save">حفظ الحضور</button>
       </div>`);
     this.box = document.getElementById("att-content");
 
@@ -124,9 +124,9 @@ export class AttendancePage {
       this.render();
       document.getElementById("att-summary").hidden = !this.allBoys.length;
     } catch (err) {
-      this.box.innerHTML = `<div class="error-block"><h3>Something went wrong</h3>
+      this.box.innerHTML = `<div class="error-block"><h3>حدث خطأ</h3>
         <p>${escapeHtml(err.message)}</p>
-        <button class="btn btn-secondary" id="retry">Try again</button></div>`;
+        <button class="btn btn-secondary" id="retry">حاول مجددًا</button></div>`;
       document.getElementById("retry")?.addEventListener("click", () => this.reload());
     }
   }
@@ -147,16 +147,16 @@ export class AttendancePage {
     const rows = this.visible();
     if (!rows.length) {
       if (!this.allBoys.length) {
-        this.box.innerHTML = emptyState("No boys found", "Add boys to this class before taking attendance.");
+        this.box.innerHTML = emptyState("لا يوجد أولاد", "سجّل أولاد هذا الفصل أولًا قبل أخذ الحضور.");
       } else if (this.view === "remaining") {
         this.box.innerHTML = emptyState(
-          "All done",
-          `Everyone is marked present for ${formatDate(this.date)}.`,
-          `<button class="btn btn-secondary" id="show-all">Review all</button>`
+          "تمام، خلصت",
+          `الكل اتعلم حضور في ${formatDate(this.date)}.`,
+          `<button class="btn btn-secondary" id="show-all">مراجعة الكل</button>`
         );
         document.getElementById("show-all")?.addEventListener("click", () => this.setView("all"));
       } else {
-        this.box.innerHTML = emptyState("No boys match", "Try a different search or filter.");
+        this.box.innerHTML = emptyState("لا توجد نتائج", "جرّب بحثًا أو فلترًا مختلفًا.");
       }
       this.updateCounts();
       return;
@@ -164,21 +164,21 @@ export class AttendancePage {
     this.box.innerHTML = `
       <div class="table-wrap">
         <table class="table att-table">
-          <thead><tr><th style="width:44px"><span class="sr-only">Present</span></th><th>Name</th><th>Note</th></tr></thead>
+          <thead><tr><th style="width:44px"><span class="sr-only">حاضر</span></th><th>الاسم</th><th>ملاحظة</th></tr></thead>
           <tbody>
             ${rows.map((b) => {
               const s = this.state.get(b.id);
               const present = s.attend === ATTEND.YES;
               return `<tr data-row="${b.id}" class="${present ? "row-present" : ""}">
-                <td><input type="checkbox" class="check" data-check="${b.id}"${present ? " checked" : ""} aria-label="Present" /></td>
+                <td><input type="checkbox" class="check" data-check="${b.id}"${present ? " checked" : ""} aria-label="حاضر" /></td>
                 <td><strong>${escapeHtml(b.boy_name)}</strong></td>
-                <td><button class="btn-link" data-note="${b.id}" title="Add note">${s.note ? "&#9998; *" : "&#9998;"}</button></td>
+                <td><button class="btn-link" data-note="${b.id}" title="إضافة ملاحظة">${s.note ? "&#9998; *" : "&#9998;"}</button></td>
               </tr>`;
             }).join("")}
           </tbody>
         </table>
       </div>
-      <p class="muted small" style="margin-top:8px">${escapeHtml(formatDate(this.date))} — review the whole class, then save.</p>`;
+      <p class="muted small" style="margin-top:8px">${escapeHtml(formatDate(this.date))} — راجع الفصل كله ثم احفظ.</p>`;
 
     this.box.querySelectorAll("[data-check]").forEach((cb) => {
       cb.addEventListener("change", () => {
@@ -192,7 +192,7 @@ export class AttendancePage {
       btn.addEventListener("click", async () => {
         const s = this.state.get(btn.dataset.note);
         const boy = this.allBoys.find((b) => b.id === btn.dataset.note);
-        const value = await Modal.note({ title: `Note — ${boy?.boy_name || ""}`, value: s.note });
+        const value = await Modal.note({ title: `ملاحظة — ${boy?.boy_name || ""}`, value: s.note });
         if (value === null) return;
         s.note = value;
         btn.innerHTML = value ? "&#9998; *" : "&#9998;";
@@ -224,7 +224,7 @@ export class AttendancePage {
   async save() {
     if (this._saving) return; // double-click guard: one request at a time
     if (!this.date) {
-      Toast.error("Please choose a date.");
+      Toast.error("من فضلك اختر التاريخ.");
       return;
     }
     const btn = document.getElementById("att-save");
@@ -238,18 +238,18 @@ export class AttendancePage {
     ).values()];
     this._saving = true;
     btn.disabled = true;
-    btn.textContent = "Saving...";
+    btn.textContent = "جارٍ الحفظ...";
     try {
       const user = this.app.auth.currentUser();
       await this.service.saveBulk(this.className, this.date, items, user?.id || null);
-      Toast.success(`Attendance saved for ${formatDate(this.date)}.`);
+      Toast.success(`تم حفظ حضور ${formatDate(this.date)}.`);
       await this.reload(); // re-read canonical rows so a second save is a pure update
     } catch (err) {
       Toast.error(err.message);
     } finally {
       this._saving = false;
       btn.disabled = false;
-      btn.textContent = "Save Attendance";
+      btn.textContent = "حفظ الحضور";
     }
   }
 }

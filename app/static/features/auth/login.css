@@ -10,11 +10,20 @@
   max-width: 380px;
 }
 .login-brand {
-  font-weight: 750;
-  font-size: 22px;
-  letter-spacing: 5px;
+  font-weight: 800;
+  font-size: 30px;
+  letter-spacing: 0;
   margin-bottom: 20px;
   color: var(--navy);
+}
+.login-brand::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 4px;
+  margin-top: 6px;
 }
 .login-box h1 {
   margin-bottom: 4px;
