@@ -39,6 +39,8 @@ BOY_HEADERS = [
 
 TEACHER_HEADERS = ["teacher_name", "phone", "class_name", "duty", "note"]
 
+GROUP_HEADERS = ["teacher_name", "boy_name", "class_name"]
+
 _GENDER_MAP = {
     "m": GenderEnum.MALE,
     "male": GenderEnum.MALE,
@@ -210,11 +212,29 @@ def read_boys_workbook(data: bytes) -> tuple[list[BoyCreate], list[dict]]:
                          build_row=_row_to_boy, entity="boys")
 
 
+def _row_to_group(row: dict) -> dict:
+    teacher = _str(row.get("teacher_name"))
+    boy = _str(row.get("boy_name"))
+    if not teacher:
+        raise ValueError("teacher_name is required")
+    if not boy:
+        raise ValueError("boy_name is required")
+    return {"teacher_name": teacher, "boy_name": boy,
+            "class_name": _parse_class(row.get("class_name")).value}
+
+
 def read_teachers_workbook(data: bytes) -> tuple[list[TeacherCreate], list[dict]]:
     """Parse an .xlsx file (as bytes) into servants."""
     return read_workbook(data, headers=TEACHER_HEADERS,
                          required=("teacher_name", "class_name"), name_key="teacher_name",
                          build_row=_row_to_teacher, entity="teachers")
+
+
+def read_groups_workbook(data: bytes) -> tuple[list[dict], list[dict]]:
+    """Parse a group-assignment sheet: teacher_name | boy_name | class_name."""
+    return read_workbook(data, headers=GROUP_HEADERS,
+                         required=tuple(GROUP_HEADERS), name_key="boy_name",
+                         build_row=_row_to_group, entity="groups")
 
 
 # Backwards-compatible alias (old constant name).

@@ -26,6 +26,8 @@ class BoyCreate(BaseModel):
     class_name: ClassEnum
     note: str | None = None
     issue_flag: bool = False
+    follow_teacher_id: str | None = Field(default=None, description="Servant owning his follow-up group")
+    follow_teacher_name: str | None = Field(default=None, description="Denormalized servant name for listing")
 
 
 class BoyUpdate(BaseModel):
@@ -42,6 +44,8 @@ class BoyUpdate(BaseModel):
     class_name: ClassEnum | None = None
     note: str | None = None
     issue_flag: bool | None = None
+    follow_teacher_id: str | None = None
+    follow_teacher_name: str | None = None
 
 
 class BoyResponse(BoyCreate):

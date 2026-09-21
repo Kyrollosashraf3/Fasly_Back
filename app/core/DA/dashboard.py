@@ -17,6 +17,7 @@ from app.core.data.common import (
     ensure_record_class_access,
     enum_value,
     get_doc_or_404,
+    is_past_friday,
     where_eq,
 )
 from app.models.enums import ClassEnum
@@ -39,13 +40,7 @@ def _pct(present: int, total: int) -> float:
     return round(present * 100 / total, 1) if total else 0.0
 
 
-def _is_past_friday(date_str: str) -> bool:
-    """True only for real Fridays that already passed (no future dates)."""
-    try:
-        d = date.fromisoformat((date_str or "").strip())
-        return d.weekday() == 4 and d <= date.today()
-    except (ValueError, TypeError):
-        return False
+_is_past_friday = is_past_friday  # shared Friday rule (see core.data.common)
 
 
 def _season_start() -> date:

@@ -34,6 +34,8 @@ def _doc_to_response(doc_id: str, data: dict) -> BoyResponse:
         "class_name": data.get("class_name"),
         "note": data.get("note"),
         "issue_flag": data.get("issue_flag", False),
+        "follow_teacher_id": data.get("follow_teacher_id"),
+        "follow_teacher_name": data.get("follow_teacher_name"),
     }
     if data.get("created_at"):
         kwargs["created_at"] = data["created_at"]
@@ -69,6 +71,8 @@ class BoyService(ClassScopedService):
                 "class_name": enum_value(class_name),
                 "note": data.note,
                 "issue_flag": data.issue_flag,
+                "follow_teacher_id": data.follow_teacher_id,
+                "follow_teacher_name": data.follow_teacher_name,
                 "created_at": now,
                 "updated_at": now,
             }

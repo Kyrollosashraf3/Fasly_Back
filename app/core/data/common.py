@@ -103,6 +103,21 @@ def enum_value(value) -> str | None:
     return value.value if hasattr(value, "value") else value
 
 
+def is_past_friday(date_str: str | None) -> bool:
+    """True only for real Fridays that already passed (no future dates).
+
+    The whole system is Friday-based: any record dated another weekday
+    (or a future Friday) is excluded from stats.
+    """
+    from datetime import date as _date
+
+    try:
+        d = _date.fromisoformat((date_str or "").strip())
+        return d.weekday() == 4 and d <= _date.today()
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def get_doc_or_404(collection_ref, doc_id: str, label: str = "Record"):
     """Fetch a document or raise 404 — shared by all service get() methods."""
     doc = collection_ref.document(doc_id).get()

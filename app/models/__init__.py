@@ -4,6 +4,7 @@ from .attend import AttendBulkCreate, AttendCreate, AttendItem, AttendResponse, 
 from .boy import BoyCreate, BoyResponse, BoyUpdate
 from .enums import AttendEnum, ClassEnum, FollowEnum, GenderEnum, RoleEnum
 from .follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
+from .group import GroupAssign, GroupUnassign
 from .teacher import TeacherCreate, TeacherResponse, TeacherUpdate
 from .teacher_check import (
     TeacherCheckBulkCreate,
@@ -39,6 +40,8 @@ __all__ = [
     "FollowUpCreate",
     "FollowUpUpdate",
     "FollowUpResponse",
+    "GroupAssign",
+    "GroupUnassign",
     "UserCreate",
     "UserUpdate",
     "UserResponse",
