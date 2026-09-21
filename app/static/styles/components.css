@@ -80,6 +80,32 @@
   border-color: var(--accent-hover);
 }
 .input::placeholder { color: #a3a3a3; }
+
+/* Dropdown selects: navy box + yellow arrow, options list stays readable */
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  padding-left: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23f4c430' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 12px center;
+}
+select.input:hover { background-color: var(--navy-hover); }
+select.input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+select.input option {
+  background: #fff;
+  color: var(--text);
+  font-weight: 400;
+}
 .field .error-text {
   color: var(--danger);
   font-size: var(--text-xs);
@@ -91,7 +117,7 @@
 .check {
   width: 20px;
   height: 20px;
-  accent-color: var(--accent-hover);
+  accent-color: var(--navy);
   cursor: pointer;
   flex: 0 0 auto;
 }
@@ -100,9 +126,9 @@ tr.row-present { background: var(--accent-soft); }
 /* ---------- Tables ---------- */
 .table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--border);
+  border: 1px solid #e2e8f3;
   border-radius: var(--radius-lg);
-  background: var(--bg);
+  background: rgba(30, 42, 74, 0.045);
 }
 table.table {
   width: 100%;
@@ -152,9 +178,9 @@ table.table {
 
 /* ---------- Cards ---------- */
 .card {
-  border: 1px solid var(--border);
+  border: 1px solid #e2e8f3;
   border-radius: var(--radius-lg);
-  background: var(--bg);
+  background: rgba(30, 42, 74, 0.045);
   padding: 20px;
 }
 .card-grid {
@@ -248,6 +274,9 @@ a.card:hover, button.card:hover {
   text-align: center;
   padding: 48px 20px;
   color: var(--text-secondary);
+  background: rgba(30, 42, 74, 0.045);
+  border: 1px solid #e2e8f3;
+  border-radius: var(--radius-lg);
 }
 .empty-state h3, .error-block h3 { color: var(--text); margin-bottom: 6px; }
 .skeleton-row {

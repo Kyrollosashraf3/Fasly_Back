@@ -8,6 +8,10 @@
 .login-box {
   width: 100%;
   max-width: 380px;
+  background: rgba(30, 42, 74, 0.045);
+  border: 1px solid #e2e8f3;
+  border-radius: var(--radius-lg);
+  padding: 28px 24px;
 }
 .login-brand {
   font-weight: 800;

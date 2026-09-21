@@ -76,6 +76,10 @@ input, select, textarea {
   justify-content: space-between;
   margin-bottom: 16px;
   flex-wrap: wrap;
+  background: rgba(30, 42, 74, 0.045);
+  border: 1px solid #e2e8f3;
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
 }
 .toolbar .toolbar-group {
   display: flex;

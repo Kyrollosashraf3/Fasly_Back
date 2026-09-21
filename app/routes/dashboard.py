@@ -15,6 +15,8 @@ def dashboard_summary(
     streak_n: int = Query(default=4, ge=1, le=52),
     absent_n: int = Query(default=4, ge=0, le=52),
     top_n: int = Query(default=5, ge=1, le=50),
+    trend_n: int = Query(default=8, ge=1, le=52),
+    teacher_trend_n: int = Query(default=8, ge=1, le=52),
     db=Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
@@ -24,8 +26,10 @@ def dashboard_summary(
     streak_n: consecutive presences back from the last recorded friday (default 4).
     absent_n: frequent-absence threshold, absent count > absent_n (default 4).
     top_n: top servants count; ties with the Nth join in (default 5).
+    trend_n / teacher_trend_n: last N fridays in the trend curves (default 8).
     """
-    return DashboardService(db, current_user).summary(class_name, streak_n, absent_n, top_n)
+    return DashboardService(db, current_user).summary(
+        class_name, streak_n, absent_n, top_n, trend_n, teacher_trend_n)
 
 
 @router.get("/boys/{boy_id}")

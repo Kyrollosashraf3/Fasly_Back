@@ -29,6 +29,16 @@ def _pct(present: int, total: int) -> float:
     return round(present * 100 / total, 1) if total else 0.0
 
 
+def _is_past_friday(date_str: str) -> bool:
+    """True only for real Fridays that already passed (no future dates)."""
+    try:
+        from datetime import date as _date
+        d = _date.fromisoformat((date_str or "").strip())
+        return d.weekday() == 4 and d <= _date.today()
+    except (ValueError, TypeError):
+        return False
+
+
 class DashboardService(ClassScopedService):
     """Dashboard analytics. Admin: any/all classes. Amin: own class only."""
 
@@ -52,13 +62,18 @@ class DashboardService(ClassScopedService):
 
     # ---------------- main summary ----------------
     def summary(self, class_name=None, streak_n: int = 4, absent_n: int = 4,
-                top_n: int = 5) -> dict:
+                top_n: int = 5, trend_n: int = 8, teacher_trend_n: int = 8) -> dict:
         classes = self._scope_classes(class_name)
         single = len(classes) == 1
 
         boys = self._read(BOYS, classes)
         attends = self._read(ATTENDS, classes)
         checks = self._read(CHECKS, classes)
+
+        # Friday-only system, past only: drop non-Friday days and any
+        # future-dated records (e.g. next Friday hasn't happened yet).
+        attends = [a for a in attends if _is_past_friday(str(a.get("action_date") or ""))]
+        checks = [r for r in checks if _is_past_friday(str(r.get("action_date") or ""))]
 
         boys_by_id = {b["_id"]: b for b in boys}
 
@@ -193,11 +208,28 @@ class DashboardService(ClassScopedService):
             cutoff = servant_list[top_n - 1]["score"]
             top_servants = [s for s in servant_list if s["score"] >= cutoff]
 
+        # ---- trends: present count per friday (last N fridays, ascending) ----
+        def per_date(recs: list[dict], last_n: int) -> list[dict]:
+            last_n = max(1, last_n)
+            ds = sorted({str(r.get("action_date") or "") for r in recs if r.get("action_date")})
+            ds = ds[-last_n:]
+            out = []
+            for d in ds:
+                day = [r for r in recs if str(r.get("action_date")) == d]
+                p = sum(1 for r in day if r.get("attend") == "y")
+                out.append({"date": d, "present": p,
+                            "absent": len(day) - p, "total": len(day)})
+            return out
+
         result = {
             "scope": {"classes": classes, "single_class": single,
-                      "streak_n": streak_n, "absent_n": absent_n, "top_n": top_n},
+                      "streak_n": streak_n, "absent_n": absent_n, "top_n": top_n,
+                      "trend_n": max(1, trend_n),
+                      "teacher_trend_n": max(1, teacher_trend_n)},
             "counts": {"boys": len(boys), "fridays": len(dates),
                        "teachers": len(servants)},
+            "boys_trend": per_date(attends, trend_n),
+            "teachers_trend": per_date(checks, teacher_trend_n),
             "attendance": {"present": present, "absent": total - present,
                            "total": total, "percent": _pct(present, total),
                            "by_class": by_class},

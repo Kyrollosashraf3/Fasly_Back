@@ -6,9 +6,9 @@
   margin-bottom: 20px;
 }
 .dash-kpi {
-  border: 1px solid var(--border);
+  border: 1px solid #e2e8f3;
   border-radius: var(--radius-lg);
-  background: var(--bg);
+  background: rgba(30, 42, 74, 0.045);
   padding: 16px;
   text-align: center;
 }
@@ -44,7 +44,13 @@
   border-radius: 999px;
 }
 
-.dash-section { margin-bottom: 24px; }
+.dash-section {
+  margin-bottom: 20px;
+  background: rgba(30, 42, 74, 0.045);
+  border: 1px solid #e2e8f3;
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
 .dash-section > h2 {
   font-size: var(--text-lg);
   color: var(--navy);
@@ -87,10 +93,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid #e2e8f3;
   border-radius: var(--radius-md);
   padding: 8px 12px;
-  background: var(--bg);
+  background: rgba(30, 42, 74, 0.045);
 }
 .name-list li strong { font-size: var(--text-base); }
 
@@ -130,3 +136,19 @@
   font-size: var(--text-sm);
   margin-bottom: 6px;
 }
+
+/* Trend curve chart */
+.chart { width: 100%; height: auto; direction: ltr; }
+.chart-grid { stroke: #edf0f6; stroke-width: 1; }
+.chart-base { stroke: #d5dbe8; stroke-width: 1; }
+.chart-ylabel, .chart-xlabel, .chart-val { font-size: 12px; fill: var(--text-secondary); text-anchor: middle; }
+.chart-ylabel { text-anchor: end; }
+.chart-val { fill: var(--navy); font-weight: 700; font-size: 13px; }
+.chart-bar {
+  fill: rgba(30, 42, 74, 0.08);
+  stroke: var(--navy);
+  stroke-width: 1;
+  transition: fill 0.15s ease;
+}
+.chart-bar:hover { fill: rgba(30, 42, 74, 0.2); }
+.chart-bar.max { fill: rgba(244, 196, 48, 0.32); }
