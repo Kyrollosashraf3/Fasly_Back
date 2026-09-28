@@ -1,16 +1,13 @@
 """Group assignment payloads (servant follow-up groups)."""
 
-from pydantic import BaseModel, Field
+from app.db.database import Base
 
+class Group(Base):
 
-class GroupAssign(BaseModel):
-    """Put a list of boys into a servant's group (replaces their old group)."""
+    __tablename__ = "groups"
 
-    teacher_id: str = Field(..., min_length=1)
-    boy_ids: list[str] = Field(..., min_length=1)
+    class_id= Column(Integer, ForeignKey("classes.id", ondelete="CASCADE"), nullable=False)
+    teacher_id= Column(Integer, ForeignKey("teachers.id", ondelete="CASCADE"), nullable=False)
+    boy_id= Column(Integer, ForeignKey("boys.id", ondelete="CASCADE"), nullable=False)
+     
 
-
-class GroupUnassign(BaseModel):
-    """Remove boys from any group."""
-
-    boy_ids: list[str] = Field(..., min_length=1)

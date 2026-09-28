@@ -1,60 +1,77 @@
-# Flow: frontend fetches boys of one class -> servant checks who attended today
-# -> ONE bulk request saves them all. One document per (boy, friday) in "attendance".
-# class_name is denormalized so we can query "class 5 attendance on date X" with no join.
-
 from datetime import date
 
-from pydantic import BaseModel, Field
+from sqlalchemy import (
+    Column,
+    Date,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import relationship
 
-from app.models.enums import AttendEnum, ClassEnum
-
-COLLECTION = "attendance"
-
-
-class AttendCreate(BaseModel):
-    """Payload to record one boy's attendance on a Friday."""
-
-    boy_id: str = Field(..., min_length=1, description="Firestore document id of the boy")
-    boy_name: str | None = Field(default=None, description="Denormalized for listing without a join")
-    class_name: ClassEnum | None = Field(default=None, description="Denormalized from the boy for class+date queries")
-    action_date: date = Field(default_factory=date.today)
-    attend: AttendEnum
-    note: str | None = None
-    recorded_by: str | None = Field(default=None, description="User id of the servant who took attendance")
-    recorded_by_name: str | None = Field(default=None, description="Denormalized for listing without a join")
-
-
-class AttendUpdate(BaseModel):
-    """Partial payload to edit an attendance record — all fields optional."""
-
-    boy_id: str | None = Field(default=None, min_length=1)
-    boy_name: str | None = None
-    class_name: ClassEnum | None = None
-    action_date: date | None = None
-    attend: AttendEnum | None = None
-    note: str | None = None
-    recorded_by: str | None = None
-    recorded_by_name: str | None = None
+from app.db.database import Base
+from app.models.enums import (
+    ATTEND_ENUM_NAME,
+    CLASS_ENUM_NAME,
+    AttendEnum,
+    ClassEnum,
+)
 
 
-class AttendResponse(AttendCreate):
-    """An attendance record as stored in Firestore — includes the document id."""
+class Attend(Base):
+    """Friday attendance of one boy.
 
-    id: str
+    """
 
+    __tablename__ =  "attends"
+    __table_args__ = (
+        UniqueConstraint("boy_id", "action_date", name="uq_attends_boy_id_action_date"),
+        Index("ix_attends_class_name_action_date", "class_name", "action_date"),
+    )
 
-class AttendItem(BaseModel):
-    """One row in the bulk submit — explicit Y/N for every boy shown on screen."""
+    id = Column(Integer, primary_key=True, index=True)
+    class_name = Column(
+        Enum(
+            ClassEnum,
+            name=CLASS_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        index=True,
+    )
+    boy_id = Column(
+        Integer,
+        ForeignKey("boys.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    date = Column(Date, nullable=False, default=date.today, index=True)
+    status = Column(
+        Enum(
+            AttendEnum,
+            name=ATTEND_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+    )
+    note = Column(Text, nullable=True)
+    teacher_id = Column(
+        Integer,
+        ForeignKey("teachers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
-    boy_id: str = Field(..., min_length=1)
-    attend: AttendEnum
-    note: str | None = None
+    # Relationships
+    boy = relationship("Boy", back_populates="attends")
+    teacher = relationship("Teacher", foreign_keys=[recorded_by])
 
-
-class AttendBulkCreate(BaseModel):
-    """Payload for the Friday flow: whole class attendance in a single request."""
-
-    class_name: ClassEnum
-    action_date: date = Field(default_factory=date.today)
-    recorded_by: str | None = None
-    items: list[AttendItem] = Field(..., min_length=1)
+    def __repr__(self) -> str:
+        return (
+            f"<Attend id={self.id} boy_id={self.boy_id} "
+            f"date={self.action_date} attend={self.attend}>"
+        )

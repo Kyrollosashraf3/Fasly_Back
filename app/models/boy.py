@@ -1,56 +1,64 @@
-# app/models/boy.py
-# Boys master data (Sunday school students). One document per boy in the "boys" collection.
+from datetime import datetime
 
-from datetime import date, datetime, timezone
-from pydantic import BaseModel, Field
-from app.models.enums import ClassEnum, GenderEnum
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import relationship
 
-COLLECTION = "boys"
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-class BoyCreate(BaseModel):
-    """Payload to register a new boy."""
-
-    boy_name: str = Field(..., min_length=1)
-    gender: GenderEnum = GenderEnum.MALE
-    birth_date: date | None = None
-    age: int | None = Field(default=None, ge=0)
-    phone: str | None = None
-    phone_2: str | None = None
-    address: str | None = None
-    location: str | None = None  # GPS link
-    class_name: ClassEnum
-    note: str | None = None
-    issue_flag: bool = False
-    follow_teacher_id: str | None = Field(default=None, description="Servant owning his follow-up group")
-    follow_teacher_name: str | None = Field(default=None, description="Denormalized servant name for listing")
+from app.db.database import Base
+from app.models.enums import (
+    CLASS_ENUM_NAME,
+    GENDER_ENUM_NAME,
+    ClassEnum,
+    GenderEnum,
+)
 
 
-class BoyUpdate(BaseModel):
-    """Partial payload to edit a boy — all fields optional."""
+class Boy(Base):
 
-    boy_name: str | None = Field(default=None, min_length=1)
-    gender: GenderEnum | None = None
-    birth_date: date | None = None
-    age: int | None = Field(default=None, ge=0)
-    phone: str | None = None
-    phone_2: str | None = None
-    address: str | None = None
-    location: str | None = None
-    class_name: ClassEnum | None = None
-    note: str | None = None
-    issue_flag: bool | None = None
-    follow_teacher_id: str | None = None
-    follow_teacher_name: str | None = None
+    __tablename__ = "boys"
 
+    id = Column(Integer, primary_key=True, index=True)
+    boy_name = Column(String(255), unique=True, index=True, nullable=False)
+    gender = Column(
+        Enum(
+            GenderEnum,
+            name=GENDER_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        default=GenderEnum.MALE,
+    )
+    birth_date = Column(Date, nullable=True)
+    age = Column(Integer, nullable=True)
+    phone = Column(String(50), nullable=True)
+    phone_2 = Column(String(50), nullable=True)
+    zone = Column(String(255), nullable=True)
+    address = Column(Text, nullable=True)
+    location = Column(String(500), nullable=True)
+    class_name = Column(
+        Enum(
+            ClassEnum,
+            name=CLASS_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        index=True,
+    )
+    note = Column(Text, nullable=True)
+    issue_flag = Column(Boolean, nullable=False, default=False, index=True)
 
-class BoyResponse(BoyCreate):
-    """A boy as stored in Firestore — includes the document id."""
+    # Relationships
+    attends = relationship("Attend", back_populates="boy", cascade="all, delete-orphan")
 
-    id: str
-    created_at: datetime = Field(default_factory=_now)
-    updated_at: datetime = Field(default_factory=_now)
+    def __repr__(self) -> str:
+        return f"<Boy id={self.id} name={self.boy_name} class={self.class_name}>"

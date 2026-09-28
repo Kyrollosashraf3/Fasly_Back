@@ -1,70 +1,81 @@
-# أمين الفصل follows his class servants every Friday:
-# جهزت الدرس؟ حضرت اللتورجيا؟ عملت followup للمجموعة؟ جيت ولا لا؟
-# Servant name comes from the teachers collection (denormalized at write time).
-# One document per (teacher, friday) in the "teacher_checks" collection.
-
 from datetime import date
 
-from pydantic import BaseModel, Field
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import relationship
 
-from app.models.enums import AttendEnum, ClassEnum
+from app.db.database import Base
+from app.models.enums import (
+    ATTEND_ENUM_NAME,
+    CLASS_ENUM_NAME,
+    AttendEnum,
+    ClassEnum,
+)
 
-COLLECTION = "teacher_checks"
-
-
-class TeacherCheckCreate(BaseModel):
-    """Payload for the weekly check on one servant."""
-
-    teacher_id: str = Field(..., min_length=1, description="Firestore document id of the servant (teachers collection)")
-    teacher_name: str | None = Field(default=None, description="Filled from teachers at write time, not trusted from client")
-    class_name: ClassEnum | None = Field(default=None, description="Denormalized for class+date queries")
-    action_date: date = Field(default_factory=date.today)
-    attend: AttendEnum = Field(..., description="Came on Friday or not")
-    prepare_flag: bool = Field(default=False, description="جهز الدرس؟")
-    liturgy_flag: bool = Field(default=False, description="حضر اللتورجيا؟")
-    follow_flag: bool = Field(default=False, description="عمل followup للمجموعة؟")
-    note: str | None = None
-    recorded_by: str | None = Field(default=None, description="User id of the أمين who recorded the check")
-    recorded_by_name: str | None = Field(default=None, description="Denormalized for listing without a join")
-
-
-class TeacherCheckUpdate(BaseModel):
-    """Partial payload to edit a check — all fields optional."""
-
-    teacher_id: str | None = Field(default=None, min_length=1)
-    teacher_name: str | None = None
-    class_name: ClassEnum | None = None
-    action_date: date | None = None
-    attend: AttendEnum | None = None
-    prepare_flag: bool | None = None
-    liturgy_flag: bool | None = None
-    follow_flag: bool | None = None
-    note: str | None = None
-    recorded_by: str | None = None
-    recorded_by_name: str | None = None
+TABLE = "teacher_checks"
 
 
-class TeacherCheckResponse(TeacherCheckCreate):
-    """A check as stored in Firestore — includes the document id."""
+class TeacherCheck(Base):
+    """Weekly check on one servant.
 
-    id: str
+    """
 
+    __tablename__ = TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "teacher_id", "action_date", name="uq_teacher_checks_teacher_id_action_date"
+        ),
+        Index("ix_teacher_checks_class_name_action_date", "class_name", "action_date"),
+    )
 
-class TeacherCheckItem(BaseModel):
-    """One row in the bulk submit — one servant's answers."""
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(
+        Integer,
+        ForeignKey("teachers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    
+    class_name = Column(
+        Enum(
+            ClassEnum,
+            name=CLASS_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=True,
+        index=True,
+    )
+    date = Column(Date, nullable=False, default=date.today, index=True)
+    
+    attend =  Column(Boolean, nullable=False, default=False)
+    prepare = Column(Boolean, nullable=False, default=False)
+    liturgy = Column(Boolean, nullable=False, default=False)
+    follow = Column(Boolean, nullable=False, default=False)
+    note = Column(Text, nullable=True)
+    
+    recorded_by = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    
+    # Relationships
+    teacher = relationship("Teacher", back_populates="teacher_checks")
+    user = relationship("User", back_populates="teacher_checks")
 
-    teacher_id: str = Field(..., min_length=1)
-    attend: AttendEnum
-    prepare_flag: bool = False
-    liturgy_flag: bool = False
-    follow_flag: bool = False
-    note: str | None = None
-
-
-class TeacherCheckBulkCreate(BaseModel):
-    """Payload for the Friday flow: all servants' checks in a single request."""
-
-    class_name: ClassEnum
-    action_date: date = Field(default_factory=date.today)
-    recorded_by: str | None = None
-    items: list[TeacherCheckItem] = Field(..., min_length=1)
+    def __repr__(self) -> str:
+        return (
+            f"<TeacherCheck id={self.id} teacher_id={self.teacher_id} "
+            f"date={self.action_date} attend={self.attend}>"
+        )

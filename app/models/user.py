@@ -1,76 +1,60 @@
-# admins & users accounts - admin sees all classes data - user sees his class only.
-# One document per account in the "users" collection.
+from datetime import datetime
 
-from datetime import datetime, timezone
+from sqlalchemy import Column, DateTime, Enum, Integer, String, func
+from sqlalchemy.orm import relationship
 
-from pydantic import BaseModel, Field
+from app.db.database import Base
+from app.models.enums import (
+    CLASS_ENUM_NAME,
+    ROLE_ENUM_NAME,
+    ClassEnum,
+    RoleEnum,
+)
 
-from app.models.enums import ClassEnum, RoleEnum
-
-COLLECTION = "users"
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-class UserCreate(BaseModel):
-    """Payload to create an account (plain password — hash it before storing)."""
-
-    user_name: str = Field(..., min_length=1)
-    mail: str = Field(..., min_length=5)
-    password: str = Field(..., min_length=6)
-    phone: str | None = None
-    role: RoleEnum = RoleEnum.USER
-    class_name: ClassEnum | None = None
+TABLE = "users"
 
 
-class UserUpdate(BaseModel):
-    """Partial payload to edit an account — all fields optional."""
+class User(Base):
+    """Admin / amin accounts.
 
-    user_name: str | None = Field(default=None, min_length=1)
-    mail: str | None = Field(default=None, min_length=5)
-    password: str | None = Field(default=None, min_length=6)
-    phone: str | None = None
-    role: RoleEnum | None = None
-    class_name: ClassEnum | None = None
+    Admins see every class; an amin (RoleEnum.USER) is locked to his own
+    ``class_name``.
+    """
 
+    __tablename__ = TABLE
 
-class UserResponse(BaseModel):
-    """Safe public shape — never includes any password."""
+    id = Column(Integer, primary_key=True, index=True)
+    user_name = Column(String(255), nullable=False)
+    mail = Column(String(255), unique=True, index=True, nullable=False)
+    phone = Column(String(50), nullable=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(
+        Enum(
+            RoleEnum,
+            name=ROLE_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+    )
+    class_name = Column(
+        Enum(
+            ClassEnum,
+            name=CLASS_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=True,
+        index=True,
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
-    id: str
-    user_name: str
-    mail: str
-    phone: str | None = None
-    role: RoleEnum
-    class_name: ClassEnum | None = None
-    created_at: datetime = Field(default_factory=_now)
+    # Relationships
+    attends = relationship("Attend", back_populates="user")
+    teacher_checks = relationship("TeacherCheck", back_populates="user")
+    follow_ups = relationship("FollowUp", back_populates="user")
 
-    @classmethod
-    def from_doc(cls, doc_id: str, data: dict) -> "UserResponse":
-        """Build a safe user shape from a Firestore document."""
-        kwargs: dict = {
-            "id": doc_id,
-            "user_name": data.get("user_name", ""),
-            "mail": data.get("mail", ""),
-            "phone": data.get("phone"),
-            "role": data.get("role", RoleEnum.USER),
-            "class_name": data.get("class_name"),
-        }
-        if data.get("created_at"):
-            kwargs["created_at"] = data["created_at"]
-        return cls(**kwargs)
-
-
-class UserInDB(UserResponse):
-    """Stored shape — keeps the hash for login checks, never returned by the API."""
-
-    password_hash: str
-
-
-class Token(BaseModel):
-    """JWT returned by /auth/login."""
-
-    access_token: str
-    token_type: str = "bearer"
+    def __repr__(self) -> str:
+        return f"<User id={self.id} mail={self.mail} role={self.role}>"
