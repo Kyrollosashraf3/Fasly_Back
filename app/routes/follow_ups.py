@@ -1,9 +1,10 @@
-﻿from datetime import date
+from datetime import date
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
+from app.core.data import FollowUpService
 from app.db.database import get_db
 from app.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
 from app.schemas.user import UserResponse
@@ -17,7 +18,7 @@ def create_follow_up(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return FollowUpService(db, current_user).create(data)
 
 
 @router.get("", response_model=list[FollowUpResponse])
@@ -29,7 +30,12 @@ def list_follow_ups(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return FollowUpService(db, current_user).list(
+        class_id=class_id,
+        teacher_id=teacher_id,
+        boy_id=boy_id,
+        action_date=action_date,
+    )
 
 
 @router.get("/{record_id}", response_model=FollowUpResponse)
@@ -38,7 +44,7 @@ def get_follow_up(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return FollowUpService(db, current_user).get(record_id)
 
 
 @router.patch("/{record_id}", response_model=FollowUpResponse)
@@ -48,7 +54,7 @@ def update_follow_up(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return FollowUpService(db, current_user).update(record_id, data)
 
 
 @router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -57,4 +63,5 @@ def delete_follow_up(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    FollowUpService(db, current_user).delete(record_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

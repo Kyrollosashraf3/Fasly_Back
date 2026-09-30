@@ -1,7 +1,10 @@
-﻿from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
+from app.core.data import ClassService, TeacherService
+from app.core.EDA.importer import run_import
+from app.core.EDA.read_excel import read_teachers_workbook
 from app.db.database import get_db
 from app.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
 from app.schemas.user import UserResponse
@@ -15,7 +18,7 @@ def create_teacher(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return TeacherService(db, current_user).create(data)
 
 
 @router.post("/import")
@@ -24,7 +27,13 @@ def import_teachers(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    classes = ClassService(db, current_user).label_lookup()
+    return run_import(
+        file,
+        reader=lambda data: read_teachers_workbook(data, classes=classes),
+        service=TeacherService(db, current_user),
+        name_key="teacher_name",
+    )
 
 
 @router.get("", response_model=list[TeacherResponse])
@@ -33,7 +42,7 @@ def list_teachers(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return TeacherService(db, current_user).list(class_id=class_id)
 
 
 @router.get("/{teacher_id}", response_model=TeacherResponse)
@@ -42,7 +51,7 @@ def get_teacher(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return TeacherService(db, current_user).get(teacher_id)
 
 
 @router.patch("/{teacher_id}", response_model=TeacherResponse)
@@ -52,7 +61,7 @@ def update_teacher(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return TeacherService(db, current_user).update(teacher_id, data)
 
 
 @router.delete("/{teacher_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -61,4 +70,5 @@ def delete_teacher(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    TeacherService(db, current_user).delete(teacher_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

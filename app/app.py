@@ -22,6 +22,7 @@ from app.routes import (
     attendance_router,
     auth_router,
     boys_router,
+    classes_router,
     dashboard_router,
     follow_ups_router,
     frontend_router,
@@ -76,6 +77,7 @@ def root():
 app.include_router(auth_router)  # login / register / users
 app.include_router(boys_router)  # boys master data
 app.include_router(teachers_router)  # servants data
+app.include_router(classes_router)  # class catalogue
 app.include_router(attendance_router)  # friday attendance
 app.include_router(follow_ups_router)  # weekly follow-ups
 app.include_router(teacher_checks_router)  # weekly servant checks

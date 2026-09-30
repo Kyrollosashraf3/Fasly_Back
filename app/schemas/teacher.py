@@ -1,13 +1,58 @@
-from pydantic import BaseModel
+from datetime import date, datetime
+
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.base import ORMResponse
 
 
 class TeacherCreate(BaseModel):
-    pass
+    """Register a servant. The login is created separately in ``users``.
+
+    ``last_visit_date`` = last confession/visit by the father; NULL until the
+    first visit is recorded.
+    """
+
+    teacher_name: str = Field(..., min_length=1, max_length=255)
+    phone: str | None = Field(None, max_length=50)
+    class_id: int = Field(..., description="His class - FK classes.id")
+    last_visit_date: date | None = Field(
+        None, description="Last confession/visit by the father - nullable"
+    )
+    note: str | None = None
+
+    @field_validator("last_visit_date")
+    @classmethod
+    def _visit_not_in_future(cls, value: date | None) -> date | None:
+        if value is not None and value > date.today():
+            raise ValueError("last_visit_date cannot be in the future")
+        return value
 
 
 class TeacherUpdate(BaseModel):
-    pass
+    """Partial update - all fields optional."""
+
+    teacher_name: str | None = Field(None, min_length=1, max_length=255)
+    phone: str | None = Field(None, max_length=50)
+    class_id: int | None = None
+    last_visit_date: date | None = Field(
+        None, description="Last confession/visit by the father - nullable"
+    )
+    note: str | None = None
+
+    @field_validator("last_visit_date")
+    @classmethod
+    def _visit_not_in_future(cls, value: date | None) -> date | None:
+        if value is not None and value > date.today():
+            raise ValueError("last_visit_date cannot be in the future")
+        return value
 
 
-class TeacherResponse(TeacherCreate):
-    pass
+class TeacherResponse(ORMResponse):
+    id: int
+    teacher_name: str
+    phone: str | None = None
+    class_id: int
+    last_visit_date: date | None = None
+    note: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None

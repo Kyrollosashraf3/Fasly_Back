@@ -12,8 +12,12 @@ from app.config.logger import get_logger
 logger = get_logger(__name__)
 
 
-def run_import(file: UploadFile, *, reader, service, name_key: str) -> dict:
-    """Run a full workbook import. `service` must expose add_list(items)."""
+def read_upload(file: UploadFile) -> bytes:
+    """Validate the upload envelope and return its bytes.
+
+    Only .xlsx/.xlsm is accepted and an empty body is rejected before any
+    parser is involved.
+    """
     filename = (file.filename or "").lower()
     if not filename.endswith((".xlsx", ".xlsm")):
         raise HTTPException(
@@ -25,6 +29,12 @@ def run_import(file: UploadFile, *, reader, service, name_key: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty."
         )
+    return data
+
+
+def run_import(file: UploadFile, *, reader, service, name_key: str) -> dict:
+    """Run a full workbook import. `service` must expose add_list(items)."""
+    data = read_upload(file)
     try:
         items, parse_errors = reader(data)
     except ValueError as exc:
@@ -40,7 +50,14 @@ def run_import(file: UploadFile, *, reader, service, name_key: str) -> dict:
         "total_rows": len(items) + len(parse_errors),
         "created_count": len(result["created"]),
         "failed_count": len(failed),
-        "created": result["created"],
+        # plain dicts on purpose: ORM rows are not JSON-encodable here
+        "created": [
+            {
+                "id": getattr(row, "id", None),
+                name_key: getattr(row, name_key, None),
+            }
+            for row in result["created"]
+        ],
         "failed": failed,
     }
     logger.info(f"Import done: {summary['created_count']} created, {summary['failed_count']} failed")

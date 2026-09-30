@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -12,6 +12,9 @@ class Teacher(Base):
     Not a login account: the account lives in ``users`` and points back here
     via ``users.teacher_id``. ``duty`` was dropped - what he can see is
     driven entirely by ``users.role``.
+
+    ``last_visit_date`` is the last time the father (أبونا) came for
+    confession/visit. It starts NULL and is filled in as visits happen.
 
     ``follow_ups``/``teacher_checks`` are history and are NOT cascade-deleted:
     the FK is RESTRICT, so a servant with recorded history cannot be dropped
@@ -29,6 +32,7 @@ class Teacher(Base):
         nullable=False,
         index=True,
     )
+    last_visit_date = Column(Date, nullable=True, index=True)
     note = Column(Text, nullable=True)
     created_at = Column(
         DateTime(timezone=True),

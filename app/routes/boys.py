@@ -1,7 +1,10 @@
-﻿from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
+from app.core.data import BoyService, ClassService
+from app.core.EDA.importer import run_import
+from app.core.EDA.read_excel import read_boys_workbook
 from app.db.database import get_db
 from app.schemas.boy import BoyCreate, BoyResponse, BoyUpdate
 from app.schemas.user import UserResponse
@@ -15,7 +18,7 @@ def create_boy(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return BoyService(db, current_user).create(data)
 
 
 @router.post("/import")
@@ -24,7 +27,13 @@ def import_boys(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    classes = ClassService(db, current_user).label_lookup()
+    return run_import(
+        file,
+        reader=lambda data: read_boys_workbook(data, classes=classes),
+        service=BoyService(db, current_user),
+        name_key="boy_name",
+    )
 
 
 @router.get("", response_model=list[BoyResponse])
@@ -34,7 +43,7 @@ def list_boys(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return BoyService(db, current_user).list(class_id=class_id, issue_flag=issue_flag)
 
 
 @router.get("/{boy_id}", response_model=BoyResponse)
@@ -43,7 +52,7 @@ def get_boy(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return BoyService(db, current_user).get(boy_id)
 
 
 @router.patch("/{boy_id}", response_model=BoyResponse)
@@ -53,7 +62,7 @@ def update_boy(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    return BoyService(db, current_user).update(boy_id, data)
 
 
 @router.delete("/{boy_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -62,4 +71,5 @@ def delete_boy(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    pass
+    BoyService(db, current_user).delete(boy_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
