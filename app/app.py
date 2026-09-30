@@ -5,6 +5,7 @@ Run:
 """
 
 import traceback
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import get_logger, settings
 from app.core.auth.bootstrap import ensure_bootstrap_admin
 from app.core.auth.rate_limit import limiter, rate_limit_exceeded_handler
-from app.db.firebase import ensure_collections, init_firebase
+from app.db.database import init_db
 from app.routes import (
     STATIC_DIR,
     attendance_router,
@@ -31,11 +32,24 @@ from app.routes import (
 
 logger = get_logger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: create missing tables, then seed the first admin account."""
+    logger.info("Creating database tables if they do not exist.")
+    init_db()
+    ensure_bootstrap_admin()
+    logger.info("Starting %s ...", settings.APP_NAME)
+    logger.info("App: %s v%s", settings.APP_NAME, settings.APP_VERSION)
+    yield
+
+
 # Create FastAPI app (identity comes from settings, not hardcoded)
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description=settings.APP_DESCRIPTION,
+    lifespan=lifespan,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
@@ -49,15 +63,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Database (Firebase/Firestore singleton + startup collection check)
-init_firebase()
-ensure_collections()
-ensure_bootstrap_admin()
-
-logger.info("Starting %s ...", settings.APP_NAME)
-logger.info("App: %s v%s", settings.APP_NAME, settings.APP_VERSION)
-
 
 @app.get("/")
 def root():
@@ -97,4 +102,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=9001, reload=True)
+    uvicorn.run(
+        "app.main:app", host=settings.HOST, port=settings.PORT, reload=True
+    )

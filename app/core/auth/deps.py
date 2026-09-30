@@ -1,27 +1,23 @@
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
 
 from app.config.logger import get_logger
-from app.config.settings import settings
 from app.core.auth.security import decode_access_token
-from app.db.firebase import get_db
+from app.db.database import get_db
 from app.models.enums import RoleEnum
-from app.models.user import UserResponse
+from app.models.user import User
+from app.schemas.user import UserResponse
 
 logger = get_logger(__name__)
 
 reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
-def _doc_to_user(doc_id: str, data: dict) -> UserResponse:
-    """Build a safe user shape from a Firestore document."""
-    return UserResponse.from_doc(doc_id, data)
-
-
 def get_current_user(
     request: Request,
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
     token: str = Depends(reusable_oauth2),
 ) -> UserResponse:
     """Resolve the authenticated user from the Bearer token."""
@@ -42,18 +38,22 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    doc = db.collection(settings.COLLECTION_USER).document(str(user_id)).get()
-    if not doc.exists:
+    try:
+        pk = int(user_id)
+    except (TypeError, ValueError):
+        pk = None
+
+    user = db.get(User, pk) if pk is not None else None
+    if user is None:
         logger.warning(f"Token references unknown user id={user_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User no longer exists",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user = _doc_to_user(doc.id, doc.to_dict())
     request.state.user_info = f"{user.mail} (id={user.id})"
     logger.debug(f"Authenticated request as {user.mail} (id={user.id}, role={user.role})")
-    return user
+    return UserResponse.model_validate(user)
 
 
 class RoleChecker:

@@ -1,14 +1,14 @@
 """routes package - each file groups related endpoints."""
 
-from .attendance import router as attendance_router
-from .auth import router as auth_router
-from .boys import router as boys_router
-from .dashboard import router as dashboard_router
-from .follow_ups import router as follow_ups_router
-from .frontend import STATIC_DIR, router as frontend_router
-from .groups import router as groups_router
-from .teacher_checks import router as teacher_checks_router
-from .teachers import router as teachers_router
+from app.routes.attendance import router as attendance_router
+from app.routes.auth import router as auth_router
+from app.routes.boys import router as boys_router
+from app.routes.dashboard import router as dashboard_router
+from app.routes.follow_ups import router as follow_ups_router
+from app.routes.frontend import STATIC_DIR, router as frontend_router
+from app.routes.groups import router as groups_router
+from app.routes.teacher_checks import router as teacher_checks_router
+from app.routes.teachers import router as teachers_router
 
 __all__ = [
     "STATIC_DIR",

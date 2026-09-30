@@ -1,7 +1,7 @@
-"""read_excel.py - Read Excel sheets into Create models.
+﻿"""read_excel.py - Read Excel sheets into Create models.
 
 Expected sheet: first row = header with the collection's column names
-(boys: boy_name | gender | ... | issue_flag — teachers: a subset).
+(boys: boy_name | gender | ... | issue_flag â€” teachers: a subset).
 
 - Fully empty rows are skipped.
 - Cell values are coerced (gender m/f, class 1..6, dates, bools).
@@ -17,9 +17,9 @@ from typing import Callable
 from openpyxl import load_workbook
 
 from app.config.logger import get_logger
-from app.models.boy import BoyCreate
+from app.schemas.boy import BoyCreate
 from app.models.enums import ClassEnum, GenderEnum
-from app.models.teacher import TeacherCreate
+from app.schemas.teacher import TeacherCreate
 
 logger = get_logger(__name__)
 
@@ -45,18 +45,18 @@ _GENDER_MAP = {
     "m": GenderEnum.MALE,
     "male": GenderEnum.MALE,
     "boy": GenderEnum.MALE,
-    "ذكر": GenderEnum.MALE,
-    "ولد": GenderEnum.MALE,
+    "Ø°ÙƒØ±": GenderEnum.MALE,
+    "ÙˆÙ„Ø¯": GenderEnum.MALE,
     "f": GenderEnum.FEMALE,
     "female": GenderEnum.FEMALE,
     "girl": GenderEnum.FEMALE,
-    "أنثى": GenderEnum.FEMALE,
-    "انثى": GenderEnum.FEMALE,
-    "بنت": GenderEnum.FEMALE,
+    "Ø£Ù†Ø«Ù‰": GenderEnum.FEMALE,
+    "Ø§Ù†Ø«Ù‰": GenderEnum.FEMALE,
+    "Ø¨Ù†Øª": GenderEnum.FEMALE,
 }
 
-_TRUE_SET = {"1", "true", "yes", "y", "نعم", "صح", "✔"}
-_FALSE_SET = {"0", "false", "no", "n", "لا", "خطأ", ""}
+_TRUE_SET = {"1", "true", "yes", "y", "Ù†Ø¹Ù…", "ØµØ­", "âœ”"}
+_FALSE_SET = {"0", "false", "no", "n", "Ù„Ø§", "Ø®Ø·Ø£", ""}
 
 _DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%d.%m.%Y")
 

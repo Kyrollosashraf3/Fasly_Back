@@ -1,8 +1,9 @@
 """dashboard.py - Aggregated analytics for the Dashboard module.
 
-All computations read the raw collections once and aggregate in Python
-(data size is small: hundreds of boys/checks). One endpoint serves the
-whole dashboard so the frontend needs a single request.
+Each source table is read once (scoped to the visible classes) and
+aggregated in Python - data size is small (hundreds of boys/checks).
+One endpoint serves the whole dashboard so the frontend needs a single
+request.
 
 Score (servant performance) = sum of trues per teacher-check:
     attend=='y' (1) + prepare_flag + liturgy_flag + follow_flag  (max 4/check)
@@ -11,23 +12,16 @@ Score (servant performance) = sum of trues per teacher-check:
 from datetime import date, timedelta
 
 from app.config.logger import get_logger
-from app.config.settings import settings
 from app.core.data.base import ClassScopedService
-from app.core.data.common import (
-    ensure_record_class_access,
-    enum_value,
-    get_doc_or_404,
-    is_past_friday,
-    where_eq,
-)
-from app.models.enums import ClassEnum
+from app.core.data.common import ensure_record_class_access, get_or_404, is_past_friday
+from app.models.attend import Attend
+from app.models.boy import Boy
+from app.models.enums import AttendEnum, ClassEnum
+from app.models.follow_up import FollowUp
+from app.models.teacher import Teacher
+from app.models.teacher_check import TeacherCheck
 
 logger = get_logger(__name__)
-
-ATTENDS = settings.COLLECTION_ATTEND
-BOYS = settings.COLLECTION_BOY
-CHECKS = settings.COLLECTION_TEACHER_CHECK
-FOLLOWUPS = settings.COLLECTION_FOLLOWUP
 
 ALL_CLASSES = [m.value for m in ClassEnum]
 
@@ -35,12 +29,19 @@ ALL_CLASSES = [m.value for m in ClassEnum]
 # (the Friday after Nayrouz feast).
 SEASON_MONTH, SEASON_DAY = 9, 18
 
+PRESENT = AttendEnum.YES
+
 
 def _pct(present: int, total: int) -> float:
     return round(present * 100 / total, 1) if total else 0.0
 
 
-_is_past_friday = is_past_friday  # shared Friday rule (see core.data.common)
+def _class_value(value) -> str | None:
+    return value.value if hasattr(value, "value") else value
+
+
+def _is_present(record) -> bool:
+    return record.attend == PRESENT
 
 
 def _season_start() -> date:
@@ -66,45 +67,51 @@ def _last_friday_passed() -> date:
     return d
 
 
-def _fridays_between(start: date, end: date) -> list[str]:
-    """Every Friday from start to end (inclusive) as ISO strings."""
+def _fridays_between(start: date, end: date) -> list[date]:
+    """Every Friday from start to end (inclusive)."""
     out = []
     d = start
     while d <= end:
-        out.append(d.isoformat())
+        out.append(d)
         d += timedelta(days=7)
     return out
 
 
-def _trailing_streak(history: list[dict], last_date: str | None) -> int:
-    """Consecutive 'y' counting BACKWARD from the last recorded friday.
+def _trailing_streak(history: list, last_date: date | None) -> int:
+    """Consecutive presences counting BACKWARD from the last recorded friday.
 
     The boy must have a record on the last friday itself; the count
     stops at the first absence going back.
     """
     if not history or last_date is None:
         return 0
-    if str(history[-1].get("action_date")) != last_date:
+    if history[-1].action_date != last_date:
         return 0
     n = 0
     for r in reversed(history):
-        if r.get("attend") == "y":
+        if _is_present(r):
             n += 1
         else:
             break
     return n
 
 
-def _per_date(recs: list[dict], last_n: int) -> list[dict]:
+def _per_date(recs: list, last_n: int) -> list[dict]:
     """Present/absent/total per day for the last N recorded days (ascending)."""
     last_n = max(1, last_n)
-    days = sorted({str(r.get("action_date") or "") for r in recs if r.get("action_date")})
+    days = sorted({r.action_date for r in recs if r.action_date})
     out = []
     for d in days[-last_n:]:
-        day = [r for r in recs if str(r.get("action_date")) == d]
-        present = sum(1 for r in day if r.get("attend") == "y")
-        out.append({"date": d, "present": present,
-                    "absent": len(day) - present, "total": len(day)})
+        day = [r for r in recs if r.action_date == d]
+        present = sum(1 for r in day if _is_present(r))
+        out.append(
+            {
+                "date": d.isoformat(),
+                "present": present,
+                "absent": len(day) - present,
+                "total": len(day),
+            }
+        )
     return out
 
 
@@ -124,45 +131,42 @@ class DashboardService(ClassScopedService):
         resolved = self.resolve_class(class_name)
         if resolved is None:
             return list(ALL_CLASSES)
-        return [enum_value(resolved)]
+        return [_class_value(resolved)]
 
-    def _read(self, collection: str, classes: list[str]) -> list[dict]:
-        """Stream raw docs, filtered to scope classes (single query if one)."""
-        col = self.db.collection(collection)
-        query = where_eq(col, "class_name", classes[0]) if len(classes) == 1 else col
-        out = []
-        for d in query.stream():
-            data = d.to_dict() or {}
-            if data.get("class_name") in classes:
-                data["_id"] = d.id
-                out.append(data)
-        return out
+    def _read(self, model, classes: list[str]) -> list:
+        """Rows filtered to the scope classes."""
+        return self.db.query(model).filter(model.class_name.in_(classes)).all()
 
     # ---------------- main summary ----------------
     def summary(self, class_name=None, streak_n: int = 4, absent_n: int = 4,
                 top_n: int = 5, trend_n: int = 8, teacher_trend_n: int = 8) -> dict:
         classes = self._scope_classes(class_name)
 
-        boys = self._read(BOYS, classes)
-        attends = [a for a in self._read(ATTENDS, classes)
-                   if _is_past_friday(str(a.get("action_date") or ""))]
-        checks = [r for r in self._read(CHECKS, classes)
-                  if _is_past_friday(str(r.get("action_date") or ""))]
-        boys_by_id = {b["_id"]: b for b in boys}
+        boys = self._read(Boy, classes)
+        attends = [a for a in self._read(Attend, classes) if is_past_friday(a.action_date)]
+        checks = [r for r in self._read(TeacherCheck, classes) if is_past_friday(r.action_date)]
+        boys_by_id = {b.id: b for b in boys}
         histories = self._histories(attends)
 
-        dates = sorted({str(a.get("action_date") or "") for a in attends if a.get("action_date")})
+        dates = sorted({a.action_date for a in attends if a.action_date})
         last_date = dates[-1] if dates else None
         servant_list = self._servant_scores(checks)
 
         result = {
-            "scope": {"classes": classes, "single_class": len(classes) == 1,
-                      "streak_n": streak_n, "absent_n": absent_n,
-                      "top_n": max(1, top_n),
-                      "trend_n": max(1, trend_n),
-                      "teacher_trend_n": max(1, teacher_trend_n)},
-            "counts": {"boys": len(boys), "fridays": len(dates),
-                       "teachers": len(servant_list)},
+            "scope": {
+                "classes": classes,
+                "single_class": len(classes) == 1,
+                "streak_n": streak_n,
+                "absent_n": absent_n,
+                "top_n": max(1, top_n),
+                "trend_n": max(1, trend_n),
+                "teacher_trend_n": max(1, teacher_trend_n),
+            },
+            "counts": {
+                "boys": len(boys),
+                "fridays": len(dates),
+                "teachers": len(servant_list),
+            },
             "boys_trend": _per_date(attends, trend_n),
             "teachers_trend": _per_date(checks, teacher_trend_n),
             "attendance": self._attendance_stats(attends, classes),
@@ -170,43 +174,63 @@ class DashboardService(ClassScopedService):
             "top_servants": _top_with_ties(servant_list, top_n),
             "streaks": self._streaks(histories, boys_by_id, classes, last_date, streak_n),
             "last_friday": self._last_friday(attends, boys_by_id, classes, last_date),
-            "frequent_absent": self._frequent_absent(histories, boys_by_id, classes, absent_n),
+            "frequent_absent": self._frequent_absent(
+                histories, boys_by_id, classes, absent_n
+            ),
         }
-        logger.info(f"Dashboard summary classes={classes} attends={len(attends)} boys={len(boys)}")
+        logger.info(
+            f"Dashboard summary classes={classes} attends={len(attends)} boys={len(boys)}"
+        )
         return result
 
     @staticmethod
-    def _histories(attends: list[dict]) -> dict[str, list[dict]]:
+    def _histories(attends: list) -> dict:
         """Per-boy records sorted by date (ascending)."""
-        histories: dict[str, list[dict]] = {}
+        histories: dict = {}
         for a in attends:
-            histories.setdefault(a.get("boy_id", ""), []).append(a)
+            histories.setdefault(a.boy_id, []).append(a)
         for h in histories.values():
-            h.sort(key=lambda r: str(r.get("action_date") or ""))
+            h.sort(key=lambda r: r.action_date)
         return histories
 
     @staticmethod
-    def _attendance_stats(attends: list[dict], classes: list[str]) -> dict:
-        present = sum(1 for a in attends if a.get("attend") == "y")
+    def _attendance_stats(attends: list, classes: list[str]) -> dict:
+        present = sum(1 for a in attends if _is_present(a))
         by_class = {}
         for c in classes:
-            recs = [a for a in attends if a.get("class_name") == c]
-            p = sum(1 for r in recs if r.get("attend") == "y")
-            by_class[c] = {"present": p, "absent": len(recs) - p,
-                           "total": len(recs), "percent": _pct(p, len(recs))}
-        return {"present": present, "absent": len(attends) - present,
-                "total": len(attends), "percent": _pct(present, len(attends)),
-                "by_class": by_class}
+            recs = [a for a in attends if _class_value(a.class_name) == c]
+            p = sum(1 for r in recs if _is_present(r))
+            by_class[c] = {
+                "present": p,
+                "absent": len(recs) - p,
+                "total": len(recs),
+                "percent": _pct(p, len(recs)),
+            }
+        return {
+            "present": present,
+            "absent": len(attends) - present,
+            "total": len(attends),
+            "percent": _pct(present, len(attends)),
+            "by_class": by_class,
+        }
 
     @staticmethod
-    def _boy_name(boys_by_id: dict, boy_id: str, history: list) -> str:
-        return (boys_by_id.get(boy_id, {}).get("boy_name")
-                or (history[0].get("boy_name") if history else None) or "؟")
+    def _boy_name(boys_by_id: dict, boy_id, history: list) -> str:
+        boy = boys_by_id.get(boy_id)
+        if boy is not None and boy.boy_name:
+            return boy.boy_name
+        if history and history[0].boy_name:
+            return history[0].boy_name
+        return "—"
 
     @staticmethod
-    def _boy_class(boys_by_id: dict, boy_id: str, history: list):
-        return (boys_by_id.get(boy_id, {}).get("class_name")
-                or (history[0].get("class_name") if history else None))
+    def _boy_class(boys_by_id: dict, boy_id, history: list):
+        boy = boys_by_id.get(boy_id)
+        if boy is not None and boy.class_name is not None:
+            return _class_value(boy.class_name)
+        if history and history[0].class_name is not None:
+            return _class_value(history[0].class_name)
+        return None
 
     def _streaks(self, histories, boys_by_id, classes, last_date, streak_n) -> dict:
         """Boys present N consecutive fridays up to the last recorded one."""
@@ -216,9 +240,13 @@ class DashboardService(ClassScopedService):
             if s >= streak_n:
                 c = self._boy_class(boys_by_id, boy_id, h)
                 if c in groups:
-                    groups[c].append({"boy_id": boy_id,
-                                      "boy_name": self._boy_name(boys_by_id, boy_id, h),
-                                      "streak": s})
+                    groups[c].append(
+                        {
+                            "boy_id": boy_id,
+                            "boy_name": self._boy_name(boys_by_id, boy_id, h),
+                            "streak": s,
+                        }
+                    )
         for lst in groups.values():
             lst.sort(key=lambda x: (-x["streak"], x["boy_name"]))
         return groups
@@ -228,122 +256,171 @@ class DashboardService(ClassScopedService):
         absent, present_n = [], 0
         if last_date:
             for a in attends:
-                if str(a.get("action_date")) != last_date:
+                if a.action_date != last_date:
                     continue
-                if a.get("attend") == "y":
+                if _is_present(a):
                     present_n += 1
                 else:
-                    absent.append({
-                        "boy_id": a.get("boy_id"),
-                        "boy_name": self._boy_name(boys_by_id, a.get("boy_id", ""), [a]),
-                        "class_name": a.get("class_name"),
-                    })
+                    absent.append(
+                        {
+                            "boy_id": a.boy_id,
+                            "boy_name": self._boy_name(boys_by_id, a.boy_id, [a]),
+                            "class_name": _class_value(a.class_name),
+                        }
+                    )
             absent.sort(key=lambda x: x["boy_name"])
         by_class = {c: [] for c in classes}
         for row in absent:
             if row["class_name"] in by_class:
                 by_class[row["class_name"]].append(row)
-        return {"date": last_date, "present_count": present_n,
-                "absent_count": len(absent), "absent": absent, "by_class": by_class}
+        return {
+            "date": last_date.isoformat() if last_date else None,
+            "present_count": present_n,
+            "absent_count": len(absent),
+            "absent": absent,
+            "by_class": by_class,
+        }
 
     def _frequent_absent(self, histories, boys_by_id, classes, absent_n) -> dict:
         """Boys absent on more than N fridays, grouped by class."""
         groups = {c: [] for c in classes}
         for boy_id, h in histories.items():
-            n_abs = sum(1 for r in h if r.get("attend") != "y")
+            n_abs = sum(1 for r in h if not _is_present(r))
             if n_abs > absent_n:
                 c = self._boy_class(boys_by_id, boy_id, h)
                 if c in groups:
-                    groups[c].append({
-                        "boy_id": boy_id,
-                        "boy_name": self._boy_name(boys_by_id, boy_id, h),
-                        "absent_count": n_abs,
-                        "present_count": len(h) - n_abs,
-                        "percent": _pct(len(h) - n_abs, len(h)),
-                    })
+                    groups[c].append(
+                        {
+                            "boy_id": boy_id,
+                            "boy_name": self._boy_name(boys_by_id, boy_id, h),
+                            "absent_count": n_abs,
+                            "present_count": len(h) - n_abs,
+                            "percent": _pct(len(h) - n_abs, len(h)),
+                        }
+                    )
         for lst in groups.values():
             lst.sort(key=lambda x: (-x["absent_count"], x["boy_name"]))
         return groups
 
     @staticmethod
-    def _servant_scores(checks: list[dict]) -> list[dict]:
+    def _servant_scores(checks: list) -> list[dict]:
         """Per-servant true-counts, sorted by score desc then name."""
-        servants: dict[str, dict] = {}
+        servants: dict = {}
         for r in checks:
-            tid = r.get("teacher_id", "")
-            s = servants.setdefault(tid, {
-                "teacher_id": tid,
-                "teacher_name": r.get("teacher_name") or "؟",
-                "class_name": r.get("class_name"),
-                "score": 0, "checks": 0,
-                "attend": 0, "prepare": 0, "liturgy": 0, "follow": 0,
-            })
+            s = servants.setdefault(
+                r.teacher_id,
+                {
+                    "teacher_id": r.teacher_id,
+                    "teacher_name": r.teacher_name or "—",
+                    "class_name": _class_value(r.class_name),
+                    "score": 0,
+                    "checks": 0,
+                    "attend": 0,
+                    "prepare": 0,
+                    "liturgy": 0,
+                    "follow": 0,
+                },
+            )
             s["checks"] += 1
-            if r.get("attend") == "y":
+            if _is_present(r):
                 s["attend"] += 1
                 s["score"] += 1
-            if r.get("prepare_flag"):
+            if r.prepare_flag:
                 s["prepare"] += 1
                 s["score"] += 1
-            if r.get("liturgy_flag"):
+            if r.liturgy_flag:
                 s["liturgy"] += 1
                 s["score"] += 1
-            if r.get("follow_flag"):
+            if r.follow_flag:
                 s["follow"] += 1
                 s["score"] += 1
         return sorted(servants.values(), key=lambda s: (-s["score"], s["teacher_name"]))
 
     # ---------------- boy drill-down ----------------
-    def boy_profile(self, boy_id: str) -> dict:
-        doc = get_doc_or_404(self.db.collection(BOYS), boy_id, "Boy")
-        boy = doc.to_dict() or {}
-        ensure_record_class_access(boy.get("class_name"), self.current_user)
+    def boy_profile(self, boy_id: int) -> dict:
+        boy = get_or_404(self.db, Boy, boy_id, "Boy")
+        ensure_record_class_access(boy.class_name, self.current_user)
 
-        recs = [d.to_dict() or {} for d in
-                where_eq(self.db.collection(ATTENDS), "boy_id", boy_id).stream()]
-        recs.sort(key=lambda r: str(r.get("action_date") or ""))
-        present = sum(1 for r in recs if r.get("attend") == "y")
-        notes = [r.get("note") for r in recs if r.get("note")]
-        if boy.get("note"):
-            notes.insert(0, f"ملاحظة الملف: {boy.get('note')}")
+        recs = (
+            self.db.query(Attend)
+            .filter(Attend.boy_id == boy_id)
+            .order_by(Attend.action_date)
+            .all()
+        )
+        present = sum(1 for r in recs if _is_present(r))
+        notes = [r.note for r in recs if r.note]
+        if boy.note:
+            notes.insert(0, f"boy master note: {boy.note}")
         return {
-            "boy": {"id": boy_id, "boy_name": boy.get("boy_name"),
-                    "gender": boy.get("gender"), "birth_date": boy.get("birth_date"),
-                    "age": boy.get("age"), "phone": boy.get("phone"),
-                    "phone_2": boy.get("phone_2"), "address": boy.get("address"),
-                    "location": boy.get("location"),
-                    "class_name": boy.get("class_name"),
-                    "note": boy.get("note"), "issue_flag": boy.get("issue_flag", False)},
-            "history": [{"action_date": r.get("action_date"), "attend": r.get("attend"),
-                         "note": r.get("note")} for r in recs],
-            "present": present, "absent": len(recs) - present,
-            "total": len(recs), "percent": _pct(present, len(recs)),
+            "boy": {
+                "id": boy.id,
+                "boy_name": boy.boy_name,
+                "gender": _class_value(boy.gender),
+                "birth_date": boy.birth_date.isoformat() if boy.birth_date else None,
+                "age": boy.age,
+                "phone": boy.phone,
+                "phone_2": boy.phone_2,
+                "address": boy.address,
+                "location": boy.location,
+                "class_name": _class_value(boy.class_name),
+                "note": boy.note,
+                "issue_flag": boy.issue_flag,
+            },
+            "history": [
+                {
+                    "action_date": r.action_date.isoformat() if r.action_date else None,
+                    "attend": _class_value(r.attend),
+                    "note": r.note,
+                }
+                for r in recs
+            ],
+            "present": present,
+            "absent": len(recs) - present,
+            "total": len(recs),
+            "percent": _pct(present, len(recs)),
             "notes": notes,
             "season": self._season_table(recs),
             "followups": self._boy_followups(boy_id),
         }
 
     @staticmethod
-    def _season_table(recs: list[dict]) -> dict:
+    def _season_table(recs: list) -> dict:
         """Every Friday since season start -> present/absent (missing = absent)."""
         season_start = _season_start()
-        by_date = {str(r.get("action_date")): r for r in recs}
+        by_date = {r.action_date: r for r in recs}
         fridays = [
-            {"action_date": d,
-             "attend": (by_date[d].get("attend") if d in by_date else "n"),
-             "note": (by_date[d].get("note") if d in by_date else None)}
+            {
+                "action_date": d.isoformat(),
+                "attend": (
+                    _class_value(by_date[d].attend) if d in by_date else AttendEnum.NO.value
+                ),
+                "note": by_date[d].note if d in by_date else None,
+            }
             for d in _fridays_between(season_start, _last_friday_passed())
         ]
-        present = sum(1 for f in fridays if f["attend"] == "y")
-        return {"start": season_start.isoformat(), "present": present,
-                "total": len(fridays), "percent": _pct(present, len(fridays)),
-                "fridays": fridays}
+        present = sum(1 for f in fridays if f["attend"] == AttendEnum.YES.value)
+        return {
+            "start": season_start.isoformat(),
+            "present": present,
+            "total": len(fridays),
+            "percent": _pct(present, len(fridays)),
+            "fridays": fridays,
+        }
 
-    def _boy_followups(self, boy_id: str) -> list[dict]:
+    def _boy_followups(self, boy_id: int) -> list[dict]:
         """Follow-up log for one boy, newest first."""
-        recs = [d.to_dict() or {} for d in
-                where_eq(self.db.collection(FOLLOWUPS), "boy_id", boy_id).stream()]
-        recs.sort(key=lambda r: str(r.get("action_date") or ""), reverse=True)
-        return [{"action_date": r.get("action_date"),
-                 "teacher_name": r.get("teacher_name"),
-                 "status": r.get("status"), "note": r.get("note")} for r in recs]
+        recs = (
+            self.db.query(FollowUp)
+            .filter(FollowUp.boy_id == boy_id)
+            .order_by(FollowUp.action_date.desc())
+            .all()
+        )
+        return [
+            {
+                "action_date": r.action_date.isoformat() if r.action_date else None,
+                "teacher_name": r.teacher_name,
+                "status": _class_value(r.status),
+                "note": r.note,
+            }
+            for r in recs
+        ]

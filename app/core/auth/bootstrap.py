@@ -1,13 +1,11 @@
 """Seeds the first admin account on startup when configured via env vars."""
 
-from datetime import datetime, timezone
-
 from app.config.logger import get_logger
 from app.config.settings import settings
 from app.core.auth.security import get_password_hash
-from app.core.data.common import where_eq
-from app.db.firebase import init_firebase
+from app.db.database import SessionLocal
 from app.models.enums import RoleEnum
+from app.models.user import User
 
 logger = get_logger(__name__)
 
@@ -22,26 +20,31 @@ def ensure_bootstrap_admin() -> None:
         logger.info("Bootstrap admin skipped (ADMIN_MAIL/ADMIN_PASSWORD not set)")
         return
 
-    client = init_firebase()
-    if client is None:
-        raise ConnectionError("Firebase not connected, cannot bootstrap admin")
+    db = SessionLocal()
+    try:
+        existing = (
+            db.query(User)
+            .filter(User.mail == settings.ADMIN_MAIL, User.role == RoleEnum.ADMIN)
+            .first()
+        )
+        if existing is not None:
+            return
 
-    col = client.collection(settings.COLLECTION_USER)
-    existing = list(
-        where_eq(where_eq(col, "mail", settings.ADMIN_MAIL), "role", RoleEnum.ADMIN.value).limit(1).stream()
-    )
-    if existing:
-        return
-
-    _, doc_ref = col.add(
-        {
-            "user_name": settings.ADMIN_USER_NAME,
-            "mail": settings.ADMIN_MAIL,
-            "phone": None,
-            "password_hash": get_password_hash(settings.ADMIN_PASSWORD),
-            "role": RoleEnum.ADMIN.value,
-            "class_name": None,
-            "created_at": datetime.now(timezone.utc),
-        }
-    )
-    logger.info(f"Bootstrap admin created: {settings.ADMIN_MAIL} (id={doc_ref.id})")
+        admin = User(
+            user_name=settings.ADMIN_USER_NAME,
+            mail=settings.ADMIN_MAIL,
+            phone=None,
+            password_hash=get_password_hash(settings.ADMIN_PASSWORD),
+            role=RoleEnum.ADMIN,
+            class_name=None,
+        )
+        db.add(admin)
+        db.commit()
+        db.refresh(admin)
+        logger.info(f"Bootstrap admin created: {admin.mail} (id={admin.id})")
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to create bootstrap admin")
+        raise
+    finally:
+        db.close()
