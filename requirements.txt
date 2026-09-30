@@ -1,11 +1,19 @@
-fastapi==0.141.1
-uvicorn[standard]==0.52.4
-firebase-admin==7.5.0
-pydantic==2.13.5
-python-dotenv==1.2.3
-pydantic-settings
+# database
+sqlalchemy
+psycopg[binary]
+
+# auth / security
 bcrypt
 pyjwt
 slowapi
+
+# fastapi
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+python-dotenv==1.2.3
+pydantic-settings
 python-multipart
+
+# EDA / excel import-export
 openpyxl

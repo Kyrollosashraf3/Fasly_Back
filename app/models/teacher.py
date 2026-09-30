@@ -1,43 +1,55 @@
-# جدول الخدام teacher — بيانات خدام الفصل (الأساتذة):
-# اسم الخادم وتليفونه — بيخدم في فصل كام — ودوره.
-# One document per servant in the "teachers" collection.
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import relationship
 
-from datetime import datetime, timezone
+from app.db.database import Base
 
-from pydantic import BaseModel, Field
-
-from app.models.enums import ClassEnum
-
-COLLECTION = "teachers"
+TABLE = "teachers"
 
 
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
+class Teacher(Base):
+    """Servant (أساتذة/خدام) master data.
 
+    Not a login account: the account lives in ``users`` and points back here
+    via ``users.teacher_id``. ``duty`` was dropped - what he can see is
+    driven entirely by ``users.role``.
 
-class TeacherCreate(BaseModel):
-    """Payload to register a servant (entered/edited by أمين الفصل)."""
+    ``follow_ups``/``teacher_checks`` are history and are NOT cascade-deleted:
+    the FK is RESTRICT, so a servant with recorded history cannot be dropped
+    by accident.
+    """
 
-    teacher_name: str = Field(..., min_length=1)
-    phone: str | None = None
-    class_name: ClassEnum = Field(..., description="The class he serves")
-    duty: str | None = Field(default=None, description="دوره — e.g. مدرس، مسئول مجموعة")
-    note: str | None = None
+    __tablename__ = TABLE
 
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_name = Column(String(255), nullable=False, index=True)
+    phone = Column(String(50), nullable=True)
+    class_id = Column(
+        Integer,
+        ForeignKey("classes.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    note = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
-class TeacherUpdate(BaseModel):
-    """Partial payload to edit a servant — all fields optional."""
+    # Relationships
+    class_ = relationship("SchoolClass", back_populates="teachers")
+    user = relationship(
+        "User", back_populates="teacher", uselist=False, cascade="all, delete-orphan"
+    )
+    groups = relationship("Group", back_populates="teacher", cascade="all, delete-orphan")
+    follow_ups = relationship("FollowUp", back_populates="teacher")
+    teacher_checks = relationship("TeacherCheck", back_populates="teacher")
 
-    teacher_name: str | None = Field(default=None, min_length=1)
-    phone: str | None = None
-    class_name: ClassEnum | None = None
-    duty: str | None = None
-    note: str | None = None
-
-
-class TeacherResponse(TeacherCreate):
-    """A servant as stored in Firestore — includes the document id."""
-
-    id: str
-    created_at: datetime = Field(default_factory=_now)
-    updated_at: datetime = Field(default_factory=_now)
+    def __repr__(self) -> str:
+        return f"<Teacher id={self.id} name={self.teacher_name} class_id={self.class_id}>"

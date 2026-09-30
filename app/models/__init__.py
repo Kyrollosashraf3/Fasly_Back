@@ -1,50 +1,21 @@
-"""models package - Pydantic schemas for Firestore documents."""
+"""models package - SQLAlchemy ORM models mapped to the PostgreSQL tables."""
 
-from .attend import AttendBulkCreate, AttendCreate, AttendItem, AttendResponse, AttendUpdate
-from .boy import BoyCreate, BoyResponse, BoyUpdate
-from .enums import AttendEnum, ClassEnum, FollowEnum, GenderEnum, RoleEnum
-from .follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
-from .group import GroupAssign, GroupUnassign
-from .teacher import TeacherCreate, TeacherResponse, TeacherUpdate
-from .teacher_check import (
-    TeacherCheckBulkCreate,
-    TeacherCheckCreate,
-    TeacherCheckItem,
-    TeacherCheckResponse,
-    TeacherCheckUpdate,
-)
-from .user import Token, UserCreate, UserInDB, UserResponse, UserUpdate
+from app.models.attend import Attend
+from app.models.boy import Boy
+from app.models.follow_up import FollowUp
+from app.models.group import Group
+from app.models.school_class import SchoolClass
+from app.models.teacher import Teacher
+from app.models.teacher_check import TeacherCheck
+from app.models.user import User
 
 __all__ = [
-    "AttendEnum",
-    "FollowEnum",
-    "ClassEnum",
-    "GenderEnum",
-    "RoleEnum",
-    "BoyCreate",
-    "BoyUpdate",
-    "BoyResponse",
-    "AttendCreate",
-    "AttendUpdate",
-    "AttendResponse",
-    "AttendItem",
-    "AttendBulkCreate",
-    "TeacherCreate",
-    "TeacherUpdate",
-    "TeacherResponse",
-    "TeacherCheckCreate",
-    "TeacherCheckUpdate",
-    "TeacherCheckResponse",
-    "TeacherCheckItem",
-    "TeacherCheckBulkCreate",
-    "FollowUpCreate",
-    "FollowUpUpdate",
-    "FollowUpResponse",
-    "GroupAssign",
-    "GroupUnassign",
-    "UserCreate",
-    "UserUpdate",
-    "UserResponse",
-    "UserInDB",
-    "Token",
+    "SchoolClass",
+    "User",
+    "Teacher",
+    "Boy",
+    "Group",
+    "Attend",
+    "FollowUp",
+    "TeacherCheck",
 ]
