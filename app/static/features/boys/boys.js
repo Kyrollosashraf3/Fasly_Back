@@ -1,8 +1,8 @@
 import { BoyService } from "./boys-data.js";
-import { GENDER_LABELS, classLabel } from "../../shared/constants.js";
+import { GENDER_OPTIONS, GENDER_LABELS, classLabel } from "../../shared/constants.js";
 import {
-  Modal, Toast, badge, compact, emptyState, errorBlock,
-  field, formValues, loadingBlock, skeletonTable, table,
+  Modal, Toast, compact, emptyState, errorBlock,
+  field, formValues, skeletonTable, table,
 } from "../../shared/components.js";
 import { calcAge, debounce, escapeHtml } from "../../shared/utils.js";
 
@@ -16,18 +16,32 @@ export class BoysPage {
   }
 
   async mount(ctx) {
-    this.className = ctx.params.className;
+    this.classId = ctx.params.classId;
+    this.canWrite = this.app.auth.canWriteDirectory();
     const html = await this.app.partial("features/boys/boys.html");
     this.app.setView(html);
 
-    document.querySelector("[data-crumb-class]").textContent = classLabel(this.className);
-    document.querySelector("[data-crumb-class]").href = `#/class/${this.className}`;
-    document.querySelector("[data-attendance-link]").href = `#/class/${this.className}/boys/attendance`;
+    const label = classLabel(this.classId);
+    document.querySelector("[data-crumb-class]").textContent = label;
+    document.querySelector("[data-crumb-class]").href = `#/class/${this.classId}`;
+    document.querySelector("[data-attendance-link]").href =
+      `#/class/${this.classId}/boys/attendance`;
 
-    document.getElementById("add-boy").addEventListener("click", () => this.openForm());
-    document.getElementById("import-boys").addEventListener("click", () =>
+    if (!this.canWrite) {
+      for (const id of ["add-boy", "import-boys", "boys-template", "boys-export"]) {
+        const el = document.getElementById(id);
+        if (el) el.hidden = true;
+      }
+    }
+
+    document.getElementById("add-boy")?.addEventListener("click", () => this.openForm());
+    document.getElementById("boys-template")?.addEventListener("click", (e) =>
+      this.download(e.currentTarget, () => this.service.downloadTemplate()));
+    document.getElementById("boys-export")?.addEventListener("click", (e) =>
+      this.download(e.currentTarget, () => this.service.downloadExport(this.classId)));
+    document.getElementById("import-boys")?.addEventListener("click", () =>
       document.getElementById("import-boys-file").click());
-    document.getElementById("import-boys-file").addEventListener("change", (e) =>
+    document.getElementById("import-boys-file")?.addEventListener("change", (e) =>
       this.importFile(e.target.files[0]).finally(() => { e.target.value = ""; }));
     document.getElementById("boys-search").addEventListener(
       "input", debounce((e) => { this.search = e.target.value.trim().toLowerCase(); this.render(); }, 200)
@@ -44,11 +58,22 @@ export class BoysPage {
     await this.load();
   }
 
+  async download(btn, run) {
+    btn.disabled = true;
+    try {
+      await run();
+    } catch (err) {
+      Toast.error(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   async load() {
     const box = document.getElementById("boys-content");
     box.innerHTML = skeletonTable(6);
     try {
-      const data = await this.service.list(this.className);
+      const data = await this.service.list(this.classId);
       this.boys = Array.isArray(data) ? data : [];
       this.render();
     } catch (err) {
@@ -75,7 +100,9 @@ export class BoysPage {
         : emptyState(
             "لا يوجد أولاد",
             "لم يتم تسجيل أي أولاد في هذا الفصل بعد.",
-            `<button class="btn btn-primary" id="empty-add">+ إضافة ولد</button>`
+            this.canWrite
+              ? `<button class="btn btn-primary" id="empty-add">+ إضافة ولد</button>`
+              : ""
           );
       document.getElementById("empty-add")?.addEventListener("click", () => this.openForm());
       return;
@@ -93,14 +120,15 @@ export class BoysPage {
             : `<span class="muted">—</span>`}</td>
           <td class="cell-actions">
             <button class="btn-link" data-act="view" data-id="${b.id}">عرض</button>
+            ${this.canWrite ? `
             <button class="btn-link" data-act="edit" data-id="${b.id}">تعديل</button>
-            <button class="btn-link danger" data-act="del" data-id="${b.id}">حذف</button>
+            <button class="btn-link danger" data-act="del" data-id="${b.id}">حذف</button>` : ""}
           </td>
         </tr>`).join("")
     );
     box.querySelectorAll("button[data-act]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const boy = this.boys.find((x) => x.id === btn.dataset.id);
+        const boy = this.boys.find((x) => String(x.id) === String(btn.dataset.id));
         if (!boy) return;
         if (btn.dataset.act === "view") this.openView(boy);
         if (btn.dataset.act === "edit") this.openForm(boy);
@@ -114,20 +142,23 @@ export class BoysPage {
       `<div class="detail-row"><span>${k}</span><span>${v || "—"}</span></div>`;
     Modal.open({
       title: b.boy_name,
-      sub: `${classLabel(this.className)}${b.issue_flag ? " • محتاج متابعة" : ""}`,
+      sub: `${classLabel(b.class_id)}${b.issue_flag ? " • محتاج متابعة" : ""}`,
       body: `<div class="details">
         ${row("النوع", escapeHtml(GENDER_LABELS[b.gender] || b.gender || "—"))}
         ${row("تاريخ الميلاد", escapeHtml(b.birth_date || "—"))}
         ${row("السن", escapeHtml(calcAge(b.birth_date, b.age)))}
         ${row("التليفون", escapeHtml(b.phone || "—"))}
         ${row("تليفون آخر", escapeHtml(b.phone_2 || "—"))}
+        ${row("المنطقة", escapeHtml(b.zone || "—"))}
         ${row("العنوان", escapeHtml(b.address || "—"))}
         ${row("الموقع", b.location ? `<a href="${escapeHtml(b.location)}" target="_blank" rel="noopener">فتح الخريطة</a>` : "—")}
         ${row("ملاحظة", escapeHtml(b.note || "—"))}
       </div>`,
       actions: [
         { label: "إغلاق" },
-        { label: "تعديل", kind: "btn-primary", onClick: ({ close }) => { close(); this.openForm(b); } },
+        ...(this.canWrite
+          ? [{ label: "تعديل", kind: "btn-primary", onClick: ({ close }) => { close(); this.openForm(b); } }]
+          : []),
       ],
     });
   }
@@ -135,20 +166,24 @@ export class BoysPage {
   openForm(boy = null) {
     const isEdit = Boolean(boy);
     const v = boy || {};
+    const classes = this.app.auth.accessibleClasses();
     const body = document.createElement("form");
     body.id = "boy-form";
     body.innerHTML = `
       ${field({ name: "boy_name", label: "الاسم بالكامل", value: v.boy_name || "", required: true })}
       <div class="form-grid">
-        ${field({ name: "gender", label: "النوع", value: v.gender || "m", options: [
-          { value: "m", label: "ولد" }, { value: "f", label: "بنت" }] })}
-        ${field({ name: "birth_date", label: "تاريخ الميلاد", type: "date", value: v.birth_date || "" })}
+        ${field({ name: "gender", label: "النوع", value: v.gender || "m", options: GENDER_OPTIONS })}
+        ${field({ name: "birth_date", label: "تاريخ الميلاد (السن بيتحسب تلقائي)", type: "date", value: v.birth_date || "" })}
       </div>
       <div class="form-grid">
-        ${field({ name: "age", label: "السن", type: "number", value: v.age ?? "", attrs: 'min="0" max="30"' })}
+        ${field({ name: "class_id", label: "الفصل", value: String(v.class_id ?? this.classId),
+          options: classes.map((c) => ({ value: String(c.id), label: c.name })) })}
         ${field({ name: "phone", label: "التليفون", type: "tel", value: v.phone || "" })}
       </div>
-      ${field({ name: "phone_2", label: "تليفون آخر", type: "tel", value: v.phone_2 || "" })}
+      <div class="form-grid">
+        ${field({ name: "phone_2", label: "تليفون آخر", type: "tel", value: v.phone_2 || "" })}
+        ${field({ name: "zone", label: "المنطقة", value: v.zone || "" })}
+      </div>
       ${field({ name: "address", label: "العنوان", value: v.address || "" })}
       ${field({ name: "location", label: "الموقع (لينك الخريطة)", value: v.location || "" })}
       ${field({ name: "note", label: "ملاحظة", type: "textarea", value: v.note || "" })}
@@ -157,7 +192,7 @@ export class BoysPage {
       </div>`;
     Modal.open({
       title: isEdit ? "تعديل بيانات ولد" : "إضافة ولد",
-      sub: classLabel(this.className),
+      sub: classLabel(this.classId),
       body,
       actions: [
         { label: "إلغاء" },
@@ -169,14 +204,14 @@ export class BoysPage {
             if (!form.reportValidity()) return;
             const values = formValues(form);
             values.issue_flag = form.issue_flag.checked;
-            if (values.age !== "") values.age = Number(values.age);
+            values.class_id = Number(values.class_id);
             button.disabled = true;
             try {
               if (isEdit) {
                 await this.service.update(boy.id, compact(values));
                 Toast.success("تم تعديل البيانات.");
               } else {
-                await this.service.create({ ...compact(values), class_name: this.className });
+                await this.service.create(compact(values));
                 Toast.success("تمت إضافة الولد.");
               }
               close();

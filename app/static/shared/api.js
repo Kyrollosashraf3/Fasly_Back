@@ -100,6 +100,37 @@ export class ApiClient {
     return this.handleResponse(res);
   }
 
+  /** GET a binary attachment (xlsx) and hand it to the browser's downloader. */
+  async download(path, query = null, filename = "export.xlsx") {
+    const headers = {};
+    const token = this.getToken ? this.getToken() : null;
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    let res;
+    try {
+      res = await fetch(this.buildUrl(path, query), { headers });
+    } catch {
+      throw new ApiError(0, "لا يمكن الوصول للسيرفر. تأكد من الاتصال.");
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      const detail = data && data.detail;
+      throw new ApiError(
+        res.status,
+        (typeof detail === "string" && detail) || FRIENDLY[res.status] || "تعذر تنزيل الملف."
+      );
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
   async handleResponse(res) {
 
     if (res.status === 204) return null;

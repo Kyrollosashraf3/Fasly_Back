@@ -1,5 +1,5 @@
 import { TeacherService } from "./teachers-data.js";
-import { ATTEND, classLabel } from "../../shared/constants.js";
+import { classLabel } from "../../shared/constants.js";
 import { Modal, Toast, emptyState, skeletonTable } from "../../shared/components.js";
 import { escapeHtml, formatDate, lastFridayISO } from "../../shared/utils.js";
 
@@ -9,25 +9,26 @@ export class TeacherCheckService {
     this.api = api;
   }
 
-  list(className, actionDate) {
-    return this.api.get("/teacher-checks", { class_name: className, action_date: actionDate });
+  list(classId, actionDate) {
+    const query = {};
+    if (classId !== null && classId !== undefined && classId !== "") query.class_id = classId;
+    if (actionDate) query.action_date = actionDate;
+    return this.api.get("/teacher-checks", query);
   }
 
-  saveBulk(className, actionDate, items, recordedBy = null) {
-    return this.api.post("/teacher-checks/bulk", {
-      class_name: className,
-      action_date: actionDate,
-      recorded_by: recordedBy,
-      items,
-    });
+  saveBulk(actionDate, items) {
+    // TeacherCheckBulkCreate carries only {date, items}.
+    const body = { items };
+    if (actionDate) body.date = actionDate;
+    return this.api.post("/teacher-checks/bulk", body);
   }
 }
 
 const COLS = [
   { key: "attend", label: "حاضر" },
-  { key: "prepare_flag", label: "تحضير الدرس" },
-  { key: "liturgy_flag", label: "القداس" },
-  { key: "follow_flag", label: "افتقاد" },
+  { key: "prepare", label: "تحضير الدرس" },
+  { key: "liturgy", label: "القداس" },
+  { key: "follow", label: "افتقاد" },
 ];
 
 export class TeacherCheckPage {
@@ -41,23 +42,25 @@ export class TeacherCheckPage {
   }
 
   async mount(ctx) {
-    this.className = ctx.params.className;
+    this.classId = ctx.params.classId;
+    this.canWrite = this.app.auth.isManager();
     this.date = lastFridayISO();
     this.render_shell();
     await this.reload();
   }
 
   render_shell() {
+    const label = classLabel(this.classId);
     this.app.setView(`
       <div class="page-head">
-        <div class="crumb"><a href="#/home">الفصول</a> / <a href="#/class/${this.className}">${escapeHtml(classLabel(this.className))}</a></div>
+        <div class="crumb"><a href="#/home">الفصول</a> / <a href="#/class/${this.classId}">${escapeHtml(label)}</a></div>
         <h1>متابعة الخدام</h1>
         <p class="sub">المتابعة الأسبوعية لكل خادم: الحضور وتحضير الدرس والقداس والافتقاد. حفظ نفس التاريخ يحدّث البيانات.</p>
       </div>
       <div class="toolbar">
         <div class="toolbar-group">
           <label class="date-field">التاريخ
-            <input class="input" id="check-date" type="date" value="${this.date}" />
+            <input class="input" id="check-date" type="date" value="${this.date}" ${this.canWrite ? "" : "disabled"} />
           </label>
         </div>
         <div class="toolbar-group">
@@ -65,7 +68,7 @@ export class TeacherCheckPage {
         </div>
       </div>
       <div id="check-content"></div>
-      <div class="summary-bar" id="check-summary" hidden>
+      <div class="summary-bar" id="check-summary" ${this.canWrite ? "" : "hidden"}>
         <div class="counts"><span id="check-count" class="muted small"></span></div>
         <button class="btn btn-primary" id="check-save">حفظ</button>
       </div>`);
@@ -84,11 +87,12 @@ export class TeacherCheckPage {
 
   async reload() {
     this.box.innerHTML = skeletonTable(5);
-    document.getElementById("check-summary").hidden = true;
+    const summary = document.getElementById("check-summary");
+    if (this.canWrite) summary.hidden = true;
     try {
       const [teachers, records] = await Promise.all([
-        this.teachers.list(this.className),
-        this.service.list(this.className, this.date),
+        this.teachers.list(this.classId),
+        this.service.list(this.classId, this.date),
       ]);
       this.allTeachers = Array.isArray(teachers) ? teachers : [];
       const byTeacher = new Map((Array.isArray(records) ? records : []).map((r) => [r.teacher_id, r]));
@@ -96,16 +100,16 @@ export class TeacherCheckPage {
         this.allTeachers.map((t) => {
           const rec = byTeacher.get(t.id);
           return [t.id, {
-            attend: rec ? rec.attend : ATTEND.NO,
-            prepare_flag: Boolean(rec?.prepare_flag),
-            liturgy_flag: Boolean(rec?.liturgy_flag),
-            follow_flag: Boolean(rec?.follow_flag),
+            attend: Boolean(rec && rec.attend),
+            prepare: Boolean(rec?.prepare),
+            liturgy: Boolean(rec?.liturgy),
+            follow: Boolean(rec?.follow),
             note: rec?.note || "",
           }];
         })
       );
       this.render();
-      document.getElementById("check-summary").hidden = !this.allTeachers.length;
+      if (this.canWrite) summary.hidden = !this.allTeachers.length;
     } catch (err) {
       this.box.innerHTML = `<div class="error-block"><h3>حدث خطأ</h3>
         <p>${escapeHtml(err.message)}</p>
@@ -123,6 +127,7 @@ export class TeacherCheckPage {
         : emptyState("لا يوجد خدام", "سجّل خدام هذا الفصل أولًا قبل المتابعة.");
       return;
     }
+    const editable = this.canWrite ? " checked" : "";
     this.box.innerHTML = `
       <div class="table-wrap">
         <table class="table check-table">
@@ -131,13 +136,13 @@ export class TeacherCheckPage {
             ${rows.map((t) => {
               const s = this.state.get(t.id);
               const cells = COLS.map((c) => {
-                const checked = c.key === "attend" ? s.attend === ATTEND.YES : s[c.key];
-                return `<td class="center"><input type="checkbox" class="check" data-col="${c.key}" data-id="${t.id}"${checked ? " checked" : ""} aria-label="${c.label}" /></td>`;
+                const checked = s[c.key] ? editable : "";
+                return `<td class="center"><input type="checkbox" class="check" data-col="${c.key}" data-id="${t.id}"${checked}${this.canWrite ? "" : " disabled"} aria-label="${c.label}" /></td>`;
               }).join("");
               return `<tr>
-                <td><strong>${escapeHtml(t.teacher_name)}</strong><div class="muted small">${escapeHtml(t.duty || "")}</div></td>
+                <td><strong>${escapeHtml(t.teacher_name)}</strong><div class="muted small">${escapeHtml(t.phone || "")}</div></td>
                 ${cells}
-                <td><button class="btn-link" data-note="${t.id}">${s.note ? "&#9998; *" : "&#9998;"}</button></td>
+                <td><button class="btn-link" data-note="${t.id}"${this.canWrite ? "" : " disabled"}>${s.note ? "&#9998; *" : "&#9998;"}</button></td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -147,18 +152,13 @@ export class TeacherCheckPage {
 
     this.box.querySelectorAll("input[data-col]").forEach((cb) => {
       cb.addEventListener("change", () => {
-        const s = this.state.get(cb.dataset.id);
-        if (cb.dataset.col === "attend") {
-          s.attend = cb.checked ? ATTEND.YES : ATTEND.NO;
-        } else {
-          s[cb.dataset.col] = cb.checked;
-        }
+        this.state.get(cb.dataset.id)[cb.dataset.col] = cb.checked;
       });
     });
     this.box.querySelectorAll("[data-note]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const s = this.state.get(btn.dataset.note);
-        const teacher = this.allTeachers.find((t) => t.id === btn.dataset.note);
+        const teacher = this.allTeachers.find((t) => String(t.id) === String(btn.dataset.note));
         const value = await Modal.note({ title: `ملاحظة — ${teacher?.teacher_name || ""}`, value: s.note });
         if (value === null) return;
         s.note = value;
@@ -170,24 +170,28 @@ export class TeacherCheckPage {
   }
 
   async save() {
+    if (!this.canWrite) return;
     if (!this.date) {
       Toast.error("من فضلك اختر التاريخ.");
       return;
     }
     const btn = document.getElementById("check-save");
-    const items = [...this.state.entries()].map(([teacher_id, s]) => ({
-      teacher_id,
-      attend: s.attend,
-      prepare_flag: s.prepare_flag,
-      liturgy_flag: s.liturgy_flag,
-      follow_flag: s.follow_flag,
+    const items = [...this.state.entries()].map(([teacherId, s]) => ({
+      teacher_id: Number(teacherId),
+      attend: Boolean(s.attend),
+      prepare: Boolean(s.prepare),
+      liturgy: Boolean(s.liturgy),
+      follow: Boolean(s.follow),
       note: s.note || null,
     }));
+    if (!items.length) {
+      Toast.error("لا يوجد خدام للمتابعة.");
+      return;
+    }
     btn.disabled = true;
     btn.textContent = "جارٍ الحفظ...";
     try {
-      const user = this.app.auth.currentUser();
-      await this.service.saveBulk(this.className, this.date, items, user?.id || null);
+      await this.service.saveBulk(this.date, items);
       Toast.success(`تم حفظ متابعة الخدام في ${formatDate(this.date)}.`);
     } catch (err) {
       Toast.error(err.message);

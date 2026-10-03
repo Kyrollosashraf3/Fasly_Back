@@ -1,5 +1,5 @@
 import { DashboardService } from "./dashboard-data.js";
-import { CLASSES, classLabel } from "../../shared/constants.js";
+import { classLabel } from "../../shared/constants.js";
 import { badge, emptyState, loadingBlock, table } from "../../shared/components.js";
 import { escapeHtml, formatDate } from "../../shared/utils.js";
 import { groupList, nOptions, openBoyModal, trendChart } from "./dashboard-shared.js";
@@ -8,7 +8,7 @@ export class BoysPerformancePage {
   constructor(app) {
     this.app = app;
     this.service = new DashboardService(app.api);
-    this.className = "";
+    this.classId = "";
     this.streakN = 4;
     this.absentN = 4;
     this.trendN = 8;
@@ -22,12 +22,16 @@ export class BoysPerformancePage {
 
     const allowed = this.app.auth.accessibleClasses();
     const sel = document.getElementById("dash-class");
-    const bothAll = allowed.length > 1 || this.app.auth.isAdmin();
-    sel.innerHTML = (bothAll ? `<option value="">كل الفصول</option>` : "") +
-      (bothAll ? CLASSES : allowed).map((c) =>
-        `<option value="${c}">${classLabel(c)}</option>`).join("");
+    const showAll = this.app.auth.isManager() && allowed.length > 1;
+    sel.innerHTML = (showAll ? `<option value="">كل الفصول</option>` : "") +
+      allowed.map((c) =>
+        `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+    if (!showAll && allowed.length) {
+      this.classId = allowed[0].id;
+      sel.value = String(allowed[0].id);
+    }
     sel.addEventListener("change", async () => {
-      this.className = sel.value;
+      this.classId = sel.value;
       await this.load();
     });
 
@@ -38,7 +42,7 @@ export class BoysPerformancePage {
     this.box.innerHTML = loadingBlock("جارٍ حساب مؤشرات الأولاد...");
     try {
       this.data = await this.service.summary({
-        className: this.className || null,
+        classId: this.classId || null,
         streakN: this.streakN,
         absentN: this.absentN,
         trendN: this.trendN,

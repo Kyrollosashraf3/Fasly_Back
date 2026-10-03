@@ -4,8 +4,13 @@ export class BoyService {
     this.api = api;
   }
 
-  list(className, issueFlag = null) {
-    return this.api.get("/boys", { class_name: className, issue_flag: issueFlag });
+  list(classId, issueFlag = null) {
+    const query = {};
+    if (classId !== null && classId !== undefined && classId !== "") {
+      query.class_id = classId;
+    }
+    if (issueFlag !== null && issueFlag !== undefined) query.issue_flag = issueFlag;
+    return this.api.get("/boys", query);
   }
 
   get(boyId) {
@@ -26,5 +31,15 @@ export class BoyService {
 
   importExcel(file) {
     return this.api.upload("/boys/import", file);
+  }
+
+  /** Ready-to-upload sample sheet with class_name already filled. */
+  downloadTemplate() {
+    return this.api.download("/boys/template", null, "boys.xlsx");
+  }
+
+  downloadExport(classId = null) {
+    const query = classId ? { class_id: classId } : null;
+    return this.api.download("/boys/export", query, "boys.xlsx");
   }
 }

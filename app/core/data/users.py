@@ -5,7 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.auth.security import get_password_hash
-from app.core.data.base import BaseService
+from app.core.data.base import MANAGER_ROLES, BaseService
 from app.core.data.common import ensure_unique_field, get_or_404
 from app.models.boy import Boy
 from app.models.enums import RoleEnum
@@ -104,10 +104,27 @@ class UserService(BaseService):
 
     def update_user(self, user_id: int, data: UserUpdate) -> User:
         user = self.get_user(user_id)
-        self.scope.require_manager()
 
         updates = data.model_dump(exclude_unset=True)
         password = updates.pop("password", None)
+
+        if self.scope.role not in MANAGER_ROLES:
+            # Self-service: a servant or a boy may reset his own password and
+            # nothing else - role, owner links and the address are privileged.
+            if user.id != self.current_user.id:
+                self.scope.deny(
+                    "You do not have permission to perform this operation."
+                )
+            if updates:
+                self.scope.deny("Only an administrator can change that.")
+            if not password:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Nothing to update.",
+                )
+            user.password_hash = get_password_hash(password)
+            self._commit(f"User password reset id={user_id} (self)")
+            return user
 
         # the schema validated the payload on its own; re-check the *merged*
         # row so a partial PATCH can never leave role/owner out of sync.

@@ -227,10 +227,12 @@ class GroupsService(ClassScopedService):
                 )
         return {"created": created, "failed": failed}
 
-    def export_rows(self, class_id: int | None = None) -> dict:
+    def export_rows(
+        self, class_id: int | None = None, teacher_id: int | None = None
+    ) -> dict:
         """:meth:`list` plus the attendance / follow-up columns the workbook
         prints, computed for every boy of the sheet in two bulk queries."""
-        payload = self.list(class_id=class_id)
+        payload = self.list(class_id=class_id, teacher_id=teacher_id)
         boy_ids = [b["boy_id"] for g in payload["groups"] for b in g["boys"]]
         stats = self._attendance_stats(boy_ids)
         lasts = self._last_followups(boy_ids)

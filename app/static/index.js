@@ -2,7 +2,7 @@ import { ApiClient } from "./shared/api.js";
 import { AuthService } from "./shared/auth.js";
 import { Router } from "./shared/router.js";
 import { storage } from "./shared/storage.js";
-import { classLabel } from "./shared/constants.js";
+import { ROLES, classLabel } from "./shared/constants.js";
 import { escapeHtml } from "./shared/utils.js";
 
 const outlet = document.getElementById("view");
@@ -40,12 +40,17 @@ function setView(html) {
   outlet.focus({ preventScroll: true });
 }
 
+function displayName(user) {
+  if (!user) return "";
+  return user.display_name || user.email || "";
+}
+
 function setTopbar(title) {
   const user = auth.currentUser();
   topbar.innerHTML = `
     <div class="topbar-title">${escapeHtml(title)}</div>
     <div class="user-chip">
-      ${user ? `<span>أهلًا، <strong>${escapeHtml(user.user_name)}</strong></span>` : ""}
+      ${user ? `<span>أهلًا، <strong>${escapeHtml(displayName(user))}</strong></span>` : ""}
     </div>`;
 }
 
@@ -60,32 +65,48 @@ function renderSidebar(ctx) {
     return;
   }
   const path = ctx.path;
+  const role = user.role;
+  const isBoy = role === ROLES.USER;
+  const isTeacher = role === ROLES.TEACHER;
+  const manager = auth.isManager();
+
   const classes = auth.accessibleClasses();
-  const inClass = ctx.params.className;
+  const inClass = ctx.params.classId;
   const cls = (c) => `/class/${c}`;
 
   let html = `<div class="brand"><a href="#/home">فصلي</a></div><hr />`;
   html += navLink("/home", "الرئيسية", path === "/home");
-  html += navLink("/dashboard/boys", "أداء الأولاد", path === "/dashboard/boys");
-  html += navLink("/dashboard/teachers", "أداء الخدام", path === "/dashboard/teachers");
-  html += navLink("/reveal", "اكشفلي", path === "/reveal");
-  html += navLink("/groups", "مجموعتي", path === "/groups");
+
+  if (!isBoy) {
+    html += navLink("/groups", "المجموعات", path === "/groups");
+    html += navLink("/reveal", "اكشفلي", path === "/reveal");
+  }
+  if (manager) {
+    html += navLink("/dashboard/boys", "أداء الأولاد", path === "/dashboard/boys");
+    html += navLink("/dashboard/teachers", "أداء الخدام", path === "/dashboard/teachers");
+  }
 
   if (inClass && auth.canAccess(inClass)) {
+    const label = classLabel(inClass);
     html += `<hr />
       <a class="nav-link nav-back" href="#/home">&rarr; الفصول</a>
-      <div class="class-title">${escapeHtml(classLabel(inClass))}</div>
+      <div class="class-title">${escapeHtml(label)}</div>
       <div class="nav-label">إدارة</div>`;
     html += navLink(cls(inClass), "نظرة عامة", path === cls(inClass));
     html += navLink(`${cls(inClass)}/boys`, "بيانات الأولاد", path === `${cls(inClass)}/boys`);
     html += navLink(`${cls(inClass)}/boys/attendance`, "الحضور", path === `${cls(inClass)}/boys/attendance`);
-    html += navLink(`${cls(inClass)}/teachers`, "الخدام", path === `${cls(inClass)}/teachers`);
-    html += navLink(`${cls(inClass)}/teachers/check`, "متابعة الخدام", path === `${cls(inClass)}/teachers/check`);
+    if (manager) {
+      html += navLink(`${cls(inClass)}/teachers`, "الخدام", path === `${cls(inClass)}/teachers`);
+      html += navLink(`${cls(inClass)}/teachers/check`, "متابعة الخدام", path === `${cls(inClass)}/teachers/check`);
+    }
     html += navLink(`${cls(inClass)}/follow-up`, "الافتقاد", path === `${cls(inClass)}/follow-up`);
   } else {
     html += `<div class="nav-label">الفصول</div>`;
+    if (!classes.length) {
+      html += `<div class="muted small" style="padding:6px 10px">لا توجد فصول مسندة لحسابك.</div>`;
+    }
     for (const c of classes) {
-      html += navLink(cls(c), classLabel(c), path.startsWith(cls(c)));
+      html += navLink(cls(c.id), classLabel(c), path.startsWith(cls(c.id)));
     }
   }
 
@@ -128,11 +149,12 @@ router.beforeEach = async (ctx) => {
   if (!auth.isAuthenticated()) return "/login";
   try {
     await auth.me();
+    await auth.syncClasses();
   } catch {
     auth.logout();
     return "/login";
   }
-  if (ctx.params.className && !auth.canAccess(ctx.params.className)) return "/home";
+  if (ctx.params.classId && !auth.canAccess(ctx.params.classId)) return "/home";
   return null;
 };
 
@@ -158,6 +180,8 @@ function mount(Page, title) {
   };
 }
 
+const classTitle = (ctx) => classLabel(ctx.params.classId);
+
 router
   .add("/login", mount(LoginPage, "تسجيل الدخول"), { public: true })
   .add("/home", mount(HomePage, "الرئيسية"))
@@ -165,13 +189,13 @@ router
   .add("/dashboard/boys", mount(BoysPerformancePage, "أداء الأولاد"))
   .add("/dashboard/teachers", mount(TeachersPerformancePage, "أداء الخدام"))
   .add("/reveal", mount(RevealPage, "اكشفلي"))
-  .add("/groups", mount(GroupsPage, "مجموعتي"))
-  .add("/class/:className", mount(ClassPage, (c) => classLabel(c.params.className)))
-  .add("/class/:className/boys", mount(BoysPage, (c) => `${classLabel(c.params.className)} / بيانات الأولاد`))
-  .add("/class/:className/boys/attendance", mount(AttendancePage, (c) => `${classLabel(c.params.className)} / الحضور`))
-  .add("/class/:className/teachers", mount(TeachersPage, (c) => `${classLabel(c.params.className)} / الخدام`))
-  .add("/class/:className/teachers/check", mount(TeacherCheckPage, (c) => `${classLabel(c.params.className)} / متابعة الخدام`))
-  .add("/class/:className/follow-up", mount(FollowUpPage, (c) => `${classLabel(c.params.className)} / الافتقاد`))
+  .add("/groups", mount(GroupsPage, "المجموعات"))
+  .add("/class/:classId", mount(ClassPage, classTitle))
+  .add("/class/:classId/boys", mount(BoysPage, (c) => `${classLabel(c.params.classId)} / بيانات الأولاد`))
+  .add("/class/:classId/boys/attendance", mount(AttendancePage, (c) => `${classLabel(c.params.classId)} / الحضور`))
+  .add("/class/:classId/teachers", mount(TeachersPage, (c) => `${classLabel(c.params.classId)} / الخدام`))
+  .add("/class/:classId/teachers/check", mount(TeacherCheckPage, (c) => `${classLabel(c.params.classId)} / متابعة الخدام`))
+  .add("/class/:classId/follow-up", mount(FollowUpPage, (c) => `${classLabel(c.params.classId)} / الافتقاد`))
   .add("/profile", mount(ProfilePage, "الحساب"));
 
 router.start();

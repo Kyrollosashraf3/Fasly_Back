@@ -77,7 +77,9 @@ def list_groups(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
-    return GroupsService(db, current_user).list(
+    """Roster plus each boy's attendance % and last follow-up (the sheet the
+    UI renders needs those two columns, so the export payload is reused)."""
+    return GroupsService(db, current_user).export_rows(
         class_id=class_id, teacher_id=teacher_id
     )
 

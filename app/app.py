@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_logger, settings
-from app.core.auth.bootstrap import ensure_bootstrap_admin
+from app.core.auth.bootstrap import ensure_bootstrap_admin, ensure_default_classes
 from app.core.auth.rate_limit import limiter, rate_limit_exceeded_handler
 from app.db.database import init_db
 from app.routes import (
@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
     """Startup: create missing tables, then seed the first admin account."""
     logger.info("Creating database tables if they do not exist.")
     init_db()
+    ensure_default_classes()
     ensure_bootstrap_admin()
     logger.info("Starting %s ...", settings.APP_NAME)
     logger.info("App: %s v%s", settings.APP_NAME, settings.APP_VERSION)

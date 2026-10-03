@@ -2,13 +2,10 @@ import { GroupsService } from "./groups-data.js";
 import { DashboardService } from "../dashboard/dashboard-data.js";
 import { BoyService } from "../boys/boys-data.js";
 import { TeacherService } from "../teachers/teachers-data.js";
-import { CLASSES, classLabel } from "../../shared/constants.js";
-import { FOLLOW_STATUS } from "../../shared/constants.js";
+import { FOLLOW_STATUS_LABELS, classLabel } from "../../shared/constants.js";
 import { Toast, badge, emptyState, loadingBlock, table, Modal } from "../../shared/components.js";
 import { escapeHtml, formatDate } from "../../shared/utils.js";
 import { openBoyModal } from "../dashboard/dashboard-shared.js";
-
-const STATUS_LABEL = Object.fromEntries(FOLLOW_STATUS.map((s) => [s.value, s.label]));
 
 export class GroupsPage {
   constructor(app) {
@@ -17,25 +14,32 @@ export class GroupsPage {
     this.drill = new DashboardService(app.api);
     this.boys = new BoyService(app.api);
     this.teachers = new TeacherService(app.api);
-    this.className = "";
+    this.classId = "";
     this.teacherId = "";
     this.allBoys = [];
     this.allTeachers = [];
     this.data = null;
+    this.groupedIds = new Set();
+    this.canWrite = false;
   }
 
   async mount() {
     const html = await this.app.partial("features/groups/groups.html");
     this.app.setView(html);
     this.box = document.getElementById("grp-content");
+    this.canWrite = this.app.auth.canWriteDirectory();
 
-    const allowed = this.app.auth.accessibleClasses();
-    const bothAll = allowed.length > 1 || this.app.auth.isAdmin();
+    const classes = this.app.auth.accessibleClasses();
+    const showAll = this.canWrite && classes.length > 1;
     const classSel = document.getElementById("grp-class");
-    classSel.innerHTML = (bothAll ? `<option value="">كل الفصول</option>` : "") +
-      (bothAll ? CLASSES : allowed).map((c) => `<option value="${c}">${classLabel(c)}</option>`).join("");
+    classSel.innerHTML = (showAll ? `<option value="">كل الفصول</option>` : "") +
+      classes.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+    if (!showAll && classes.length) {
+      this.classId = classes[0].id;
+      classSel.value = String(classes[0].id);
+    }
     classSel.addEventListener("change", async () => {
-      this.className = classSel.value;
+      this.classId = classSel.value;
       this.teacherId = "";
       await this.reloadBase();
     });
@@ -43,12 +47,13 @@ export class GroupsPage {
     document.getElementById("grp-teacher").addEventListener("change", async (e) => {
       this.teacherId = e.target.value;
       await this.load();
+      this.renderAssignBoys();
     });
     document.getElementById("grp-export").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
       try {
-        await this.service.exportFile(this.className || null);
+        await this.service.exportFile(this.classId || null);
         Toast.success("تم تنزيل الشيت.");
       } catch (err) {
         Toast.error(err.message);
@@ -56,6 +61,15 @@ export class GroupsPage {
         btn.disabled = false;
       }
     });
+
+    if (!this.canWrite) {
+      for (const id of ["grp-assign-save", "grp-import"]) {
+        const el = document.getElementById(id);
+        if (el) el.hidden = true;
+      }
+      document.getElementById("grp-assign-hint").hidden = true;
+    }
+
     document.getElementById("grp-assign-save").addEventListener("click", () => this.saveAssign());
     document.getElementById("grp-import").addEventListener("click", () =>
       document.getElementById("grp-import-file").click());
@@ -68,8 +82,8 @@ export class GroupsPage {
   async reloadBase() {
     try {
       const [boys, teachers] = await Promise.all([
-        this.boys.list(this.className || undefined),
-        this.teachers.list(this.className || undefined),
+        this.boys.list(this.classId || undefined),
+        this.teachers.list(this.classId || undefined).catch(() => []),
       ]);
       this.allBoys = Array.isArray(boys) ? boys : [];
       this.allTeachers = Array.isArray(teachers) ? teachers : [];
@@ -85,18 +99,27 @@ export class GroupsPage {
     const aSel = document.getElementById("grp-assign-teacher");
     aSel.innerHTML = `<option value="">اختر الخادم...</option>` +
       this.allTeachers.map((t) => `<option value="${t.id}">${escapeHtml(t.teacher_name)}</option>`).join("");
-    this.renderAssignBoys();
     await this.load();
+    this.renderAssignBoys();
+  }
+
+  /** Boy ids already inside some group (a boy belongs to exactly one). */
+  collectGroupedIds() {
+    this.groupedIds = new Set();
+    for (const g of (this.data && this.data.groups) || []) {
+      for (const b of g.boys || []) this.groupedIds.add(b.boy_id);
+    }
   }
 
   renderAssignBoys() {
+    this.collectGroupedIds();
     const box = document.getElementById("grp-assign-boys");
-    // Only boys with no group yet — already-grouped boys are managed
-    // from their servant's section (or moved via the import sheet).
-    const free = this.allBoys.filter((b) => !b.follow_teacher_id);
+    // Only boys with no group yet — grouped boys move through their servant's
+    // "تعديل المجموعة" editor or the import sheet.
+    const free = this.allBoys.filter((b) => !this.groupedIds.has(b.id));
     if (!free.length) {
       box.innerHTML = this.allBoys.length
-        ? emptyState("كل الأولاد متوزعون", "لا يوجد أولاد بدون مجموعة في هذا الفصل.")
+        ? emptyState("كل الأولاد متوزعين", "لا يوجد أولاد بدون مجموعة في هذا الفصل.")
         : emptyState("لا يوجد أولاد", "اختر فصلًا به أولاد مسجلون.");
       return;
     }
@@ -105,7 +128,8 @@ export class GroupsPage {
   }
 
   pickedBoys() {
-    return [...document.querySelectorAll("#grp-assign-boys input:checked")].map((c) => c.value);
+    return [...document.querySelectorAll("#grp-assign-boys input:checked")]
+      .map((c) => Number(c.value));
   }
 
   async saveAssign() {
@@ -131,6 +155,7 @@ export class GroupsPage {
       Toast.error(err.message);
     }
   }
+
   async importFile(file) {
     if (!file) return;
     const btn = document.getElementById("grp-import");
@@ -146,11 +171,11 @@ export class GroupsPage {
         : `<p class="muted">كل الصفوف اتوزعت بدون أخطاء.</p>`;
       Modal.open({
         title: "انتهى الاستيراد",
-        sub: `${file.name} — ${result.assigned_count} اتوزعوا، ${result.failed_count} اتخطوا`,
+        sub: `${file.name} — ${result.created_count} اتوزعوا، ${result.failed_count} اتخطوا`,
         body: failRows,
         actions: [{ label: "تمام", kind: "btn-primary" }],
       });
-      Toast.success(`اتوزع ${result.assigned_count} من الشيت.`);
+      Toast.success(`اتوزع ${result.created_count} من الشيت.`);
       await this.reloadBase();
     } catch (err) {
       Toast.error(err.message);
@@ -163,7 +188,7 @@ export class GroupsPage {
   async load() {
     this.box.innerHTML = loadingBlock("جارٍ تحميل المجموعات...");
     try {
-      this.data = await this.service.list(this.className || null, this.teacherId || null);
+      this.data = await this.service.list(this.classId || null, this.teacherId || null);
       this.render();
     } catch (err) {
       this.box.innerHTML = `<div class="error-block"><h3>حدث خطأ</h3>
@@ -178,24 +203,29 @@ export class GroupsPage {
       <td dir="ltr">${escapeHtml(b.phone || "—")}</td>
       <td>${b.present}/${b.total} (${b.percent}%)</td>
       <td>${fu ? escapeHtml(formatDate(fu.action_date)) : "—"}</td>
-      <td>${fu ? badge(STATUS_LABEL[fu.status] || fu.status || "—", "yellow") : "—"}</td>
+      <td>${fu ? badge(FOLLOW_STATUS_LABELS[fu.status] || fu.status || "—", "yellow") : "—"}</td>
       <td>${b.note ? `<span class="note-indicator" title="${escapeHtml(b.note)}">عرض</span>` : "—"}</td>
-      <td class="cell-actions"><button class="btn-link" data-boy="${b.boy_id}">عرض الملف</button><button class="btn-link danger" data-unassign="${b.boy_id}" data-name="${escapeHtml(b.boy_name)}">إلغاء التوزيع</button></td>
+      <td class="cell-actions">
+        <button class="btn-link" data-boy="${b.boy_id}">عرض الملف</button>
+        ${this.canWrite ? `<button class="btn-link danger" data-unassign="${b.boy_id}" data-name="${escapeHtml(b.boy_name)}">إلغاء التوزيع</button>` : ""}
+      </td>
     </tr>`;
   }
 
   render() {
     const d = this.data;
     let html = "";
-    const groups = this.teacherId ? d.groups.filter((g) => g.teacher_id === this.teacherId) : d.groups;
+    const groups = this.teacherId
+      ? d.groups.filter((g) => String(g.teacher_id) === String(this.teacherId))
+      : d.groups;
     if (!groups.length && !d.unassigned.length) {
       html = emptyState("لا توجد مجموعات", "سجّل خدامًا وأولادًا ثم وزّع المجموعات من الأعلى.");
     } else {
       html = groups.map((g) => `
         <div class="dash-section">
           <div class="group-head"><h3>مجموعة الخادم: ${escapeHtml(g.teacher_name)}</h3>
-            <span class="muted small">${escapeHtml(classLabel(g.class_name))} • ${g.boys_count} أولاد${g.phone ? ` • ${escapeHtml(g.phone)}` : ""}</span>
-            <button class="btn btn-secondary btn-sm" data-edit-group="${g.teacher_id}">تعديل المجموعة</button>
+            <span class="muted small">${escapeHtml(classLabel(g.class_id))} • ${g.boys_count} أولاد${g.phone ? ` • ${escapeHtml(g.phone)}` : ""}</span>
+            ${this.canWrite ? `<button class="btn btn-secondary btn-sm" data-edit-group="${g.teacher_id}">تعديل المجموعة</button>` : ""}
           </div>
           ${g.boys.length ? table(
             ["الاسم", "التليفون", "الحضور", "آخر افتقاد", "الطريقة", "ملاحظات", ""],
@@ -209,7 +239,7 @@ export class GroupsPage {
             <span class="muted small">${d.unassigned_count} أولاد</span></div>
           ${table(
             ["الاسم", "التليفون", "الحضور", "آخر افتقاد", "الطريقة", "ملاحظات", ""],
-            d.unassigned.map((b) => this.boyRow(b)).join("")
+            d.unassigned.map((b) => this.boyRow(b))
           )}
         </div>`;
       }
@@ -219,10 +249,10 @@ export class GroupsPage {
       btn.addEventListener("click", () => openBoyModal(this.drill, btn.dataset.boy));
     });
     this.box.querySelectorAll("[data-unassign]").forEach((btn) => {
-      btn.addEventListener("click", () => this.unassignBoy(btn.dataset.unassign, btn.dataset.name));
+      btn.addEventListener("click", () => this.unassignBoy(Number(btn.dataset.unassign), btn.dataset.name));
     });
     this.box.querySelectorAll("[data-edit-group]").forEach((btn) => {
-      btn.addEventListener("click", () => this.openGroupEditor(btn.dataset.editGroup));
+      btn.addEventListener("click", () => this.openGroupEditor(Number(btn.dataset.editGroup)));
     });
   }
 
@@ -236,10 +266,11 @@ export class GroupsPage {
       actions: [{ label: "إغلاق", kind: "btn-primary" }],
     });
     const paint = () => {
+      this.collectGroupedIds();
       const el = body.querySelector("#grp-editor");
       const grp = (this.data?.groups || []).find((g) => g.teacher_id === teacherId);
       const members = grp ? grp.boys : [];
-      const free = this.allBoys.filter((b) => !b.follow_teacher_id);
+      const free = this.allBoys.filter((b) => !this.groupedIds.has(b.id));
       el.innerHTML = `
         <h3 style="margin:0 0 8px">الأولاد الحاليون (${members.length})</h3>
         ${members.length ? `<ul class="name-list">${members.map((b) => `
@@ -258,7 +289,7 @@ export class GroupsPage {
         btn.addEventListener("click", async () => {
           btn.disabled = true;
           try {
-            await this.service.unassign([btn.dataset.edDel]);
+            await this.service.unassign([Number(btn.dataset.edDel)]);
             await this.reloadBase();
             paint();
           } catch (err) {
@@ -273,7 +304,7 @@ export class GroupsPage {
         if (!sel?.value) return;
         btn.disabled = true;
         try {
-          await this.service.assign(teacherId, [sel.value]);
+          await this.service.assign(teacherId, [Number(sel.value)]);
           Toast.success("اتضاف للمجموعة.");
           await this.reloadBase();
           paint();

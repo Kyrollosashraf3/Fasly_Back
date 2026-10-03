@@ -1,6 +1,6 @@
 import { BoyService } from "../boys/boys-data.js";
 import { TeacherService } from "../teachers/teachers-data.js";
-import { FOLLOW_STATUS, classLabel } from "../../shared/constants.js";
+import { FOLLOW_STATUS, FOLLOW_STATUS_LABELS, classLabel } from "../../shared/constants.js";
 import {
   Modal, Toast, badge, emptyState, errorBlock, skeletonTable, table,
 } from "../../shared/components.js";
@@ -12,13 +12,13 @@ export class FollowUpService {
     this.api = api;
   }
 
-  list(className, { teacherId = null, boyId = null, actionDate = null } = {}) {
-    return this.api.get("/follow-ups", {
-      class_name: className,
-      teacher_id: teacherId,
-      boy_id: boyId,
-      action_date: actionDate,
-    });
+  list(classId, { teacherId = null, boyId = null, actionDate = null } = {}) {
+    const query = {};
+    if (classId !== null && classId !== undefined && classId !== "") query.class_id = classId;
+    if (teacherId) query.teacher_id = teacherId;
+    if (boyId) query.boy_id = boyId;
+    if (actionDate) query.action_date = actionDate;
+    return this.api.get("/follow-ups", query);
   }
 
   create(data) {
@@ -34,9 +34,8 @@ export class FollowUpService {
   }
 }
 
-const STATUS_BADGE = { call: "", visit: "yellow", whatsapp: "green", "no answer": "red", other: "green" };
-const STATUS_LABEL = Object.fromEntries(FOLLOW_STATUS.map((s) => [s.value, s.label]));
-const statusLabel = (v) => STATUS_LABEL[v] || v || "—";
+const STATUS_BADGE = { call: "", visit: "yellow", whatsapp: "green", no_answer: "red", other: "green" };
+const statusLabel = (v) => FOLLOW_STATUS_LABELS[v] || v || "—";
 
 export class FollowUpPage {
   constructor(app) {
@@ -46,21 +45,25 @@ export class FollowUpPage {
     this.teachers = new TeacherService(app.api);
     this.allBoys = [];
     this.allTeachers = [];
-    this.existing = new Map(); // boy_id -> record (for selected teacher+date)
-    this.draft = new Map(); // boy_id -> { status: ''|..., note }
+    this.roster = [];           // boys shown in the sheet for the picked servant
+    this.groupMap = new Map();  // teacher_id -> [boy_id]
+    this.existing = new Map();  // boy_id -> record (for selected teacher+date)
+    this.draft = new Map();     // boy_id -> { status, note }
     this.search = "";
     this.historyDate = "";
+    this.canWrite = false;
   }
 
   async mount(ctx) {
-    this.className = ctx.params.className;
+    this.classId = ctx.params.classId;
     this.teacherId = "";
     this.date = lastFridayISO();
+    this.canWrite = this.app.auth.isManager() || this.app.auth.isServant();
     const html = await this.app.partial("features/follow-up/follow-up.html");
     this.app.setView(html);
 
-    document.querySelector("[data-crumb-class]").textContent = classLabel(this.className);
-    document.querySelector("[data-crumb-class]").href = `#/class/${this.className}`;
+    document.querySelector("[data-crumb-class]").textContent = classLabel(this.classId);
+    document.querySelector("[data-crumb-class]").href = `#/class/${this.classId}`;
 
     this.box = document.getElementById("fu-content");
     this.histBox = document.getElementById("fu-history");
@@ -96,11 +99,12 @@ export class FollowUpPage {
     this.box.innerHTML = skeletonTable(6);
     try {
       const [boys, teachers] = await Promise.all([
-        this.boys.list(this.className),
-        this.teachers.list(this.className),
+        this.boys.list(this.classId),
+        this.teachers.list(this.classId).catch(() => []),
       ]);
       this.allBoys = Array.isArray(boys) ? boys : [];
       this.allTeachers = Array.isArray(teachers) ? teachers : [];
+      await this.loadGroups();
       const sel = document.getElementById("fu-teacher");
       sel.innerHTML =
         `<option value="">اختر الخادم...</option>` +
@@ -112,8 +116,28 @@ export class FollowUpPage {
     }
   }
 
+  /** teacher_id -> [boy_id], built from GET /groups (403 for a boy login). */
+  async loadGroups() {
+    this.groupMap = new Map();
+    try {
+      const data = await this.app.api.get("/groups", { class_id: this.classId });
+      for (const g of (data && data.groups) || []) {
+        this.groupMap.set(g.teacher_id, (g.boys || []).map((b) => b.boy_id));
+      }
+    } catch {
+      /* no groups view for this login - fall back to the whole roster */
+    }
+  }
+
+  rosterFor(teacherId) {
+    const ids = this.groupMap.get(Number(teacherId));
+    if (!ids) return this.allBoys;
+    const set = new Set(ids);
+    return this.allBoys.filter((b) => set.has(b.id));
+  }
+
   async reloadRows() {
-    if (!this.teacherId || !this.date || !this.allBoys.length) {
+    if (!this.teacherId || !this.date) {
       this.box.innerHTML = emptyState(
         "اختر الخادم والتاريخ",
         "اختر الخادم وتاريخ الأسبوع من الأعلى لتسجيل الافتقاد."
@@ -121,15 +145,25 @@ export class FollowUpPage {
       document.getElementById("fu-summary").hidden = true;
       return;
     }
+    this.roster = this.rosterFor(this.teacherId);
+    if (!this.roster.length) {
+      this.box.innerHTML = emptyState(
+        "لا يوجد أولاد في مجموعة الخادم ده",
+        "وزّع الأولاد على الخادم من صفحة المجموعات أولًا.",
+        `<a class="btn btn-secondary" href="#/groups">فتح المجموعات</a>`
+      );
+      document.getElementById("fu-summary").hidden = true;
+      return;
+    }
     this.box.innerHTML = skeletonTable(6);
     try {
-      const records = await this.service.list(this.className, {
+      const records = await this.service.list(this.classId, {
         teacherId: this.teacherId,
         actionDate: this.date,
       });
       this.existing = new Map((Array.isArray(records) ? records : []).map((r) => [r.boy_id, r]));
       this.draft = new Map(
-        this.allBoys.map((b) => {
+        this.roster.map((b) => {
           const rec = this.existing.get(b.id);
           return [b.id, { status: rec?.status || "", note: rec?.note || "" }];
         })
@@ -142,10 +176,10 @@ export class FollowUpPage {
   }
 
   renderRows() {
-    const rows = this.allBoys.filter((b) =>
+    const rows = this.roster.filter((b) =>
       !this.search || `${b.boy_name || ""}`.toLowerCase().includes(this.search));
     if (!rows.length) {
-      this.box.innerHTML = emptyState("لا يوجد أولاد", "لم يتم تسجيل أولاد في هذا الفصل بعد.");
+      this.box.innerHTML = emptyState("لا توجد نتائج", "جرّب بحثًا مختلفًا.");
       return;
     }
     this.box.innerHTML = table(
@@ -155,26 +189,26 @@ export class FollowUpPage {
         return `<tr>
           <td><strong>${escapeHtml(b.boy_name)}</strong></td>
           <td>
-            <select class="input fu-status" data-id="${b.id}" aria-label="طريقة الافتقاد">
+            <select class="input fu-status" data-id="${b.id}" aria-label="طريقة الافتقاد"${this.canWrite ? "" : " disabled"}>
               <option value="">—</option>
               ${FOLLOW_STATUS.map((s) =>
                 `<option value="${s.value}"${d.status === s.value ? " selected" : ""}>${s.label}</option>`).join("")}
             </select>
           </td>
-          <td><button class="btn-link" data-note="${b.id}">${d.note ? "&#9998; *" : "&#9998;"}</button></td>
+          <td><button class="btn-link" data-note="${b.id}"${this.canWrite ? "" : " disabled"}>${d.note ? "&#9998; *" : "&#9998;"}</button></td>
         </tr>`;
       }).join("")
     );
     this.box.querySelectorAll(".fu-status").forEach((sel) => {
       sel.addEventListener("change", () => {
-        this.draft.get(sel.dataset.id).status = sel.value;
+        this.draft.get(Number(sel.dataset.id)).status = sel.value;
         this.updateCount();
       });
     });
     this.box.querySelectorAll("[data-note]").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const d = this.draft.get(btn.dataset.note);
-        const boy = this.allBoys.find((b) => b.id === btn.dataset.note);
+        const d = this.draft.get(Number(btn.dataset.note));
+        const boy = this.roster.find((b) => String(b.id) === String(btn.dataset.note));
         const value = await Modal.note({ title: `ملاحظة — ${boy?.boy_name || ""}`, value: d.note });
         if (value === null) return;
         d.note = value;
@@ -195,7 +229,8 @@ export class FollowUpPage {
   }
 
   async save() {
-    const teacher = this.allTeachers.find((t) => t.id === this.teacherId);
+    if (!this.canWrite) return;
+    const teacher = this.allTeachers.find((t) => String(t.id) === String(this.teacherId));
     if (!teacher) {
       Toast.error("من فضلك اختر الخادم.");
       return;
@@ -205,7 +240,7 @@ export class FollowUpPage {
     btn.textContent = "جارٍ الحفظ...";
     try {
       let saved = 0;
-      for (const boy of this.allBoys) {
+      for (const boy of this.roster) {
         const d = this.draft.get(boy.id);
         const rec = this.existing.get(boy.id);
         if (rec) {
@@ -216,10 +251,7 @@ export class FollowUpPage {
         } else if (d.status) {
           await this.service.create({
             teacher_id: teacher.id,
-            teacher_name: teacher.teacher_name,
             boy_id: boy.id,
-            boy_name: boy.boy_name,
-            class_name: this.className,
             action_date: this.date,
             status: d.status,
             note: d.note || null,
@@ -238,10 +270,20 @@ export class FollowUpPage {
     }
   }
 
+  boyName(id) {
+    const b = this.allBoys.find((x) => x.id === id);
+    return b ? b.boy_name : "—";
+  }
+
+  teacherName(id) {
+    const t = this.allTeachers.find((x) => x.id === id);
+    return t ? t.teacher_name : "—";
+  }
+
   async reloadHistory() {
     this.histBox.innerHTML = skeletonTable(4);
     try {
-      const records = await this.service.list(this.className, {
+      const records = await this.service.list(this.classId, {
         actionDate: this.historyDate || null,
       });
       const list = (Array.isArray(records) ? records : [])
@@ -257,19 +299,20 @@ export class FollowUpPage {
         list.map((r) => `
           <tr>
             <td>${escapeHtml(r.action_date || "—")}</td>
-            <td>${escapeHtml(r.teacher_name || "—")}</td>
-            <td>${escapeHtml(r.boy_name || "—")}</td>
+            <td>${escapeHtml(this.teacherName(r.teacher_id))}</td>
+            <td>${escapeHtml(this.boyName(r.boy_id))}</td>
             <td>${badge(statusLabel(r.status), STATUS_BADGE[r.status] || "")}</td>
             <td>${r.note ? `<span class="note-indicator" title="${escapeHtml(r.note)}">عرض</span>` : `<span class="muted">—</span>`}</td>
             <td class="cell-actions">
+              ${this.canWrite ? `
               <button class="btn-link" data-hact="edit" data-id="${r.id}">تعديل</button>
-              <button class="btn-link danger" data-hact="del" data-id="${r.id}">حذف</button>
+              <button class="btn-link danger" data-hact="del" data-id="${r.id}">حذف</button>` : `<span class="muted">—</span>`}
             </td>
           </tr>`).join("")
       );
       this.histBox.querySelectorAll("button[data-hact]").forEach((btn) => {
         btn.addEventListener("click", () => {
-          const rec = list.find((x) => x.id === btn.dataset.id);
+          const rec = list.find((x) => String(x.id) === String(btn.dataset.id));
           if (!rec) return;
           if (btn.dataset.hact === "edit") this.editRecord(rec);
           if (btn.dataset.hact === "del") this.deleteRecord(rec);
@@ -293,8 +336,8 @@ export class FollowUpPage {
         <textarea class="input" id="hist-note" rows="3">${escapeHtml(rec.note || "")}</textarea>
       </div>`;
     Modal.open({
-      title: `تعديل — ${rec.boy_name || ""}`,
-      sub: `${rec.teacher_name || ""} • ${rec.action_date || ""}`,
+      title: `تعديل — ${this.boyName(rec.boy_id)}`,
+      sub: `${this.teacherName(rec.teacher_id)} • ${rec.action_date || ""}`,
       body,
       actions: [
         { label: "إلغاء" },
@@ -325,7 +368,7 @@ export class FollowUpPage {
   async deleteRecord(rec) {
     const ok = await Modal.confirm({
       title: "حذف الافتقاد؟",
-      message: `افتقاد "${rec.boy_name}" بتاريخ ${rec.action_date} سيتم حذفه.`,
+      message: `افتقاد "${this.boyName(rec.boy_id)}" بتاريخ ${rec.action_date} سيتم حذفه.`,
     });
     if (!ok) return;
     try {

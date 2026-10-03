@@ -5,7 +5,13 @@ from app.core.auth.deps import get_current_user
 from app.core.data import BoyService, ClassService
 from app.core.EDA.importer import run_import
 from app.core.EDA.read_excel import read_boys_workbook
+from app.core.EDA.templates import (
+    XLSX_MEDIA_TYPE,
+    build_boys_export,
+    build_boys_template,
+)
 from app.db.database import get_db
+from app.routes._excel import label_for, writable_class_names, xlsx_response
 from app.schemas.boy import BoyCreate, BoyResponse, BoyUpdate
 from app.schemas.user import UserResponse
 
@@ -44,6 +50,28 @@ def list_boys(
     current_user: UserResponse = Depends(get_current_user),
 ):
     return BoyService(db, current_user).list(class_id=class_id, issue_flag=issue_flag)
+
+
+@router.get("/template")
+def boys_template(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """A ready-to-upload sample sheet (``class_name`` already filled)."""
+    content = build_boys_template(writable_class_names(db, current_user))
+    return xlsx_response(content, "boys.xlsx")
+
+
+@router.get("/export")
+def boys_export(
+    class_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Round-trip export: exactly the columns ``/boys/import`` accepts."""
+    label = label_for(db, current_user)
+    boys = BoyService(db, current_user).list(class_id=class_id)
+    return xlsx_response(build_boys_export(boys, label), "boys.xlsx")
 
 
 @router.get("/{boy_id}", response_model=BoyResponse)

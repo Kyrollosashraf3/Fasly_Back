@@ -4,8 +4,10 @@ export class TeacherService {
     this.api = api;
   }
 
-  list(className) {
-    return this.api.get("/teachers", { class_name: className });
+  list(classId) {
+    const query = {};
+    if (classId !== null && classId !== undefined && classId !== "") query.class_id = classId;
+    return this.api.get("/teachers", query);
   }
 
   get(teacherId) {
@@ -26,5 +28,14 @@ export class TeacherService {
 
   importExcel(file) {
     return this.api.upload("/teachers/import", file);
+  }
+
+  downloadTemplate() {
+    return this.api.download("/teachers/template", null, "teachers.xlsx");
+  }
+
+  downloadExport(classId = null) {
+    const query = classId ? { class_id: classId } : null;
+    return this.api.download("/teachers/export", query, "teachers.xlsx");
   }
 }

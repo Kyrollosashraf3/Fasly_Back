@@ -80,8 +80,8 @@ export async function openBoyModal(service, boyId) {
       ? `<div class="table-wrap"><table class="table hist-table"><thead>
            <tr><th>التاريخ</th><th>الحالة</th><th>ملاحظة</th></tr></thead><tbody>
            ${p.history.map((h) => `<tr>
-             <td>${escapeHtml(h.action_date || "—")}</td>
-             <td>${h.attend === "y" ? badge("حاضر", "green") : badge("غائب", "red")}</td>
+             <td>${escapeHtml(h.date || "—")}</td>
+             <td>${h.present ? badge("حاضر", "green") : badge("غائب", "red")}</td>
              <td>${h.note ? escapeHtml(h.note) : "—"}</td></tr>`).join("")}
          </tbody></table></div>`
       : `<p class="muted">لا يوجد سجل حضور لهذا الولد بعد.</p>`;
@@ -90,7 +90,7 @@ export async function openBoyModal(service, boyId) {
       : `<p class="muted">لا توجد ملاحظات.</p>`;
     Modal.open({
       title: b.boy_name || "ملف الولد",
-      sub: `${classLabel(b.class_name)} • نسبة الحضور ${p.percent}% (${p.present}/${p.total})`,
+      sub: `${classLabel(b.class_id)} • نسبة الحضور ${p.percent}% (${p.present}/${p.total})`,
       body: `<div class="details" style="margin-bottom:12px">
           ${row("النوع", GENDER_LABELS[b.gender] || "—")}
           ${row("تاريخ الميلاد", b.birth_date || "—")}

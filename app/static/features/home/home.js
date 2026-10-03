@@ -26,10 +26,10 @@ export class HomePage {
     await Promise.all(
       classes.map(async (c) => {
         try {
-          const boys = await this.app.api.get("/boys", { class_name: c });
-          counts[c] = Array.isArray(boys) ? boys.length : 0;
+          const boys = await this.app.api.get("/boys", { class_id: c.id });
+          counts[c.id] = Array.isArray(boys) ? boys.length : 0;
         } catch {
-          counts[c] = null;
+          counts[c.id] = null;
         }
       })
     );
@@ -39,10 +39,10 @@ export class HomePage {
         ${classes
           .map(
             (c) => `
-          <a class="card class-card" href="#/class/${c}">
+          <a class="card class-card" href="#/class/${c.id}">
             <div class="class-card-name">${escapeHtml(classLabel(c))}</div>
             <div class="class-card-count">${
-              counts[c] === null ? "—" : `${counts[c]} أولاد`
+              counts[c.id] === null ? "—" : `${counts[c.id]} أولاد`
             }</div>
           </a>`
           )

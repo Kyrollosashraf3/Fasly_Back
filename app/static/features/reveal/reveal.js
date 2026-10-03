@@ -1,18 +1,19 @@
 import { DashboardService } from "../dashboard/dashboard-data.js";
 import { BoyService } from "../boys/boys-data.js";
-import { CLASSES, GENDER_LABELS, classLabel } from "../../shared/constants.js";
-import { FOLLOW_STATUS } from "../../shared/constants.js";
+import { TeacherService } from "../teachers/teachers-data.js";
+import { GENDER_LABELS, FOLLOW_STATUS_LABELS, classLabel } from "../../shared/constants.js";
 import { badge, emptyState, loadingBlock } from "../../shared/components.js";
 import { escapeHtml, formatDate } from "../../shared/utils.js";
-
-const STATUS_LABEL = Object.fromEntries(FOLLOW_STATUS.map((s) => [s.value, s.label]));
 
 export class RevealPage {
   constructor(app) {
     this.app = app;
     this.service = new DashboardService(app.api);
     this.boys = new BoyService(app.api);
+    this.teachers = new TeacherService(app.api);
     this.allBoys = [];
+    this.teacherNames = new Map();
+    this.classId = "";
     this.picked = null;
     this.search = "";
   }
@@ -24,17 +25,25 @@ export class RevealPage {
     this.result = document.getElementById("rev-result");
     this.goBtn = document.getElementById("rev-go");
 
+    // Follow-ups come back with teacher_id only; resolve the Arabic names once.
+    try {
+      const list = await this.teachers.list(undefined);
+      for (const t of Array.isArray(list) ? list : []) {
+        this.teacherNames.set(t.id, t.teacher_name);
+      }
+    } catch {
+      /* a boy login may not read the servant directory */
+    }
+
     const allowed = this.app.auth.accessibleClasses();
     const sel = document.getElementById("rev-class");
-    const bothAll = allowed.length > 1 || this.app.auth.isAdmin();
-    const opts = bothAll ? CLASSES : allowed;
     sel.innerHTML = `<option value="">اختر الفصل...</option>` +
-      opts.map((c) => `<option value="${c}">${classLabel(c)}</option>`).join("");
+      allowed.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
     sel.addEventListener("change", async () => {
-      this.className = sel.value;
+      this.classId = sel.value;
       this.picked = null;
       this.updateGo();
-      if (this.className) await this.loadBoys();
+      if (this.classId) await this.loadBoys();
       else this.box.innerHTML = `<p class="muted">اختر الفصل أولًا لعرض الأولاد.</p>`;
     });
 
@@ -48,7 +57,7 @@ export class RevealPage {
   async loadBoys() {
     this.box.innerHTML = loadingBlock("جارٍ تحميل الأولاد...");
     try {
-      const data = await this.boys.list(this.className);
+      const data = await this.boys.list(this.classId);
       this.allBoys = Array.isArray(data) ? data : [];
       this.renderCandidates();
     } catch (err) {
@@ -64,11 +73,11 @@ export class RevealPage {
       return;
     }
     this.box.innerHTML = `<div class="candidate-list">${rows.map((b) => `
-      <button data-id="${b.id}" class="${this.picked?.id === b.id ? "picked" : ""}">
+      <button data-id="${b.id}" class="${this.picked && this.picked.id === b.id ? "picked" : ""}">
         ${escapeHtml(b.boy_name)}</button>`).join("")}</div>`;
     this.box.querySelectorAll("button[data-id]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        this.picked = this.allBoys.find((x) => x.id === btn.dataset.id) || null;
+        this.picked = this.allBoys.find((x) => String(x.id) === String(btn.dataset.id)) || null;
         this.box.querySelectorAll("button[data-id]").forEach((x) =>
           x.classList.toggle("picked", x === btn));
         this.updateGo();
@@ -97,9 +106,9 @@ export class RevealPage {
     const b = p.boy;
     const s = p.season;
     const cells = s.fridays.map((f) => `
-      <div class="friday-cell present-${f.attend}">
-        <div class="d">${escapeHtml(formatDate(f.action_date))}</div>
-        ${f.attend === "y" ? badge("حاضر", "green") : badge("غائب", "red")}
+      <div class="friday-cell present-${f.present}">
+        <div class="d">${escapeHtml(formatDate(f.date))}</div>
+        ${f.present ? badge("حاضر", "green") : badge("غائب", "red")}
         ${f.note ? `<div class="muted small" title="${escapeHtml(f.note)}">✎ ملاحظة</div>` : ""}
       </div>`).join("");
     const notes = p.notes.length
@@ -109,8 +118,8 @@ export class RevealPage {
       ? `<ul class="timeline">${p.followups.map((f) => `
         <li><div class="tl-head">
             <strong>${escapeHtml(formatDate(f.action_date))}</strong>
-            <span>${escapeHtml(f.teacher_name || "—")}</span>
-            ${badge(STATUS_LABEL[f.status] || f.status || "—", "yellow")}
+            <span>${escapeHtml(this.teacherNames.get(f.teacher_id) || "—")}</span>
+            ${badge(FOLLOW_STATUS_LABELS[f.status] || f.status || "—", "yellow")}
           </div>
           ${f.note ? `<div class="tl-note">${escapeHtml(f.note)}</div>` : ""}</li>`).join("")}</ul>`
       : `<p class="muted">لا يوجد افتقاد مسجل لهذا الولد بعد.</p>`;
@@ -119,7 +128,7 @@ export class RevealPage {
       <div class="reveal-hero">
         <div class="hero-info">
           <h2>${escapeHtml(b.boy_name)}</h2>
-          <div class="hero-sub">${escapeHtml(classLabel(b.class_name))} •
+          <div class="hero-sub">${escapeHtml(classLabel(b.class_id))} •
             ${escapeHtml(GENDER_LABELS[b.gender] || "")} •
             ${escapeHtml(b.phone || "بدون تليفون")} •
             ${escapeHtml(b.address || "")}</div>
