@@ -77,6 +77,20 @@ class Boy(Base):
     groups = relationship("Group", back_populates="boy", cascade="all, delete-orphan")
 
     @property
+    def teacher_id(self) -> int | None:
+        """Servant who owns this boy's follow-up group.
+
+        The link lives in ``groups``, never here: a boy belongs to exactly one
+        group (``GroupsService.assign`` drops the previous row first).
+        """
+        return self.groups[0].teacher_id if self.groups else None
+
+    @property
+    def teacher_name(self) -> str | None:
+        group = self.groups[0] if self.groups else None
+        return group.teacher.teacher_name if group is not None else None
+
+    @property
     def age(self) -> int | None:
         """Derived from ``birth_date`` - never stored in the table."""
         if self.birth_date is None:

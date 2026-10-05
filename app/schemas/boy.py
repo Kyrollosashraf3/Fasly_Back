@@ -20,6 +20,13 @@ class BoyCreate(BaseModel):
     location: str | None = Field(None, max_length=500)
     note: str | None = None
     issue_flag: bool = False
+    teacher_id: int | None = Field(
+        None,
+        description=(
+            "Servant to file him under straight away - creates the "
+            "groups row, so that servant can already take his attendance"
+        ),
+    )
 
     @field_validator("birth_date")
     @classmethod
@@ -43,6 +50,8 @@ class BoyUpdate(BaseModel):
     location: str | None = Field(None, max_length=500)
     note: str | None = None
     issue_flag: bool | None = None
+    # ``null`` = drop him from his current group; absent = leave it alone.
+    teacher_id: int | None = None
 
     @field_validator("birth_date")
     @classmethod
@@ -66,5 +75,7 @@ class BoyResponse(ORMResponse):
     location: str | None = None
     note: str | None = None
     issue_flag: bool = False
+    teacher_id: int | None = None
+    teacher_name: str | None = None
     created_at: datetime
     updated_at: datetime | None = None

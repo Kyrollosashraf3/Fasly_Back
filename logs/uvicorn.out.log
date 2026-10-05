@@ -1,0 +1,21 @@
+2026-10-05 21:10:23 - app.db.database - INFO - Creating SQLAlchemy engine for the configured database
+2026-10-05 21:10:23 - app.app - INFO - All routes registered successfully
+2026-10-05 21:10:23 - app.app - INFO - Creating database tables if they do not exist.
+2026-10-05 21:10:23 - app.db.database - INFO - Table 'classes': ready
+2026-10-05 21:10:23 - app.db.database - INFO - Table 'users': ready
+2026-10-05 21:10:23 - app.db.database - INFO - Table 'boys': ready
+2026-10-05 21:10:23 - app.db.database - INFO - Table 'teachers': ready
+2026-10-05 21:10:23 - app.db.database - INFO - Table 'groups': ready
+2026-10-05 21:10:23 - app.db.database - INFO - Table 'attends': ready
+2026-10-05 21:10:23 - app.db.database - INFO - Table 'follow_ups': ready
+2026-10-05 21:10:23 - app.db.database - INFO - Table 'teacher_checks': ready
+2026-10-05 21:10:23 - app.db.database - INFO - Database tables are ready
+2026-10-05 21:10:23 - app.app - INFO - Starting Fasly - Sunday School API ...
+2026-10-05 21:10:23 - app.app - INFO - App: Fasly - Sunday School API v1.0.0
+INFO:     127.0.0.1:9771 - "GET /ui/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9771 - "GET /app HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:9771 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9836 - "GET /ui/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9836 - "GET /app HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:9836 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9836 - "GET / HTTP/1.1" 200 OK

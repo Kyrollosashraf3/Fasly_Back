@@ -35,7 +35,12 @@ from app.core.data.follow_ups import FollowUpService
 from app.core.data.groups import GroupsService
 from app.core.data.teacher_checks import TeacherCheckService
 from app.core.data.teachers import TeacherService
-from app.core.data.users import UserService, get_user_by_email
+from app.core.data.users import (
+    UserService,
+    complete_signup,
+    get_user_by_phone,
+    signup_check,
+)
 
 __all__ = [
     # base
@@ -54,7 +59,9 @@ __all__ = [
     "TeacherCheckService",
     "TeacherService",
     "UserService",
-    "get_user_by_email",
+    "complete_signup",
+    "get_user_by_phone",
+    "signup_check",
     # helpers
     "bulk_create",
     "commit",

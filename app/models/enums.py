@@ -5,7 +5,7 @@ class RoleEnum(str, Enum):
     """What an account is allowed to see.
 
     USER        -> a boy in the service: his own data only.
-    TEACHER     -> a servant: his own follow-ups and performance only.
+    TEACHER     -> a servant: his own follow-ups and performance only - and he can add new boy or edit boys of his class - take attend for class.
     ADMIN       -> a class amin: the servants and boys of his class.
     SUPER_ADMIN -> church-wide amin: every class, servants and boys.
     """

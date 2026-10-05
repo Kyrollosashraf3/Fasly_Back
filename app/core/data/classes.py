@@ -27,7 +27,6 @@ class ClassService(AdminService):
         self._ensure_write()
         school_class = SchoolClass(
             name=data.name.strip(),
-            grade_number=data.grade_number,
             academic_year=data.academic_year,
         )
         self.db.add(school_class)
@@ -40,7 +39,7 @@ class ClassService(AdminService):
     def list(self):
         return (
             self._query()
-            .order_by(SchoolClass.academic_year.desc(), SchoolClass.grade_number)
+            .order_by(SchoolClass.academic_year.desc(), SchoolClass.id)
             .all()
         )
 
@@ -50,8 +49,7 @@ class ClassService(AdminService):
 
         Only the classes this login may *write into* are offered (super admin:
         every class, amin: his own), so an import can never point at a class
-        the caller is not allowed to fill. Full names are matched before bare
-        grade numbers ("1", "2", ...) so a name always wins.
+        the caller is not allowed to fill.
         """
         writable = [
             row
@@ -61,8 +59,6 @@ class ClassService(AdminService):
         lookup: dict[str, int] = {}
         for school_class in writable:
             lookup.setdefault(_norm(school_class.name), school_class.id)
-        for school_class in writable:
-            lookup.setdefault(_norm(str(school_class.grade_number)), school_class.id)
         return lookup
 
     def update(self, class_id: int, data: SchoolClassUpdate) -> SchoolClass:

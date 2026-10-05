@@ -94,6 +94,146 @@ def ensure_columns() -> dict[str, list[str]]:
     return added
 
 
+# Columns this ORM no longer declares, so a database created before the
+# change is brought in line with the model. Only columns listed here are
+# ever dropped - nothing else in the schema is touched.
+RETIRED_COLUMNS = {
+    "classes": ["grade_number"],
+    "users": ["email"],
+}
+
+
+def drop_retired_columns() -> list[str]:
+    """Drop columns the ORM used to declare but no longer does.
+
+    ``ensure_columns()`` only ever adds, so a removed column would otherwise
+    sit in the live table forever. PostgreSQL drops the indexes and table
+    constraints that involve the column along with it.
+    """
+    inspector = inspect(engine)
+    present = set(inspector.get_table_names())
+    dropped: list[str] = []
+
+    for table, columns in RETIRED_COLUMNS.items():
+        if table not in present:
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table)}
+        for column in columns:
+            if column not in existing:
+                continue
+            ddl = f'ALTER TABLE "{table}" DROP COLUMN "{column}"'
+            logger.info("Applying schema change: %s", ddl)
+            with engine.begin() as conn:
+                conn.exec_driver_sql(ddl)
+            dropped.append(f"{table}.{column}")
+
+    if dropped:
+        logger.info("Columns dropped: %s", dropped)
+    return dropped
+
+
+# Columns the model declares as nullable but the live table still carries as
+# NOT NULL (e.g. ``users.password_hash`` before self-service signup). Relaxing
+# is always safe - it only ever permits NULL - and PostgreSQL needs an explicit
+# statement for it.
+RELAXED_COLUMNS = {
+    "users": ["password_hash"],
+}
+
+
+def relax_columns() -> list[str]:
+    """Drop the NOT NULL flag from the columns listed in RELAXED_COLUMNS."""
+    inspector = inspect(engine)
+    present = set(inspector.get_table_names())
+    relaxed: list[str] = []
+
+    for table, columns in RELAXED_COLUMNS.items():
+        if table not in present:
+            continue
+        existing = {col["name"]: col for col in inspector.get_columns(table)}
+        for column in columns:
+            info = existing.get(column)
+            if info is None or info.get("nullable", True):
+                continue
+            ddl = f'ALTER TABLE "{table}" ALTER COLUMN "{column}" DROP NOT NULL'
+            logger.info("Applying schema change: %s", ddl)
+            with engine.begin() as conn:
+                conn.exec_driver_sql(ddl)
+            relaxed.append(f"{table}.{column}")
+
+    if relaxed:
+        logger.info("Columns relaxed: %s", relaxed)
+    return relaxed
+
+
+# Columns the model declares NOT NULL but a live table still allows NULL on
+# (the column existed before the constraint was added). The offending rows are
+# removed first by purge_unusable_rows(), then the flag is applied.
+REQUIRED_COLUMNS = {
+    "users": ["phone"],
+}
+
+
+def purge_unusable_rows() -> int:
+    """Delete rows that would violate a REQUIRED_COLUMNS invariant.
+
+    A login without a phone number cannot authenticate at all any more - the
+    handle is the phone - and it breaks ``GET /auth/users`` on the way.
+    """
+    inspector = inspect(engine)
+    present = set(inspector.get_table_names())
+    removed = 0
+
+    for table, columns in REQUIRED_COLUMNS.items():
+        if table not in present:
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table)}
+        for column in columns:
+            if column not in existing:
+                continue
+            with engine.begin() as conn:
+                result = conn.exec_driver_sql(
+                    f'DELETE FROM "{table}" WHERE "{column}" IS NULL '
+                    f"OR \"{column}\" = ''"
+                )
+            if result.rowcount:
+                logger.warning(
+                    "Removed %d row(s) from '%s' with no '%s' "
+                    "(cannot be used any more).",
+                    result.rowcount,
+                    table,
+                    column,
+                )
+                removed += result.rowcount
+
+    return removed
+
+
+def tighten_columns() -> list[str]:
+    """Apply the NOT NULL flag the model declares, after the purge."""
+    inspector = inspect(engine)
+    present = set(inspector.get_table_names())
+    tightened: list[str] = []
+
+    for table, columns in REQUIRED_COLUMNS.items():
+        if table not in present:
+            continue
+        existing = {col["name"]: col for col in inspector.get_columns(table)}
+        for column in columns:
+            info = existing.get(column)
+            if info is None or not info.get("nullable", True):
+                continue
+            ddl = f'ALTER TABLE "{table}" ALTER COLUMN "{column}" SET NOT NULL'
+            logger.info("Applying schema change: %s", ddl)
+            with engine.begin() as conn:
+                conn.exec_driver_sql(ddl)
+            tightened.append(f"{table}.{column}")
+
+    if tightened:
+        logger.info("Columns tightened: %s", tightened)
+    return tightened
+
+
 def init_db() -> dict[str, str]:
     """Create any missing table, then report the state of every one.
 
@@ -106,6 +246,10 @@ def init_db() -> dict[str, str]:
 
     Base.metadata.create_all(bind=engine)
     ensure_columns()
+    drop_retired_columns()
+    relax_columns()
+    purge_unusable_rows()
+    tighten_columns()
     existing = set(inspect(engine).get_table_names())
     status: dict[str, str] = {}
     for name in ALL_TABLES:

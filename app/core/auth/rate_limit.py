@@ -15,26 +15,32 @@ limiter = Limiter(key_func=get_remote_address)
 # --- Login limits -----------------------------------------------------
 # Per-IP: max attempts on the login endpoint from one client address.
 LOGIN_IP_LIMIT = "5 per minute"
-# Per-account: max attempts targeting a single e-mail, regardless of source
-# IP. This is the "account lockout" layer that stops a distributed brute-force
-# against one account, while the per-IP layer already throttles a single host.
-LOGIN_EMAIL_LIMIT = "10 per hour"
+# Per-account: max attempts targeting a single phone number, regardless of
+# source IP. This is the "account lockout" layer that stops a distributed
+# brute-force against one account, while the per-IP layer already throttles a
+# single host.
+LOGIN_ACCOUNT_LIMIT = "10 per hour"
+
+# --- Signup limits ---------------------------------------------------
+# The public signup endpoints only exist to check / set a password on an
+# account an administrator already created, so the per-IP layer is enough.
+SIGNUP_IP_LIMIT = "10 per minute"
 
 
-def login_email_key(request: Request) -> str:
-    """Rate-limit key for the account layer: the submitted e-mail address.
+def login_account_key(request: Request) -> str:
+    """Rate-limit key for the account layer: the submitted phone number.
 
-    Keyed purely on the e-mail so the limit follows the account regardless of
+    Keyed purely on the phone so the limit follows the account regardless of
     which IP address the attempts come from.
     """
-    email = ""
+    handle = ""
     # The login endpoint is a sync route that depends on
     # OAuth2PasswordRequestForm, so the parsed form is already cached on the
     # request by the time the limiter key is evaluated.
     form = getattr(request, "_form", None)
     if form is not None:
-        email = str(form.get("username", "") or "").strip().lower()
-    return email or get_remote_address(request)
+        handle = str(form.get("username", "") or "").strip().lower()
+    return handle or get_remote_address(request)
 
 
 async def rate_limit_exceeded_handler(
@@ -56,7 +62,8 @@ async def rate_limit_exceeded_handler(
 __all__ = [
     "limiter",
     "rate_limit_exceeded_handler",
-    "login_email_key",
+    "login_account_key",
     "LOGIN_IP_LIMIT",
-    "LOGIN_EMAIL_LIMIT",
+    "LOGIN_ACCOUNT_LIMIT",
+    "SIGNUP_IP_LIMIT",
 ]

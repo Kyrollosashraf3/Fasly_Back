@@ -14,18 +14,20 @@ from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_logger, settings
-from app.core.auth.bootstrap import ensure_bootstrap_admin, ensure_default_classes
+from app.core.auth.bootstrap import (
+    ensure_bootstrap_admin,
+    ensure_default_classes,
+)
 from app.core.auth.rate_limit import limiter, rate_limit_exceeded_handler
 from app.db.database import init_db
 from app.routes import (
-    STATIC_DIR,
+    REACT_DIR,
     attendance_router,
     auth_router,
     boys_router,
     classes_router,
     dashboard_router,
     follow_ups_router,
-    frontend_router,
     groups_router,
     teacher_checks_router,
     teachers_router,
@@ -84,12 +86,14 @@ app.include_router(follow_ups_router)  # weekly follow-ups
 app.include_router(teacher_checks_router)  # weekly servant checks
 app.include_router(dashboard_router)  # analytics summary + boy drill-down
 app.include_router(groups_router)  # servant follow-up groups
-app.include_router(frontend_router)  # GET /app -> bundled frontend UI
 
-# Serve the whole frontend (app/static: index.html + features/ + shared/ +
-# styles/) under /app so ONE server hosts API + UI (single repo deploy).
-# html=True serves index.html for /app and /app/ (SPA uses hash routing).
-app.mount("/app", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
+# The React UI (front_fasly → app/static_react) is served under /ui, so ONE
+# server hosts API + UI (single repo deploy). html=True is what makes /ui/
+# resolve to index.html; the hash router then owns every path below it.
+if REACT_DIR.is_dir():
+    app.mount("/ui", StaticFiles(directory=REACT_DIR, html=True), name="react-frontend")
+else:
+    logger.warning("static_react not built yet - run `npm run build` in front_fasly")
 
 logger.info("All routes registered successfully")
 

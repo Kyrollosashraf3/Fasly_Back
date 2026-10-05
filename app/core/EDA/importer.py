@@ -12,17 +12,20 @@ from app.config.logger import get_logger
 logger = get_logger(__name__)
 
 
-def read_upload(file: UploadFile) -> bytes:
+UPLOAD_EXTENSIONS = (".xlsx", ".xlsm", ".csv")
+
+
+def read_upload(file: UploadFile, extensions: tuple[str, ...] = UPLOAD_EXTENSIONS) -> bytes:
     """Validate the upload envelope and return its bytes.
 
-    Only .xlsx/.xlsm is accepted and an empty body is rejected before any
-    parser is involved.
+    Only spreadsheet files are accepted (.csv included) and an empty body is
+    rejected before any parser is involved.
     """
     filename = (file.filename or "").lower()
-    if not filename.endswith((".xlsx", ".xlsm")):
+    if not filename.endswith(extensions):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only .xlsx files are accepted.",
+            detail=f"Only {' / '.join(extensions)} files are accepted.",
         )
     data = file.file.read()
     if not data:

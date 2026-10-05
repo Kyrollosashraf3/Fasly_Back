@@ -1,38 +1,94 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, status, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user, require_admin
 from app.core.auth.rate_limit import (
-    LOGIN_EMAIL_LIMIT,
+    LOGIN_ACCOUNT_LIMIT,
     LOGIN_IP_LIMIT,
+    SIGNUP_IP_LIMIT,
     limiter,
-    login_email_key,
+    login_account_key,
 )
 from app.core.auth.security import create_access_token, verify_password
-from app.core.data import UserService, get_user_by_email
+from app.core.data import (
+    UserService,
+    complete_signup,
+    get_user_by_phone,
+    signup_check,
+)
 from app.db.database import get_db
-from app.schemas.user import Token, UserCreate, UserResponse, UserUpdate
+from app.schemas.user import (
+    SignupCheckRequest,
+    SignupCheckResponse,
+    SignupRequest,
+    Token,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/login", response_model=Token)
 @limiter.limit(LOGIN_IP_LIMIT)
-@limiter.limit(LOGIN_EMAIL_LIMIT, key_func=login_email_key)
+@limiter.limit(LOGIN_ACCOUNT_LIMIT, key_func=login_account_key)
 def login_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    """OAuth2 password flow. ``username`` carries the email address."""
-    user = get_user_by_email(db, form_data.username)
-    if user is None or not verify_password(form_data.password, user.password_hash):
+    """OAuth2 password flow. ``username`` carries the phone number."""
+    user = get_user_by_phone(db, form_data.username)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect phone or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if user.pending_signup:
+        # the account exists but nobody has chosen a password yet
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="هذا الحساب لسه محتاج تسجيل برقم تليفونه.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect phone or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return Token(
+        access_token=create_access_token(str(user.id)),
+        token_type="bearer",
+    )
+
+
+@router.post(
+    "/signup/check",
+    response_model=SignupCheckResponse,
+)
+@limiter.limit(SIGNUP_IP_LIMIT)
+def check_signup(
+    request: Request,
+    payload: SignupCheckRequest,
+    db: Session = Depends(get_db),
+):
+    """Phone-number lookup used by the signup screen before a password is typed."""
+    return SignupCheckResponse(**signup_check(db, payload.phone))
+
+
+@router.post("/signup", response_model=Token)
+@limiter.limit(SIGNUP_IP_LIMIT)
+def finish_signup(
+    request: Request,
+    payload: SignupRequest,
+    db: Session = Depends(get_db),
+):
+    """Set the password of a phone-registered account and log straight in."""
+    user = complete_signup(db, payload.phone, payload.password)
     return Token(
         access_token=create_access_token(str(user.id)),
         token_type="bearer",
@@ -58,6 +114,53 @@ def list_users(
     current_user: UserResponse = Depends(get_current_user),
 ):
     return UserService(db, current_user).list_users()
+
+
+@router.get("/users/template")
+def users_template(
+    format: str = "xlsx",
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Sample accounts sheet: ``phone | class_name | name | role``."""
+    # lazy: openpyxl/csv stay out of the startup import chain
+    from app.core.EDA.templates import build_users_template, build_users_template_csv
+    from app.routes._excel import csv_response, writable_class_names, xlsx_response
+
+    names = writable_class_names(db, current_user)
+    if format.lower() == "csv":
+        return csv_response(
+            build_users_template_csv(names), "fasly-users-template.csv"
+        )
+    return xlsx_response(build_users_template(names), "fasly-users-template.xlsx")
+
+
+@router.post("/users/import")
+def import_users(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Bulk-create login accounts from an Excel / CSV sheet.
+
+    The servant named in each row is looked up in that class and created when
+    he is missing, so one file is enough to stand the accounts up.
+    """
+    # lazy: the spreadsheet/CSV parsers only load when someone uploads
+    from app.core.EDA.importer import run_import
+    from app.core.EDA.read_excel import read_users_workbook
+    from app.core.data import ClassService
+
+    classes = ClassService(db, current_user).label_lookup()
+    is_csv = (file.filename or "").lower().endswith(".csv")
+    return run_import(
+        file,
+        reader=lambda data: read_users_workbook(
+            data, classes=classes, csv_file=is_csv
+        ),
+        service=UserService(db, current_user),
+        name_key="phone",
+    )
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)

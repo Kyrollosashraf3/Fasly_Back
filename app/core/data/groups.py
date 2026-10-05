@@ -1,5 +1,7 @@
 """Follow-up groups: which boys each servant is responsible for."""
 
+from __future__ import annotations
+
 from fastapi import HTTPException, status
 from sqlalchemy import case, func
 

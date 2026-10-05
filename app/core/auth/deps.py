@@ -51,9 +51,10 @@ def get_current_user(
             detail="User no longer exists",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    request.state.user_info = f"{user.email} (id={user.id})"
+    handle = user.phone or f"id={user.id}"
+    request.state.user_info = f"{handle} (id={user.id})"
     logger.debug(
-        f"Authenticated request as {user.email} (id={user.id}, role={user.role})"
+        f"Authenticated request as {handle} (id={user.id}, role={user.role})"
     )
     return UserResponse.model_validate(user)
 
@@ -67,7 +68,7 @@ class RoleChecker:
     def __call__(self, user: UserResponse = Depends(get_current_user)) -> UserResponse:
         if user.role not in self.allowed_roles:
             logger.warning(
-                f"Access denied for user={user.email} role={user.role} "
+                f"Access denied for user={user.phone} role={user.role} "
                 f"(allowed={[r.value for r in self.allowed_roles]})"
             )
             raise HTTPException(

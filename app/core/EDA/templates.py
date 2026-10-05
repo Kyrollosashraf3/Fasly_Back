@@ -11,14 +11,15 @@ so a downloaded template can be uploaded again without editing it.
 """
 
 from datetime import date
-from io import BytesIO
+from io import BytesIO, StringIO
+import csv
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.config.logger import get_logger
-from app.core.EDA.read_excel import BOY_HEADERS, TEACHER_HEADERS
+from app.core.EDA.read_excel import BOY_HEADERS, TEACHER_HEADERS, USER_HEADERS
 
 logger = get_logger(__name__)
 
@@ -38,11 +39,26 @@ ARABIC_DOCS = {
     "zone": "المنطقة",
     "address": "العنوان بالتفصيل",
     "location": "لينك الخريطة",
-    "class_name": "اسم الفصل كما هو مسجل بالبرنامج أو رقم الصنف (1..6)",
+    "class_name": "اسم الفصل كما هو مسجل بالبرنامج",
     "note": "ملاحظة",
     "issue_flag": "محتاج متابعة: true / false (أو نعم / لا)",
     "teacher_name": "اسم الخادم (إلزامي)",
     "last_visit_date": "آخر اعتراف/زيارة للأب YYYY-MM-DD",
+}
+
+# The accounts sheet: who gets a login, in which class, with what role.
+USER_DOCS = {
+    **ARABIC_DOCS,
+    "phone": "رقم التليفون (إلزامي، 01xxxxxxxxx) - به يسجّل الدخول",
+    "name": "الاسم: اسم الخادم (أو اسم الولد لو الدور user) - لو مش موجود بيتعمل تلقائيًا",
+    "role": "الصلاحية: super_admin / admin / teacher / user",
+}
+
+# The boys sheet adds a servant column - optional there, mandatory in the
+# group sheet, so the doc line is overridden per workbook.
+BOY_DOCS = {
+    **ARABIC_DOCS,
+    "teacher_name": "اسم الخادم في نفس الفصل (اختياري) — يتسجل مع الولد في مجموعته على طول",
 }
 
 # 10 Egyptian sample rows spread over the available classes.
@@ -95,7 +111,10 @@ def _write_sheet(ws, headers: list[str], rows: list[dict]) -> None:
                 cell.number_format = "yyyy-mm-dd"
 
 
-def _write_docs_sheet(ws, headers: list[str]) -> None:
+def _write_docs_sheet(
+    ws, headers: list[str], docs: dict[str, str] | None = None
+) -> None:
+    docs = ARABIC_DOCS if docs is None else docs
     ws.sheet_view.rightToLeft = True
     ws.cell(row=1, column=1, value="العمود").font = HEADER_FONT
     ws.cell(row=1, column=1).fill = HEADER_FILL
@@ -105,27 +124,42 @@ def _write_docs_sheet(ws, headers: list[str]) -> None:
     ws.column_dimensions["B"].width = 70
     for r, name in enumerate(headers, start=2):
         ws.cell(row=r, column=1, value=name)
-        ws.cell(row=r, column=2, value=ARABIC_DOCS.get(name, ""))
+        ws.cell(row=r, column=2, value=docs.get(name, ""))
 
 
-def _workbook(headers: list[str], rows: list[dict], title: str) -> bytes:
+def _workbook(
+    headers: list[str],
+    rows: list[dict],
+    title: str,
+    docs: dict[str, str] | None = None,
+) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = title
     _write_sheet(ws, headers, rows)
-    _write_docs_sheet(wb.create_sheet("شرح"), headers)
+    _write_docs_sheet(wb.create_sheet("شرح"), headers, docs)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
-def build_boys_template(class_names: list[str]) -> bytes:
-    """Sample boys sheet ready to upload (class cells already filled)."""
-    names = class_names or ["1"]
+def build_boys_template(
+    class_names: list[str],
+    teachers_by_class: dict[str, list[str]] | None = None,
+) -> bytes:
+    """Sample boys sheet ready to upload (class cells already filled).
+
+    ``teachers_by_class`` pre-fills the servant column so a downloaded
+    template shows how a boy is filed under a servant on import.
+    """
+    names = class_names or []
+    teachers_by_class = teachers_by_class or {}
     rows = []
     for i, (name, gender, birth, phone, phone2, zone, address, loc, note, flag) in enumerate(
         _BOY_SAMPLES
     ):
+        cls = names[i % len(names)] if names else None
+        servants = teachers_by_class.get(cls) or []
         rows.append(
             {
                 "boy_name": name,
@@ -136,30 +170,76 @@ def build_boys_template(class_names: list[str]) -> bytes:
                 "zone": zone,
                 "address": address,
                 "location": loc,
-                "class_name": names[i % len(names)],
+                "class_name": cls,
+                "teacher_name": servants[(i // len(names)) % len(servants)]
+                if servants
+                else None,
                 "note": note,
                 "issue_flag": flag,
             }
         )
     logger.info("Boys template built: %d rows", len(rows))
-    return _workbook(BOY_HEADERS, rows, "الأولاد")
+    return _workbook(BOY_HEADERS, rows, "الأولاد", BOY_DOCS)
 
 
 def build_teachers_template(class_names: list[str]) -> bytes:
-    names = class_names or ["1"]
+    names = class_names or []
     rows = []
     for i, (name, phone, visit, note) in enumerate(_TEACHER_SAMPLES):
         rows.append(
             {
                 "teacher_name": name,
                 "phone": phone,
-                "class_name": names[i % len(names)],
+                "class_name": names[i % len(names)] if names else None,
                 "last_visit_date": visit,
                 "note": note,
             }
         )
     logger.info("Teachers template built: %d rows", len(rows))
     return _workbook(TEACHER_HEADERS, rows, "الخدام")
+
+
+# phone, servant/boy name, role - one row per login.
+_USER_SAMPLES = [
+    ("01012345678", "أ. مينا عادل", "teacher"),
+    ("01234567890", "أ. مارينا سمير", "admin"),
+    ("01122334455", "أ. فادي حنا", "teacher"),
+    ("01555555555", "مينا فؤاد حنا", "user"),
+]
+
+
+def _user_template_rows(class_names: list[str]) -> list[dict]:
+    names = class_names or []
+    rows = []
+    for i, (phone, name, role) in enumerate(_USER_SAMPLES):
+        rows.append(
+            {
+                "phone": phone,
+                "class_name": names[i % len(names)] if names else None,
+                "name": name,
+                "role": role,
+            }
+        )
+    return rows
+
+
+def build_users_template(class_names: list[str]) -> bytes:
+    """Sample accounts sheet (``phone | class_name | name | role``)."""
+    rows = _user_template_rows(class_names)
+    logger.info("Users template built: %d rows", len(rows))
+    return _workbook(USER_HEADERS, rows, "الحسابات", USER_DOCS)
+
+
+def build_users_template_csv(class_names: list[str]) -> bytes:
+    """Same template as a CSV, with a BOM so Excel opens the Arabic right."""
+    rows = _user_template_rows(class_names)
+    buf = StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(USER_HEADERS)
+    for row in rows:
+        writer.writerow([row.get(h) or "" for h in USER_HEADERS])
+    logger.info("Users CSV template built: %d rows", len(rows))
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
 def build_boys_export(boys: list, class_label_fn) -> bytes:
@@ -175,12 +255,13 @@ def build_boys_export(boys: list, class_label_fn) -> bytes:
             "address": b.address,
             "location": b.location,
             "class_name": class_label_fn(b.class_id),
+            "teacher_name": b.teacher_name,
             "note": b.note,
             "issue_flag": b.issue_flag,
         }
         for b in boys
     ]
-    return _workbook(BOY_HEADERS, rows, "الأولاد")
+    return _workbook(BOY_HEADERS, rows, "الأولاد", BOY_DOCS)
 
 
 def build_teachers_export(teachers: list, class_label_fn) -> bytes:

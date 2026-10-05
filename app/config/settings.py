@@ -28,9 +28,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # Bootstrap first Admin (created on startup if no Admin exists)
-    ADMIN_MAIL: str | None = None
+    ADMIN_PHONE: str | None = None
     ADMIN_PASSWORD: str | None = None
-    ADMIN_USER_NAME: str = "Admin"
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"

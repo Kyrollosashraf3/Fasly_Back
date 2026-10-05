@@ -3,30 +3,37 @@
 Expected sheet: first row = header with the collection's column names.
 
     boys     : boy_name | gender | birth_date | phone | phone_2 | zone |
-               address | location | class_name | note | issue_flag
+               address | location | class_name | teacher_name | note | issue_flag
     teachers : teacher_name | phone | class_name | last_visit_date | note
     groups   : teacher_name | boy_name | class_name
+    users    : phone | class_name | name | role
 
 - Fully empty rows are skipped.
 - Cell values are coerced (gender m/f, dates, bools).
 - ``class_name`` is resolved to ``class_id`` through the caller's
   :meth:`~app.core.data.classes.ClassService.label_lookup`, so an import can
   only ever land in a class the login is allowed to write into.
+- ``teacher_name`` (boys sheet, optional) is resolved through the caller's
+  :func:`teacher_lookup`: the servant is filed as the boy's group owner, so
+  he can take the boy's attendance right away.
 - Returns (items, errors): valid models + per-row parse errors
   ``[{row, <name_key>, error}]`` so the caller can insert the good rows and
   report the bad ones instead of failing the whole file.
 """
 
 from datetime import date, datetime
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import Callable
+import csv
 
 from openpyxl import load_workbook
+from pydantic import ValidationError
 
 from app.config.logger import get_logger
-from app.models.enums import GenderEnum
+from app.models.enums import GenderEnum, RoleEnum
 from app.schemas.boy import BoyCreate
 from app.schemas.teacher import TeacherCreate
+from app.schemas.user import UserImportRow, normalise_phone
 
 logger = get_logger(__name__)
 
@@ -40,6 +47,7 @@ BOY_HEADERS = [
     "address",
     "location",
     "class_name",
+    "teacher_name",
     "note",
     "issue_flag",
 ]
@@ -53,6 +61,8 @@ TEACHER_HEADERS = [
 ]
 
 GROUP_HEADERS = ["teacher_name", "boy_name", "class_name"]
+
+USER_HEADERS = ["phone", "class_name", "name", "role"]
 
 _GENDER_MAP = {
     "m": GenderEnum.MALE,
@@ -143,10 +153,37 @@ def _parse_flag(value) -> bool:
     raise ValueError(f"bad issue_flag {value!r} (use true/false)")
 
 
-def _row_to_boy(row: dict, classes: dict[str, int]) -> BoyCreate:
+def teacher_lookup(rows) -> dict[tuple[int, str], int]:
+    """``(class_id, normalized servant name) -> teacher id``.
+
+    Keyed by class because servant names only have to be unique *inside* a
+    class, and because a boy may only be filed under a servant of his own
+    class.
+    """
+    return {(t.class_id, _norm(t.teacher_name)): t.id for t in rows}
+
+
+def _row_to_boy(
+    row: dict,
+    classes: dict[str, int],
+    teachers: dict[tuple[int, str], int] | None,
+) -> BoyCreate:
     name = _str(row.get("boy_name"))
     if not name:
         raise ValueError("boy_name is required")
+    class_id = _resolve_class(row.get("class_name"), classes)
+    servant = _str(row.get("teacher_name"))
+    teacher_id = None
+    if servant:
+        teacher_id = (teachers or {}).get((class_id, _norm(servant)))
+        if teacher_id is None:
+            known = sorted(
+                {n for (cid, n) in (teachers or {}) if cid == class_id}
+            )
+            raise ValueError(
+                f"unknown teacher_name {servant!r} in this class "
+                f"(known: {', '.join(known) or '-'})"
+            )
     return BoyCreate(
         boy_name=name,
         gender=_parse_gender(
@@ -158,7 +195,8 @@ def _row_to_boy(row: dict, classes: dict[str, int]) -> BoyCreate:
         zone=_str(row.get("zone")),
         address=_str(row.get("address")),
         location=_str(row.get("location")),
-        class_id=_resolve_class(row.get("class_name"), classes),
+        class_id=class_id,
+        teacher_id=teacher_id,
         note=_str(row.get("note")),
         issue_flag=_parse_flag(row.get("issue_flag")),
     )
@@ -191,11 +229,24 @@ def read_workbook(
     name_key: str,
     build_row: Callable[[dict], object],
     entity: str,
+    csv: bool = False,
 ) -> tuple[list, list[dict]]:
-    """Generic .xlsx reader shared by all import flows.
+    """Parse a workbook (or a CSV) into models.
 
     Returns (items, errors). Raises ValueError if the file/header is invalid.
     """
+    rows = _csv_rows(data) if csv else _xlsx_rows(data)
+    return _parse_table(
+        rows,
+        headers=headers,
+        required=required,
+        name_key=name_key,
+        build_row=build_row,
+        entity=entity,
+    )
+
+
+def _xlsx_rows(data: bytes) -> list[tuple]:
     try:
         wb = load_workbook(BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:
@@ -203,10 +254,38 @@ def read_workbook(
     ws = wb.active
     if ws is None:
         raise ValueError("Excel file has no sheet")
-
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         raise ValueError("Excel sheet is empty")
+    return rows
+
+
+def _csv_rows(data: bytes) -> list[tuple]:
+    """First row = header, comma / semicolon / tab separated, UTF-8."""
+    text = data.decode("utf-8-sig", errors="replace")
+    sample = "\n".join(text.splitlines()[:5])
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+    except csv.Error:
+        dialect = csv.excel
+    rows = [tuple(r) for r in csv.reader(StringIO(text), dialect)]
+    if not rows:
+        raise ValueError("CSV file is empty")
+    return rows
+
+
+def _parse_table(
+    rows: list[tuple],
+    *,
+    headers: list[str],
+    required: tuple[str, ...],
+    name_key: str,
+    build_row: Callable[[dict], object],
+    entity: str,
+) -> tuple[list, list[dict]]:
+    """Shared row loop: header check, blank-row skip, per-row error capture."""
+    if not rows:
+        raise ValueError("the sheet is empty")
     header = [(_str(c) or "") for c in rows[0]]
     missing = [h for h in required if h not in header]
     if missing:
@@ -233,14 +312,17 @@ def read_workbook(
                     "error": str(exc),
                 }
             )
-            logger.warning(f"Excel row {i} skipped: {exc}")
+            logger.warning(f"Row {i} skipped: {exc}")
 
-    logger.info(f"Excel parsed ({entity}): valid={len(items)} errors={len(errors)}")
+    logger.info(f"Sheet parsed ({entity}): valid={len(items)} errors={len(errors)}")
     return items, errors
 
 
 def read_boys_workbook(
-    data: bytes, *, classes: dict[str, int]
+    data: bytes,
+    *,
+    classes: dict[str, int],
+    teachers: dict[tuple[int, str], int] | None = None,
 ) -> tuple[list[BoyCreate], list[dict]]:
     """Parse an .xlsx file (as bytes) into boys."""
     return read_workbook(
@@ -248,7 +330,7 @@ def read_boys_workbook(
         headers=BOY_HEADERS,
         required=("boy_name", "class_name"),
         name_key="boy_name",
-        build_row=lambda row: _row_to_boy(row, classes),
+        build_row=lambda row: _row_to_boy(row, classes, teachers),
         entity="boys",
     )
 
@@ -292,6 +374,78 @@ def read_groups_workbook(
         name_key="boy_name",
         build_row=lambda row: _row_to_group(row, classes),
         entity="groups",
+    )
+
+
+_ROLE_MAP = {
+    "super_admin": RoleEnum.SUPER_ADMIN,
+    "superadmin": RoleEnum.SUPER_ADMIN,
+    "super": RoleEnum.SUPER_ADMIN,
+    "أدمن عام": RoleEnum.SUPER_ADMIN,
+    "ادمن عام": RoleEnum.SUPER_ADMIN,
+    "admin": RoleEnum.ADMIN,
+    "administrator": RoleEnum.ADMIN,
+    "أمين": RoleEnum.ADMIN,
+    "امين": RoleEnum.ADMIN,
+    "أمين فصل": RoleEnum.ADMIN,
+    "امين فصل": RoleEnum.ADMIN,
+    "teacher": RoleEnum.TEACHER,
+    "servant": RoleEnum.TEACHER,
+    "خادم": RoleEnum.TEACHER,
+    "خدام": RoleEnum.TEACHER,
+    "user": RoleEnum.USER,
+    "boy": RoleEnum.USER,
+    "ولد": RoleEnum.USER,
+    "أولاد": RoleEnum.USER,
+}
+
+
+def _parse_role(value) -> RoleEnum:
+    text = (_str(value) or "").lower()
+    if text in _ROLE_MAP:
+        return _ROLE_MAP[text]
+    raise ValueError(
+        f"bad role {value!r} (use super_admin / admin / teacher / user)"
+    )
+
+
+def _row_to_user(row: dict, classes: dict[str, int]) -> UserImportRow:
+    """``phone | class_name | name | role`` -> a resolved import row.
+
+    ``class_name`` is turned into ``class_id`` here (same lookup as every
+    other sheet), so a super_admin row is the only one allowed to leave it
+    blank.
+    """
+    role = _parse_role(row.get("role"))
+    class_name = _str(row.get("class_name"))
+    name = _str(row.get("name"))
+    class_id = None
+    if role != RoleEnum.SUPER_ADMIN:
+        class_id = _resolve_class(class_name, classes)
+    try:
+        return UserImportRow(
+            phone=normalise_phone(_str(row.get("phone")) or ""),
+            class_name=class_name,
+            name=name,
+            role=role,
+            class_id=class_id,
+        )
+    except ValidationError as exc:
+        raise ValueError("; ".join(e["msg"] for e in exc.errors())) from None
+
+
+def read_users_workbook(
+    data: bytes, *, classes: dict[str, int], csv_file: bool = False
+) -> tuple[list[UserImportRow], list[dict]]:
+    """Parse an accounts sheet (.xlsx or .csv) into import rows."""
+    return read_workbook(
+        data,
+        headers=USER_HEADERS,
+        required=tuple(USER_HEADERS),
+        name_key="phone",
+        build_row=lambda row: _row_to_user(row, classes),
+        entity="users",
+        csv=csv_file,
     )
 
 

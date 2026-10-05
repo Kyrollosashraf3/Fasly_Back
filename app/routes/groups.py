@@ -11,9 +11,6 @@ from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
 from app.core.data import ClassService, GroupsService
-from app.core.EDA.importer import read_upload
-from app.core.EDA.read_excel import read_groups_workbook
-from app.core.EDA.write_groups import build_groups_workbook
 from app.db.database import get_db
 from app.schemas.group import GroupAssign, GroupUnassign
 from app.schemas.user import UserResponse
@@ -50,6 +47,10 @@ def import_groups(
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Sheet columns: teacher_name | boy_name | class_name."""
+    # lazy: openpyxl/csv only load when someone actually uploads
+    from app.core.EDA.importer import read_upload
+    from app.core.EDA.read_excel import read_groups_workbook
+
     classes = ClassService(db, current_user).label_lookup()
     data = read_upload(file)
     try:
@@ -101,6 +102,8 @@ def export_groups(
         label = names.get(next(iter(class_ids)), "")
     else:
         label = "كل الفصول"
+
+    from app.core.EDA.write_groups import build_groups_workbook
 
     content = build_groups_workbook(payload["groups"], class_label=label)
     return Response(

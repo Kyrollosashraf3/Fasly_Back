@@ -29,6 +29,7 @@ from app.schemas.boy import BoyCreate, BoyResponse, BoyUpdate
 from app.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
 from app.schemas.group import GroupAssign, GroupResponse, GroupUnassign
 from app.schemas.school_class import (
+    CLASS_NAMES,
     SchoolClassCreate,
     SchoolClassResponse,
     SchoolClassUpdate,
@@ -41,10 +42,21 @@ from app.schemas.teacher_check import (
     TeacherCheckResponse,
     TeacherCheckUpdate,
 )
-from app.schemas.user import Token, UserCreate, UserInDB, UserResponse, UserUpdate
+from app.schemas.user import (
+    SignupCheckRequest,
+    SignupCheckResponse,
+    SignupRequest,
+    Token,
+    UserCreate,
+    UserImportRow,
+    UserInDB,
+    UserResponse,
+    UserUpdate,
+)
 
 __all__ = [
     "ORMResponse",
+    "CLASS_NAMES",
     "SchoolClassCreate",
     "SchoolClassUpdate",
     "SchoolClassResponse",
@@ -71,8 +83,12 @@ __all__ = [
     "GroupUnassign",
     "GroupResponse",
     "UserCreate",
+    "UserImportRow",
     "UserUpdate",
     "UserResponse",
     "UserInDB",
     "Token",
+    "SignupCheckRequest",
+    "SignupCheckResponse",
+    "SignupRequest",
 ]

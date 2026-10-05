@@ -3,12 +3,6 @@ from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
 from app.core.data import ClassService, TeacherService
-from app.core.EDA.importer import run_import
-from app.core.EDA.read_excel import read_teachers_workbook
-from app.core.EDA.templates import (
-    build_teachers_export,
-    build_teachers_template,
-)
 from app.db.database import get_db
 from app.routes._excel import label_for, writable_class_names, xlsx_response
 from app.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
@@ -32,6 +26,10 @@ def import_teachers(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
+    # lazy: openpyxl/csv only load when someone actually uploads
+    from app.core.EDA.importer import run_import
+    from app.core.EDA.read_excel import read_teachers_workbook
+
     classes = ClassService(db, current_user).label_lookup()
     return run_import(
         file,
@@ -56,6 +54,8 @@ def teachers_template(
     current_user: UserResponse = Depends(get_current_user),
 ):
     """A ready-to-upload sample sheet (``class_name`` already filled)."""
+    from app.core.EDA.templates import build_teachers_template
+
     content = build_teachers_template(writable_class_names(db, current_user))
     return xlsx_response(content, "teachers.xlsx")
 
@@ -66,6 +66,8 @@ def teachers_export(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
 ):
+    from app.core.EDA.templates import build_teachers_export
+
     label = label_for(db, current_user)
     teachers = TeacherService(db, current_user).list(class_id=class_id)
     return xlsx_response(build_teachers_export(teachers, label), "teachers.xlsx")
