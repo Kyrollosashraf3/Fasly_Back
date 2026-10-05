@@ -1,35 +1,34 @@
 """Service layer: every route calls into here, never straight into the ORM.
 
-Each service is built from three pieces:
+One module per table. A service only ever asks questions, and every question
+has exactly one home:
 
-    Scope        (app.core.data.base) - *who is asking* and what they may see
-    BaseService  - the session, the login and the commit helper
-    the service  - one module per table, it only asks ``Scope`` questions
+    who is allowed to see this row   ->  the ``scope_*`` / ``ensure_*``
+                                         functions in ``app.core.data.common``
+    how is a row found and saved      ->  ``app.core.data.base``
+    what does this table mean         ->  the service module itself
 
-Permission rules live in the ``Scope`` docstring / matrix at the top of
-``app.core.data.base``. Nothing in a route makes a decision.
+Nothing in a route makes a decision, and no permission rule is duplicated.
 """
 
+from __future__ import annotations
+
 from app.core.data.attendance import AttendanceService
-from app.core.data.base import (
-    AdminService,
-    BaseService,
-    ClassScopedService,
-    PersonCheckService,
-    Scope,
-    MANAGER_ROLES,
-)
+from app.core.data.base import BaseService, WeeklySheetService
 from app.core.data.boys import BoyService
 from app.core.data.classes import ClassService
 from app.core.data.common import (
+    MANAGERS,
+    apply_update,
     bulk_create,
     commit,
-    ensure_unique_field,
+    ensure_boy_access,
+    ensure_manager,
+    ensure_roles,
+    ensure_teacher_access,
     get_or_404,
-    is_past_friday,
-    now_utc,
-    to_date,
-    touch,
+    my_class_id,
+    normalise_name,
 )
 from app.core.data.follow_ups import FollowUpService
 from app.core.data.groups import GroupsService
@@ -43,13 +42,9 @@ from app.core.data.users import (
 )
 
 __all__ = [
-    # base
-    "Scope",
+    # bases
     "BaseService",
-    "AdminService",
-    "ClassScopedService",
-    "PersonCheckService",
-    "MANAGER_ROLES",
+    "WeeklySheetService",
     # services
     "AttendanceService",
     "BoyService",
@@ -59,16 +54,20 @@ __all__ = [
     "TeacherCheckService",
     "TeacherService",
     "UserService",
+    # signup (pre-login, no service)
     "complete_signup",
     "get_user_by_phone",
     "signup_check",
-    # helpers
+    # the handful of helpers routes need
+    "MANAGERS",
+    "apply_update",
     "bulk_create",
     "commit",
-    "ensure_unique_field",
+    "ensure_boy_access",
+    "ensure_manager",
+    "ensure_roles",
+    "ensure_teacher_access",
     "get_or_404",
-    "is_past_friday",
-    "now_utc",
-    "to_date",
-    "touch",
+    "my_class_id",
+    "normalise_name",
 ]

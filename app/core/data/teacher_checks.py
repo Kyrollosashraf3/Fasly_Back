@@ -1,6 +1,8 @@
-"""Weekly review the amin runs over his class's servants."""
+"""Friday review the amin runs over the servants of his class."""
+from __future__ import annotations
 
-from app.core.data.base import PersonCheckService
+from app.core.data.base import WeeklySheetService
+from app.core.data.common import ensure_teacher_access, scope_checks
 from app.models.enums import RoleEnum
 from app.models.teacher import Teacher
 from app.models.teacher_check import TeacherCheck
@@ -11,48 +13,37 @@ from app.schemas.teacher_check import (
 )
 
 
-class TeacherCheckService(PersonCheckService):
-    """One row per (servant, date) - ``class_id`` is stamped as a snapshot.
+class TeacherCheckService(WeeklySheetService):
+    """``class_id`` on every row is a snapshot of the servant's class on ``date``.
 
-    read : super_admin all | admin his class | teacher himself
-    write: super_admin all | admin his class (the amin is the one who asks)
+    read : super_admin all | admin his class | teacher himself  (a boy: 403)
+    write: super_admin all | admin his class
     """
 
+
     model = TeacherCheck
-    person_model = Teacher
+    person = Teacher
     person_fk = "teacher_id"
     person_attr = "teacher"
     person_label = "Servant"
     label = "Teacher check"
 
-    def _records_query(self):
-        # a boy account must never reach this table at all
-        self.scope.require_roles(
-            RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER
-        )
-        query = super()._records_query()
-        if self.scope.role == RoleEnum.TEACHER:
-            query = query.filter(
-                TeacherCheck.teacher_id == self.scope.teacher_id
-            )
-        return query
+    def query(self):
+        return scope_checks(self.db, self.db.query(TeacherCheck), self.user)
 
-    def _ensure_visible(self, teacher: Teacher) -> None:
-        self.scope.require_roles(
-            RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER
-        )
-        self.scope.ensure_teacher_visible(teacher)
+    def can_read(self, teacher: Teacher) -> None:
+        ensure_teacher_access(self.db, self.user, teacher)
 
-    def _ensure_writable(self, teacher: Teacher) -> None:
-        self.scope.require_manager()
-        self.scope.ensure_class(teacher.class_id)
+    def can_write(self, teacher: Teacher) -> None:
+        self.ensure_manager()
+        self.ensure_class(teacher.class_id)
 
-    # route-facing signatures
-    def create(self, data: TeacherCheckCreate):
+    # route-facing signatures, kept explicit for the type hints
+    def create(self, data: TeacherCheckCreate) -> TeacherCheck:
         return super().create(data)
 
-    def create_bulk(self, data: TeacherCheckBulkCreate) -> list:
+    def create_bulk(self, data: TeacherCheckBulkCreate) -> list[TeacherCheck]:
         return super().create_bulk(data)
 
-    def update(self, record_id: int, data: TeacherCheckUpdate):
+    def update(self, record_id: int, data: TeacherCheckUpdate) -> TeacherCheck:
         return super().update(record_id, data)

@@ -19,3 +19,9 @@ INFO:     127.0.0.1:9836 - "GET /ui/ HTTP/1.1" 200 OK
 INFO:     127.0.0.1:9836 - "GET /app HTTP/1.1" 404 Not Found
 INFO:     127.0.0.1:9836 - "GET /docs HTTP/1.1" 200 OK
 INFO:     127.0.0.1:9836 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9848 - "GET /ui/ HTTP/1.1" 200 OK
+2026-10-05 21:13:22 - app.db.database - DEBUG - DB session opened
+2026-10-05 21:13:22 - app.core.auth.deps - DEBUG - Authenticated request as 01000000001 (id=2, role=RoleEnum.SUPER_ADMIN)
+2026-10-05 21:13:22 - app.core.EDA.templates - INFO - Users template built: 4 rows
+INFO:     127.0.0.1:9848 - "GET /auth/users/template HTTP/1.1" 200 OK
+2026-10-05 21:13:23 - app.db.database - DEBUG - DB session closed

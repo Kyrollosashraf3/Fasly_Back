@@ -1,10 +1,12 @@
+"""Dashboard analytics - one summary, one boy drill-down. Read-only."""
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
 from app.core.DA.dashboard import DashboardService
 from app.db.database import get_db
-from app.schemas.user import UserResponse
+from app.models.user import User
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -18,8 +20,10 @@ def dashboard_summary(
     trend_n: int = Query(default=8, ge=1, le=52),
     teacher_trend_n: int = Query(default=8, ge=1, le=52),
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    """Attendance, streaks, absences and servant scores - all already scoped
+    to the classes this login may see."""
     return DashboardService(db, current_user).summary(
         class_id=class_id,
         streak_n=streak_n,
@@ -34,6 +38,7 @@ def dashboard_summary(
 def dashboard_boy(
     boy_id: int,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    """One boy: master data, every Friday, season table and follow-up log."""
     return DashboardService(db, current_user).boy_profile(boy_id)

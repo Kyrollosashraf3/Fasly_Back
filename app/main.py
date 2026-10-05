@@ -1,15 +1,11 @@
-"""main.py - Application entry point.
+"""Application entry point.
 
-Run:
-    uvicorn app.main:app --reload --port 9001
+Only exposes the ASGI app; all wiring lives in ``app.core.app``.
+
+Run:  uvicorn app.main:app --reload --port 9001
+Docs: /docs  /redoc  /openapi.json
 """
 
-from app.app import app
+from app.core.app import create_app
 
-__all__ = ["app"]
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run("app.main:app", host="0.0.0.0", port=9001, reload=True)
+app = create_app()

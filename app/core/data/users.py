@@ -1,12 +1,27 @@
-"""Login accounts - phone + password + role only."""
+"""Login accounts - phone + password + role, nothing else.
+
+A number is registered by an administrator (or imported from a sheet) with
+``password_hash = NULL``; the owner then picks his password from ``/auth/signup``.
+That single rule is what ``pending_signup`` means everywhere in the app.
+"""
+
+from __future__ import annotations
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Query
 
 from app.core.auth.security import get_password_hash
-from app.core.data.base import MANAGER_ROLES, BaseService
-from app.core.data.common import bulk_create, commit, ensure_unique_field, get_or_404
+from app.core.data.base import BaseService
+from app.core.data.common import (
+    MANAGERS,
+    bulk_create,
+    commit,
+    ensure_manager,
+    ensure_unique,
+    get_or_404,
+    normalise_name,
+    scope_users,
+)
 from app.models.boy import Boy
 from app.models.enums import RoleEnum
 from app.models.teacher import Teacher
@@ -19,56 +34,177 @@ from app.schemas.user import (
     normalise_phone,
 )
 
-_OWNER_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN)
+#: Roles that live on a servant row (and therefore inherit his class).
+OWNER_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN)
 
 
-def _norm(value: str) -> str:
-    """Case/whitespace-insensitive form of a person's name."""
-    return " ".join(str(value).split()).lower()
-
-
-def get_user_by_phone(db: Session, phone: str) -> User | None:
+def get_user_by_phone(db, phone: str) -> User | None:
     """Login lookup by mobile number - the only handle there is."""
     return db.query(User).filter(User.phone == normalise_phone(phone)).first()
 
 
 class UserService(BaseService):
-    """Account lifecycle.
-
-    read : super_admin all | admin accounts of his class | teacher/user only their own
-    write: super_admin all | admin accounts of his class (never to super_admin)
+    """read : super_admin all | admin accounts of his class | teacher/user own
+    write: super_admin all | admin accounts of his class
     """
 
-    def _query(self):
-        role = self.scope.role
-        if role == RoleEnum.SUPER_ADMIN:
-            return self.db.query(User)
-        if role in (RoleEnum.TEACHER, RoleEnum.USER):
-            return self.db.query(User).filter(User.id == self.current_user.id)
+    def query(self) -> Query:
+        return scope_users(self.db, self.db.query(User), self.user)
 
-        # admin: every account bound to a servant or a boy of his class
-        class_id = self.scope.require_class()
-        teacher_ids = [
-            row[0]
-            for row in self.db.query(Teacher.id).filter(Teacher.class_id == class_id)
-        ]
-        boy_ids = [
-            row[0] for row in self.db.query(Boy.id).filter(Boy.class_id == class_id)
-        ]
-        return self.db.query(User).filter(
-            or_(
-                User.teacher_id.in_(teacher_ids),
-                User.boy_id.in_(boy_ids),
+    def list_users(self) -> list[User]:
+        return self.query().order_by(User.phone).all()
+
+    def get_user(self, user_id: int) -> User:
+        user = self.query().filter(User.id == user_id).first()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {user_id} not found.",
             )
+        return user
+
+    # ----------------------------------------------------------------- write
+    def create_user(self, data: UserCreate) -> User:
+        ensure_manager(self.user)
+        if data.role == RoleEnum.SUPER_ADMIN and self.user.role != RoleEnum.SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the super admin can create a super admin account.",
+            )
+        self._ensure_owner_in_scope(data.teacher_id, data.boy_id)
+        ensure_unique(self.db, User, "phone", data.phone, label="Account")
+        self._ensure_owner_free(data.teacher_id, data.boy_id)
+
+        user = User(
+            phone=data.phone,
+            # no password yet = the owner sets it himself from /auth/signup
+            password_hash=get_password_hash(data.password) if data.password else None,
+            role=data.role,
+            teacher_id=data.teacher_id,
+            boy_id=data.boy_id,
+        )
+        self.db.add(user)
+        commit(self.db, f"User create phone={data.phone} role={data.role.value}")
+        return user
+
+    def update_user(self, user_id: int, data: UserUpdate) -> User:
+        user = self.get_user(user_id)
+        fields = data.model_dump(exclude_unset=True)
+        password = fields.pop("password", None)
+
+        if self.user.role not in MANAGERS:
+            return self._reset_own_password(user, fields, password)
+
+        # The schema already validated the payload; re-check the *merged* row
+        # so a partial PATCH can never leave role and owner out of sync.
+        if fields:
+            self._ensure_merged_row_valid(user, fields)
+
+        if "phone" in fields:
+            ensure_unique(
+                self.db, User, "phone", fields["phone"], exclude_id=user_id,
+                label="Account",
+            )
+            user.phone = fields["phone"]
+        if "role" in fields:
+            user.role = fields["role"]
+        if "teacher_id" in fields:
+            user.teacher_id = fields["teacher_id"]
+        if "boy_id" in fields:
+            user.boy_id = fields["boy_id"]
+        if password:
+            user.password_hash = get_password_hash(password)
+
+        commit(self.db, f"User update id={user_id}")
+        return user
+
+    def delete_user(self, user_id: int) -> None:
+        user = self.get_user(user_id)
+        ensure_manager(self.user)
+        if user.id == self.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot delete your own account.",
+            )
+        self.db.delete(user)
+        commit(self.db, f"User delete id={user_id}")
+
+    # ---------------------------------------------------------------- import
+    def add_list(self, items: list[UserImportRow]) -> dict:
+        """Excel / CSV import of accounts.
+
+        Each row is ``phone | class_name | name | role``: the servant named in
+        the row is looked up in that class and created when missing, so one
+        sheet is enough to stand the accounts up. Checked once up front so a
+        non-manager gets a single 403 instead of one failure per row.
+        """
+        ensure_manager(self.user)
+        return bulk_create(
+            self._create_from_row, items, label="users", name_attr="phone"
         )
 
-    def _ensure_owner_in_scope(self, teacher_id: int | None, boy_id: int | None) -> None:
+    # ------------------------------------------------------- self-service
+    def _reset_own_password(
+        self, user: User, fields: dict, password: str | None
+    ) -> User:
+        """A servant or a boy may reset *his own* password - and nothing else.
+        Role, owner links and the phone are privileged fields."""
+        if user.id != self.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this operation.",
+            )
+        if fields:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only an administrator can change that.",
+            )
+        if not password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to update."
+            )
+        user.password_hash = get_password_hash(password)
+        commit(self.db, f"User password reset id={user.id} (self)")
+        return user
+
+    # -------------------------------------------------------------- internals
+    def _ensure_merged_row_valid(self, user: User, fields: dict) -> None:
+        role = fields.get("role", user.role)
+        teacher_id = fields.get("teacher_id", user.teacher_id)
+        boy_id = fields.get("boy_id", user.boy_id)
+
+        if role == RoleEnum.SUPER_ADMIN and self.user.role != RoleEnum.SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the super admin can grant that role.",
+            )
+        try:
+            check_owner(role, teacher_id, boy_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+
+        self._ensure_owner_in_scope(
+            fields.get("teacher_id"), fields.get("boy_id")
+        )
+        self._ensure_owner_free(
+            fields["teacher_id"]
+            if "teacher_id" in fields and fields["teacher_id"] != user.teacher_id
+            else None,
+            fields["boy_id"]
+            if "boy_id" in fields and fields["boy_id"] != user.boy_id
+            else None,
+            exclude_id=user.id,
+        )
+
+    def _ensure_owner_in_scope(
+        self, teacher_id: int | None, boy_id: int | None
+    ) -> None:
         if teacher_id is not None:
-            teacher = get_or_404(self.db, Teacher, teacher_id, "Servant")
-            self.scope.ensure_class(teacher.class_id)
+            self.ensure_class(get_or_404(self.db, Teacher, teacher_id, "Servant").class_id)
         if boy_id is not None:
-            boy = get_or_404(self.db, Boy, boy_id, "Boy")
-            self.scope.ensure_class(boy.class_id)
+            self.ensure_class(get_or_404(self.db, Boy, boy_id, "Boy").class_id)
 
     def _ensure_owner_free(
         self,
@@ -76,8 +212,8 @@ class UserService(BaseService):
         boy_id: int | None,
         exclude_id: int | None = None,
     ) -> None:
-        """One login per servant and one per boy - ``users.teacher_id`` /
-        ``users.boy_id`` are UNIQUE, and a clearer message than a raw 409."""
+        """One login per servant and one per boy - both owner columns are
+        UNIQUE, and this says so in plain words instead of a raw 409."""
         for column, value, label in (
             ("teacher_id", teacher_id, "servant"),
             ("boy_id", boy_id, "boy"),
@@ -93,158 +229,16 @@ class UserService(BaseService):
                     detail=f"That {label} already has a login.",
                 )
 
-    # ----------------------------------------------------------------- write
-    def create_user(self, data: UserCreate) -> User:
-        self.scope.require_manager()
-        if data.role == RoleEnum.SUPER_ADMIN and not self.scope.is_super_admin:
-            self.scope.deny("Only the super admin can create a super admin account.")
-        self._ensure_owner_in_scope(data.teacher_id, data.boy_id)
-        ensure_unique_field(self.db, User, "phone", data.phone, label="Account")
-        self._ensure_owner_free(data.teacher_id, data.boy_id)
-
-        user = User(
-            phone=data.phone,
-            # no password yet = the owner sets it himself from /signup
-            password_hash=(
-                get_password_hash(data.password) if data.password else None
-            ),
-            role=data.role,
-            teacher_id=data.teacher_id,
-            boy_id=data.boy_id,
-        )
-        self.db.add(user)
-        self._commit(f"User create phone={data.phone} role={data.role.value}")
-        return user
-
-    def update_user(self, user_id: int, data: UserUpdate) -> User:
-        user = self.get_user(user_id)
-
-        updates = data.model_dump(exclude_unset=True)
-        password = updates.pop("password", None)
-
-        if self.scope.role not in MANAGER_ROLES:
-            # Self-service: a servant or a boy may reset his own password and
-            # nothing else - role, owner links and the address are privileged.
-            if user.id != self.current_user.id:
-                self.scope.deny(
-                    "You do not have permission to perform this operation."
-                )
-            if updates:
-                self.scope.deny("Only an administrator can change that.")
-            if not password:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Nothing to update.",
-                )
-            user.password_hash = get_password_hash(password)
-            self._commit(f"User password reset id={user_id} (self)")
-            return user
-
-        # the schema validated the payload on its own; re-check the *merged*
-        # row so a partial PATCH can never leave role/owner out of sync.
-        if updates:
-            role = updates.get("role", user.role)
-            teacher_id = updates.get("teacher_id", user.teacher_id)
-            boy_id = updates.get("boy_id", user.boy_id)
-            if role == RoleEnum.SUPER_ADMIN and not self.scope.is_super_admin:
-                self.scope.deny("Only the super admin can grant that role.")
-            try:
-                check_owner(role, teacher_id, boy_id)
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=str(exc),
-                ) from exc
-            self._ensure_owner_in_scope(
-                updates["teacher_id"] if "teacher_id" in updates else None,
-                updates["boy_id"] if "boy_id" in updates else None,
-            )
-            self._ensure_owner_free(
-                updates["teacher_id"]
-                if "teacher_id" in updates and updates["teacher_id"] != user.teacher_id
-                else None,
-                updates["boy_id"]
-                if "boy_id" in updates and updates["boy_id"] != user.boy_id
-                else None,
-                exclude_id=user_id,
-            )
-
-        if "phone" in updates:
-            ensure_unique_field(
-                self.db,
-                User,
-                "phone",
-                updates["phone"],
-                exclude_id=user_id,
-                label="Account",
-            )
-            user.phone = updates["phone"]
-        if "role" in updates:
-            user.role = updates["role"]
-        if "teacher_id" in updates:
-            user.teacher_id = updates["teacher_id"]
-        if "boy_id" in updates:
-            user.boy_id = updates["boy_id"]
-        if password:
-            user.password_hash = get_password_hash(password)
-
-        self._commit(f"User update id={user_id}")
-        return user
-
-    def delete_user(self, user_id: int) -> None:
-        user = self.get_user(user_id)
-        self.scope.require_manager()
-        if user.id == self.current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You cannot delete your own account.",
-            )
-        self.db.delete(user)
-        self._commit(f"User delete id={user_id}")
-
-    # ------------------------------------------------------------------ read
-    def get_user(self, user_id: int) -> User:
-        user = self._query().filter(User.id == user_id).first()
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User {user_id} not found.",
-            )
-        return user
-
-    def list_users(self):
-        return self._query().order_by(User.phone).all()
-
-    # ---------------------------------------------------------------- import
-    def add_list(self, items: list[UserImportRow]) -> dict:
-        """Excel / CSV import of login accounts.
-
-        Checked once up front so a non-manager gets a single 403 instead of
-        one failure per row. Each sheet row is ``phone | class_name | name |
-        role`` - the servant named in the row is looked up in that class and
-        created when he is not there yet, so one file is enough to stand up
-        the accounts.
-        """
-        self.scope.require_manager()
-        return bulk_create(
-            self._create_from_row, items, label="users", name_attr="phone"
-        )
-
     def _create_from_row(self, row: UserImportRow) -> User:
-        # phone first: never leave a freshly created servant behind when the
+        # Phone first: never leave a freshly created servant behind when the
         # account itself cannot be written.
         if get_user_by_phone(self.db, row.phone) is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"phone: '{row.phone}' already has an account.",
             )
-
-        teacher_id = boy_id = None
-        if row.role in _OWNER_ROLES:
-            teacher_id = self._servant_for(row).id
-        elif row.role == RoleEnum.USER:
-            boy_id = self._boy_for(row).id
-
+        teacher_id = self._servant_for(row).id if row.role in OWNER_ROLES else None
+        boy_id = self._boy_for(row).id if row.role == RoleEnum.USER else None
         return self.create_user(
             UserCreate(
                 phone=row.phone,
@@ -255,25 +249,25 @@ class UserService(BaseService):
         )
 
     def _servant_for(self, row: UserImportRow) -> Teacher:
-        """The servant named in the row, filed into his class if new."""
-        key = _norm(row.name)
-        for teacher in (
+        """The servant named in the row, filed into his class when new."""
+        wanted = normalise_name(row.name)
+        for servant in (
             self.db.query(Teacher).filter(Teacher.class_id == row.class_id).all()
         ):
-            if _norm(teacher.teacher_name) == key:
-                self.scope.ensure_class(teacher.class_id)
-                return teacher
-
-        teacher = Teacher(teacher_name=row.name, class_id=row.class_id)
-        self.db.add(teacher)
-        self._commit(f"Servant created during users import: {row.name}")
-        return teacher
+            if normalise_name(servant.teacher_name) == wanted:
+                self.ensure_class(servant.class_id)
+                return servant
+        servant = Teacher(teacher_name=row.name, class_id=row.class_id)
+        self.db.add(servant)
+        commit(self.db, f"Servant created during users import: {row.name}")
+        return servant
 
     def _boy_for(self, row: UserImportRow) -> Boy:
         """The boy named in the row - never invented, only looked up."""
+        wanted = normalise_name(row.name)
         for boy in self.db.query(Boy).filter(Boy.class_id == row.class_id).all():
-            if _norm(boy.boy_name) == _norm(row.name):
-                self.scope.ensure_class(boy.class_id)
+            if normalise_name(boy.boy_name) == wanted:
+                self.ensure_class(boy.class_id)
                 return boy
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -284,10 +278,12 @@ class UserService(BaseService):
         )
 
 
-# ----------------------------------------------------------- self-service
+# ================================================================= signup
+# Module-level on purpose: these two run before anyone is logged in, so they
+# have no service (and no permission check) to hang off.
 
 
-def signup_check(db: Session, phone: str) -> dict:
+def signup_check(db, phone: str) -> dict:
     """Does this number belong to an account, and does it still need a password?"""
     user = get_user_by_phone(db, phone)
     if user is None:
@@ -305,7 +301,7 @@ def signup_check(db: Session, phone: str) -> dict:
     }
 
 
-def complete_signup(db: Session, phone: str, password: str) -> User:
+def complete_signup(db, phone: str, password: str) -> User:
     """Set the password of a phone-registered account - the one step an
     administrator cannot do for him.
 

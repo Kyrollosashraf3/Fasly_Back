@@ -1,3 +1,5 @@
+"""Who is calling - resolved once per request and handed to every service."""
+
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -5,77 +7,58 @@ from sqlalchemy.orm import Session
 
 from app.config.logger import get_logger
 from app.core.auth.security import decode_access_token
+from app.core.data.common import MANAGERS, ensure_roles
 from app.db.database import get_db
-from app.models.enums import RoleEnum
 from app.models.user import User
-from app.schemas.user import UserResponse
 
 logger = get_logger(__name__)
 
 reusable_oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+_401 = {
+    "detail": "Could not validate credentials",
+    "headers": {"WWW-Authenticate": "Bearer"},
+}
 
 
 def get_current_user(
     request: Request,
     db: Session = Depends(get_db),
     token: str = Depends(reusable_oauth2),
-) -> UserResponse:
-    """Resolve the authenticated user from the Bearer token."""
+) -> User:
+    """The ORM row behind the Bearer token.
+
+    Services receive the live ``User`` so ``role``, ``teacher_id`` and
+    ``boy_id`` are always the truth in the database - not a copy that could
+    go stale.
+    """
     try:
-        payload = decode_access_token(token)
-        user_id = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        user_id = decode_access_token(token).get("sub")
     except jwt.PyJWTError:
         logger.warning("Invalid or expired token presented")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, **_401) from None
+    if user_id is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, **_401)
 
     try:
-        pk = int(user_id)
+        user = db.get(User, int(user_id))
     except (TypeError, ValueError):
-        pk = None
-
-    user = db.get(User, pk) if pk is not None else None
+        user = None
     if user is None:
-        logger.warning(f"Token references unknown user id={user_id}")
+        logger.warning("Token references unknown user id=%s", user_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User no longer exists",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    handle = user.phone or f"id={user.id}"
-    request.state.user_info = f"{handle} (id={user.id})"
-    logger.debug(
-        f"Authenticated request as {handle} (id={user.id}, role={user.role})"
-    )
-    return UserResponse.model_validate(user)
+
+    # The logging middleware reads this back for the access log line.
+    request.state.user_info = f"{user.phone} (id={user.id})"
+    return user
 
 
-class RoleChecker:
-    """Dependency factory restricting access to the given roles."""
-
-    def __init__(self, allowed_roles: list[RoleEnum]):
-        self.allowed_roles = allowed_roles
-
-    def __call__(self, user: UserResponse = Depends(get_current_user)) -> UserResponse:
-        if user.role not in self.allowed_roles:
-            logger.warning(
-                f"Access denied for user={user.phone} role={user.role} "
-                f"(allowed={[r.value for r in self.allowed_roles]})"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to perform this operation.",
-            )
-        return user
-
-
-require_admin = RoleChecker([RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN])
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Class amin or church-wide amin. Used by the few routes whose *whole*
+    payload must be restricted before a service ever sees it."""
+    ensure_roles(current_user, *MANAGERS)
+    return current_user

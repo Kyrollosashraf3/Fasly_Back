@@ -25,6 +25,9 @@ class Boy(Base):
 
     ``age`` is never stored - it is derived from ``birth_date`` when needed.
 
+    ``last_visit_date`` mirrors :attr:`Teacher.last_visit_date`: the last
+    confession/visit recorded for this boy. NULL until it happens.
+
     ``attends``/``follow_ups`` are history and are NOT cascade-deleted: the FK
     is RESTRICT, so a boy with recorded history cannot be dropped by accident.
     """
@@ -53,6 +56,7 @@ class Boy(Base):
         nullable=False,
         index=True,
     )
+    last_visit_date = Column(Date, nullable=True, index=True)
     note = Column(Text, nullable=True)
     issue_flag = Column(Boolean, nullable=False, default=False, index=True)
     created_at = Column(

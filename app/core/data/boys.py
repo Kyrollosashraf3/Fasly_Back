@@ -1,57 +1,64 @@
-"""Boys master data."""
+"""Boys master data - the main directory the whole app revolves around."""
+from __future__ import annotations
 
 from fastapi import HTTPException, status
+from sqlalchemy.orm import Query
 
-from app.core.data.base import AdminService
-from app.core.data.common import bulk_create
+from app.core.data.base import BaseService
+from app.core.data.common import (
+    apply_update,
+    bulk_create,
+    commit,
+    ensure_teacher_access,
+    get_or_404,
+    scope_boys,
+)
 from app.models.boy import Boy
+from app.models.enums import RoleEnum
 from app.models.group import Group
 from app.models.teacher import Teacher
 from app.schemas.boy import BoyCreate, BoyUpdate
 
-_MISSING = object()
+#: ``teacher_id`` is not a column - it files the boy under a servant's
+#: follow-up group, so it is handled apart from the plain PATCH fields.
+_ASSIGN = "teacher_id"
+
+#: The payload said nothing about the group (``null`` means "drop it").
+_NOT_SENT = object()
 
 
-class BoyService(AdminService):
-    """The main directory.
-
-    read : super_admin all | admin his class | teacher his group's boys | user himself
-    write: super_admin all | admin his class
+class BoyService(BaseService):
+    """read : super_admin all | admin his class | teacher his class | boy himself
+    write: super_admin all | admin his class | teacher his class
     """
 
-    def _query(self):
-        return self.scope.restrict_boys(self.db.query(Boy), Boy, Boy.id)
 
-    def _assign_servant(self, boy: Boy, teacher_id: int) -> None:
-        """File the boy under a servant's follow-up group.
+    def query(self) -> Query:
+        return scope_boys(self.db, self.db.query(Boy), Boy, self.user, Boy.id)
 
-        Same contract as ``POST /groups/assign``: the servant must exist, live
-        in the boy's class and be visible to this login - and since a boy
-        belongs to exactly one group, any previous row is dropped first.
-        """
-        teacher = self.db.get(Teacher, teacher_id)
-        if teacher is None:
+    def list(
+        self, class_id: int | None = None, issue_flag: bool | None = None
+    ) -> list[Boy]:
+        query = self.query()
+        if class_id is not None:
+            self.ensure_class(class_id)
+            query = query.filter(Boy.class_id == class_id)
+        if issue_flag is not None:
+            query = query.filter(Boy.issue_flag == issue_flag)
+        return query.order_by(Boy.boy_name).all()
+
+    def get(self, boy_id: int) -> Boy:
+        boy = self.query().filter(Boy.id == boy_id).first()
+        if boy is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Servant {teacher_id} not found.",
+                detail=f"Boy {boy_id} not found.",
             )
-        self.scope.ensure_class(teacher.class_id)
-        if teacher.class_id != boy.class_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Servant '{teacher.teacher_name}' is not in "
-                    f"'{boy.boy_name}'s class."
-                ),
-            )
-        self.db.query(Group).filter(Group.boy_id == boy.id).delete(
-            synchronize_session=False
-        )
-        self.db.add(Group(teacher_id=teacher.id, boy_id=boy.id))
+        return boy
 
     def create(self, data: BoyCreate) -> Boy:
-        self._ensure_write()
-        self.scope.ensure_class(data.class_id)
+        self._ensure_may_write()
+        self.ensure_class(data.class_id)
         boy = Boy(
             boy_name=data.boy_name.strip(),
             gender=data.gender,
@@ -62,6 +69,7 @@ class BoyService(AdminService):
             address=data.address,
             location=data.location,
             class_id=data.class_id,
+            last_visit_date=data.last_visit_date,
             note=data.note,
             issue_flag=data.issue_flag,
         )
@@ -69,71 +77,76 @@ class BoyService(AdminService):
         if data.teacher_id is not None:
             self.db.flush()  # the group row needs boy.id
             self._assign_servant(boy, data.teacher_id)
-        self._commit(f"Boy create name={data.boy_name}")
+        commit(self.db, f"Boy create name={data.boy_name}")
         return boy
 
     def add_list(self, items: list[BoyCreate]) -> dict:
-        """Bulk import - a bad row never stops the rest.
-
-        The write permission is checked once up front so a non-manager gets a
-        single 403 instead of one failure per row.
-        """
-        self._ensure_write()
-        return bulk_create(
-            self.create, items, label="boys", name_attr="boy_name"
-        )
-
-    def get(self, boy_id: int) -> Boy:
-        boy = self._query().filter(Boy.id == boy_id).first()
-        if boy is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Boy {boy_id} not found.",
-            )
-        return boy
-
-    def list(self, class_id: int | None = None, issue_flag: bool | None = None):
-        query = self._query()
-        if class_id is not None:
-            self.scope.ensure_class(class_id)
-            query = query.filter(Boy.class_id == class_id)
-        if issue_flag is not None:
-            query = query.filter(Boy.issue_flag == issue_flag)
-        return query.order_by(Boy.boy_name).all()
+        """Bulk import - a bad row never stops the rest. The write permission
+        is checked once up front so a login without it gets a single 403
+        instead of one failure per row."""
+        self._ensure_may_write()
+        return bulk_create(self.create, items, label="boys", name_attr="boy_name")
 
     def update(self, boy_id: int, data: BoyUpdate) -> Boy:
         boy = self.get(boy_id)
-        self._ensure_write()
-        updates = data.model_dump(exclude_unset=True)
-        teacher_id = updates.pop("teacher_id", _MISSING)
-        old_class = boy.class_id
-        if "class_id" in updates:
-            self.scope.ensure_class(updates["class_id"])
-        if "boy_name" in updates:
-            updates["boy_name"] = updates["boy_name"].strip()
-        for field, value in updates.items():
-            setattr(boy, field, value)
+        self._ensure_may_write()
+        self.ensure_class(boy.class_id)
 
-        if teacher_id is _MISSING:
+        old_class = boy.class_id
+        teacher_id = data.teacher_id if _ASSIGN in data.model_fields_set else _NOT_SENT
+        apply_update(boy, data, skip=(_ASSIGN,), strip=("boy_name",))
+        self.ensure_class(boy.class_id)
+
+        if teacher_id is _NOT_SENT:
             # Moving class silently ends the membership: a servant of another
             # class cannot keep a boy he is no longer allowed to see.
             if boy.class_id != old_class:
-                self.db.query(Group).filter(Group.boy_id == boy.id).delete(
-                    synchronize_session=False
-                )
+                self._drop_group(boy.id)
         elif teacher_id is None:
-            self.db.query(Group).filter(Group.boy_id == boy.id).delete(
-                synchronize_session=False
-            )
+            self._drop_group(boy.id)
         else:
             self._assign_servant(boy, teacher_id)
 
-        self._commit(f"Boy update id={boy_id}")
+        commit(self.db, f"Boy update id={boy_id}")
         return boy
 
     def delete(self, boy_id: int) -> None:
         boy = self.get(boy_id)
-        self._ensure_write()
+        self._ensure_may_write()
         self.db.delete(boy)
-        # a boy with attendance / follow-up history is refused by RESTRICT
-        self._commit(f"Boy delete id={boy_id}")
+        # A boy with attendance / follow-up history is refused by RESTRICT.
+        commit(self.db, f"Boy delete id={boy_id}")
+
+    # -------------------------------------------------------------- internals
+    def _ensure_may_write(self) -> None:
+        """A boy login may read his own row but never write it."""
+        if self.user.role == RoleEnum.USER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the class amin, the super admin or a servant can do that.",
+            )
+
+    def _drop_group(self, boy_id: int) -> None:
+        self.db.query(Group).filter(Group.boy_id == boy_id).delete(
+            synchronize_session=False
+        )
+
+    def _assign_servant(self, boy: Boy, teacher_id: int) -> None:
+        """File the boy under a servant's follow-up group.
+
+        Same contract as ``POST /groups/assign``: the servant must exist, live
+        in the boy's class and be visible to this login - and since a boy
+        belongs to exactly one group, any previous row is dropped first.
+        """
+        teacher = get_or_404(self.db, Teacher, teacher_id, "Servant")
+        ensure_teacher_access(self.db, self.user, teacher)
+        if teacher.class_id != boy.class_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Servant '{teacher.teacher_name}' is not in "
+                    f"'{boy.boy_name}'s class."
+                ),
+            )
+        self._drop_group(boy.id)
+        self.db.add(Group(teacher_id=teacher.id, boy_id=boy.id))

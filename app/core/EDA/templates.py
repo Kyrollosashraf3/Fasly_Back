@@ -59,30 +59,35 @@ USER_DOCS = {
 BOY_DOCS = {
     **ARABIC_DOCS,
     "teacher_name": "اسم الخادم في نفس الفصل (اختياري) — يتسجل مع الولد في مجموعته على طول",
+    "last_visit_date": "آخر زيارة/اعتراف للولد YYYY-MM-DD (اختياري، فاضي لو لسه مفيش)",
 }
 
 # 10 Egyptian sample rows spread over the available classes.
 _BOY_SAMPLES = [
     ("مينا فؤاد حنا", "m", date(2014, 3, 12), "01012345678", "", "شبرا",
-     "12 شارع الترعة، شبرا الخيمة", "", "ولد ملتزم، محتاج متابعة الواجب", False),
+     "12 شارع الترعة، شبرا الخيمة", "", date(2026, 9, 13),
+     "ولد ملتزم، محتاج متابعة الواجب", False),
     ("ماريا عادل بطرس", "f", date(2013, 7, 5), "01234567890", "01555555555",
-     "مصر الجديدة", "45 شارع الحجاز، مصر الجديدة", "", "", False),
+     "مصر الجديدة", "45 شارع الحجاز، مصر الجديدة", "", date(2026, 10, 4), "", False),
     ("أنطونيوس سامي جاد", "m", date(2015, 1, 20), "01122334455", "",
-     "الزيتون", "8 شارع ابن الهيثم، الزيتون", "", "بيتأخر كتير", True),
+     "الزيتون", "8 شارع ابن الهيثم، الزيتون", "", "",
+     "بيتأخر كتير", True),
     ("فيرينا ماهر لبيب", "f", date(2014, 11, 2), "01098765432", "",
-     "حدائق القبة", "21 شارع المنشية، حدائق القبة", "", "", False),
+     "حدائق القبة", "21 شارع المنشية، حدائق القبة", "", date(2026, 11, 1), "", False),
     ("بيشوي رأفت إبراهيم", "m", date(2013, 5, 18), "01277889900", "",
-     "شبرا", "5 شارع الخلفاوي، شبرا", "", "", False),
+     "شبرا", "5 شارع الخلفاوي، شبرا", "", date(2026, 8, 23), "", False),
     ("إيريني وديع ناشد", "f", date(2015, 9, 27), "01555443322", "",
-     "روض الفرج", "33 شارع الترعة، روض الفرج", "", "جديدة على المجموعة", False),
+     "روض الفرج", "33 شارع الترعة، روض الفرج", "", "",
+     "جديدة على المجموعة", False),
     ("كيرلس عماد فهمي", "m", date(2014, 6, 30), "01011223344", "",
-     "المرج", "17 شارع الجزائر، المرج", "", "", False),
+     "المرج", "17 شارع الجزائر، المرج", "", date(2026, 12, 6), "", False),
     ("مريم ناجي حبيب", "f", date(2013, 12, 9), "01200112233", "",
-     "الساحل", "64 شارع بورسعيد، الساحل", "", "", False),
+     "الساحل", "64 شارع بورسعيد، الساحل", "", date(2026, 7, 19), "", False),
     ("أندرو جرجس ميلاد", "m", date(2015, 4, 14), "01199887766", "",
-     "المطرية", "9 شارع الجيش، المطرية", "", "له تليفون وحيد", True),
+     "المطرية", "9 شارع الجيش، المطرية", "", "",
+     "له تليفون وحيد", True),
     ("كارولين صبري عزيز", "f", date(2014, 8, 21), "01033445566", "",
-     "العباسية", "40 شارع مصر والسودان، العباسية", "", "", False),
+     "العباسية", "40 شارع مصر والسودان، العباسية", "", date(2026, 10, 25), "", False),
 ]
 
 _TEACHER_SAMPLES = [
@@ -155,9 +160,19 @@ def build_boys_template(
     names = class_names or []
     teachers_by_class = teachers_by_class or {}
     rows = []
-    for i, (name, gender, birth, phone, phone2, zone, address, loc, note, flag) in enumerate(
-        _BOY_SAMPLES
-    ):
+    for i, (
+        name,
+        gender,
+        birth,
+        phone,
+        phone2,
+        zone,
+        address,
+        loc,
+        visit,
+        note,
+        flag,
+    ) in enumerate(_BOY_SAMPLES):
         cls = names[i % len(names)] if names else None
         servants = teachers_by_class.get(cls) or []
         rows.append(
@@ -174,6 +189,7 @@ def build_boys_template(
                 "teacher_name": servants[(i // len(names)) % len(servants)]
                 if servants
                 else None,
+                "last_visit_date": visit,
                 "note": note,
                 "issue_flag": flag,
             }
@@ -256,6 +272,7 @@ def build_boys_export(boys: list, class_label_fn) -> bytes:
             "location": b.location,
             "class_name": class_label_fn(b.class_id),
             "teacher_name": b.teacher_name,
+            "last_visit_date": b.last_visit_date,
             "note": b.note,
             "issue_flag": b.issue_flag,
         }

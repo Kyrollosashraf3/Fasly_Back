@@ -1,3 +1,5 @@
+"""Follow-up log - one row per contact a servant logs with one boy."""
+
 from datetime import date
 
 from fastapi import APIRouter, Depends, Response, status
@@ -6,19 +8,10 @@ from sqlalchemy.orm import Session
 from app.core.auth.deps import get_current_user
 from app.core.data import FollowUpService
 from app.db.database import get_db
+from app.models.user import User
 from app.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
-from app.schemas.user import UserResponse
 
 router = APIRouter(prefix="/follow-ups", tags=["Follow Ups"])
-
-
-@router.post("", response_model=FollowUpResponse, status_code=status.HTTP_201_CREATED)
-def create_follow_up(
-    data: FollowUpCreate,
-    db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
-):
-    return FollowUpService(db, current_user).create(data)
 
 
 @router.get("", response_model=list[FollowUpResponse])
@@ -28,7 +21,7 @@ def list_follow_ups(
     boy_id: int | None = None,
     action_date: date | None = None,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     return FollowUpService(db, current_user).list(
         class_id=class_id,
@@ -38,11 +31,20 @@ def list_follow_ups(
     )
 
 
+@router.post("", response_model=FollowUpResponse, status_code=status.HTTP_201_CREATED)
+def create_follow_up(
+    data: FollowUpCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return FollowUpService(db, current_user).create(data)
+
+
 @router.get("/{record_id}", response_model=FollowUpResponse)
 def get_follow_up(
     record_id: int,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     return FollowUpService(db, current_user).get(record_id)
 
@@ -52,7 +54,7 @@ def update_follow_up(
     record_id: int,
     data: FollowUpUpdate,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     return FollowUpService(db, current_user).update(record_id, data)
 
@@ -61,7 +63,7 @@ def update_follow_up(
 def delete_follow_up(
     record_id: int,
     db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     FollowUpService(db, current_user).delete(record_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

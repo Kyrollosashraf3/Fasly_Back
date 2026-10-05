@@ -3,7 +3,8 @@
 Expected sheet: first row = header with the collection's column names.
 
     boys     : boy_name | gender | birth_date | phone | phone_2 | zone |
-               address | location | class_name | teacher_name | note | issue_flag
+               address | location | class_name | teacher_name |
+               last_visit_date | note | issue_flag
     teachers : teacher_name | phone | class_name | last_visit_date | note
     groups   : teacher_name | boy_name | class_name
     users    : phone | class_name | name | role
@@ -48,6 +49,7 @@ BOY_HEADERS = [
     "location",
     "class_name",
     "teacher_name",
+    "last_visit_date",
     "note",
     "issue_flag",
 ]
@@ -197,6 +199,9 @@ def _row_to_boy(
         location=_str(row.get("location")),
         class_id=class_id,
         teacher_id=teacher_id,
+        last_visit_date=_parse_date(
+            row.get("last_visit_date"), field="last_visit_date"
+        ),
         note=_str(row.get("note")),
         issue_flag=_parse_flag(row.get("issue_flag")),
     )

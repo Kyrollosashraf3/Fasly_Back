@@ -15,8 +15,18 @@ recorded in even after boys are promoted.
 from datetime import date, timedelta
 
 from app.config.logger import get_logger
-from app.core.data.base import ClassScopedService
-from app.core.data.common import get_or_404, is_past_friday
+from app.core.data.base import BaseService
+from app.core.data.common import (
+    ensure_boy_access,
+    ensure_roles,
+    get_or_404,
+    is_past_friday,
+    my_class_id,
+    scope_boys,
+    scope_checks,
+    scope_classes,
+    scope_teachers,
+)
 from app.models.attend import Attend
 from app.models.boy import Boy
 from app.models.enums import RoleEnum
@@ -120,49 +130,56 @@ def _top_with_ties(ranked: list[dict], n: int) -> list[dict]:
     return [s for s in ranked if s["score"] >= cutoff]
 
 
-class DashboardService(ClassScopedService):
-    """Dashboard analytics. Read-only: the same scope the CRUD routes use."""
+class DashboardService(BaseService):
+    """Dashboard analytics. Read-only: the same scope the CRUD routes use.
+
+    Everything below the ``---`` is pure arithmetic over rows already loaded
+    (the dataset is hundreds of boys, not millions), so it never touches the
+    database again.
+    """
 
     # ----------------------------------------------------------------- scope
     def _scope_classes(self, class_id: int | None) -> list[int]:
         if class_id is not None:
-            self.scope.ensure_class(class_id)
+            self.ensure_class(class_id)
             return [class_id]
-        query = self.scope.restrict_class(self.db.query(SchoolClass), SchoolClass)
-        return [row.id for row in query.all()]
+        return [row.id for row in self._classes()]
+
+    def _classes(self):
+        return scope_classes(self.db, self.db.query(SchoolClass), SchoolClass, self.user)
 
     def _class_labels(self) -> dict[int, str]:
-        query = self.scope.restrict_class(self.db.query(SchoolClass), SchoolClass)
-        return {row.id: row.name for row in query.all()}
+        return {row.id: row.name for row in self._classes()}
 
     def _boys(self) -> list[Boy]:
-        return self.scope.restrict_boys(self.db.query(Boy), Boy, Boy.id).all()
+        return self._boys_query().all()
+
+    def _boys_query(self):
+        return scope_boys(self.db, self.db.query(Boy), Boy, self.user, Boy.id)
 
     def _attends(self) -> list[Attend]:
-        query = self.scope.restrict_boys(self.db.query(Attend), Attend, Attend.boy_id)
+        query = scope_boys(
+            self.db, self.db.query(Attend), Attend, self.user, Attend.boy_id
+        )
         return [row for row in query.all() if is_past_friday(row.date)]
 
     def _checks(self) -> list[TeacherCheck]:
         """A boy's login never reaches the servant review sheet."""
-        if self.scope.role == RoleEnum.USER:
+        if self.user.role == RoleEnum.USER:
             return []
-        query = self.db.query(TeacherCheck)
-        if self.scope.role == RoleEnum.TEACHER:
-            query = query.filter(
-                TeacherCheck.teacher_id == self.scope.teacher_id
-            )
-        else:
-            query = self.scope.restrict_class(query, TeacherCheck)
+        try:
+            query = scope_checks(self.db, self.db.query(TeacherCheck), self.user)
+        except HTTPException:
+            return []
         return [row for row in query.all() if is_past_friday(row.date)]
 
     def _teachers_by_id(self) -> dict[int, str]:
-        if self.scope.role == RoleEnum.USER:
+        if self.user.role == RoleEnum.USER:
             return {}
-        query = self.db.query(Teacher)
-        if self.scope.role == RoleEnum.TEACHER:
-            query = query.filter(Teacher.id == self.scope.teacher_id)
-        else:
-            query = self.scope.restrict_class(query, Teacher)
+        try:
+            query = scope_teachers(self.db, self.db.query(Teacher), self.user)
+        except HTTPException:
+            return {}
         return {row.id: row.teacher_name for row in query.all()}
 
     # ---------------- main summary ----------------
@@ -373,7 +390,7 @@ class DashboardService(ClassScopedService):
     # ---------------- boy drill-down ----------------
     def boy_profile(self, boy_id: int) -> dict:
         boy = get_or_404(self.db, Boy, boy_id, "Boy")
-        self.scope.ensure_boy_visible(boy)
+        ensure_boy_access(self.db, self.user, boy)
 
         recs = (
             self.db.query(Attend)

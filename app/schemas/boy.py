@@ -18,6 +18,9 @@ class BoyCreate(BaseModel):
     zone: str | None = Field(None, max_length=255)
     address: str | None = None
     location: str | None = Field(None, max_length=500)
+    last_visit_date: date | None = Field(
+        None, description="Last confession/visit for this boy - nullable"
+    )
     note: str | None = None
     issue_flag: bool = False
     teacher_id: int | None = Field(
@@ -35,6 +38,13 @@ class BoyCreate(BaseModel):
             raise ValueError("birth_date cannot be in the future")
         return value
 
+    @field_validator("last_visit_date")
+    @classmethod
+    def _visit_not_in_future(cls, value: date | None) -> date | None:
+        if value is not None and value > date.today():
+            raise ValueError("last_visit_date cannot be in the future")
+        return value
+
 
 class BoyUpdate(BaseModel):
     """Partial update - all fields optional. ``age`` is never accepted."""
@@ -48,6 +58,9 @@ class BoyUpdate(BaseModel):
     zone: str | None = Field(None, max_length=255)
     address: str | None = None
     location: str | None = Field(None, max_length=500)
+    last_visit_date: date | None = Field(
+        None, description="Last confession/visit for this boy - nullable"
+    )
     note: str | None = None
     issue_flag: bool | None = None
     # ``null`` = drop him from his current group; absent = leave it alone.
@@ -58,6 +71,13 @@ class BoyUpdate(BaseModel):
     def _birth_date_not_in_future(cls, value: date | None) -> date | None:
         if value is not None and value > date.today():
             raise ValueError("birth_date cannot be in the future")
+        return value
+
+    @field_validator("last_visit_date")
+    @classmethod
+    def _visit_not_in_future(cls, value: date | None) -> date | None:
+        if value is not None and value > date.today():
+            raise ValueError("last_visit_date cannot be in the future")
         return value
 
 
@@ -73,6 +93,7 @@ class BoyResponse(ORMResponse):
     zone: str | None = None
     address: str | None = None
     location: str | None = None
+    last_visit_date: date | None = None
     note: str | None = None
     issue_flag: bool = False
     teacher_id: int | None = None

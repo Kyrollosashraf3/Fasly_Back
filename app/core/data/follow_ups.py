@@ -1,11 +1,21 @@
-"""Weekly follow-up contact logged by a servant."""
+"""Follow-up: one row per contact a servant logs with one boy."""
+from __future__ import annotations
 
 from datetime import date
 
 from fastapi import HTTPException, status
+from sqlalchemy.orm import Query
 
-from app.core.data.base import ClassScopedService
-from app.core.data.common import get_or_404
+from app.core.data.base import BaseService
+from app.core.data.common import (
+    apply_update,
+    commit,
+    ensure_boy_access,
+    ensure_roles,
+    ensure_teacher_access,
+    get_or_404,
+    scope_follow_ups,
+)
 from app.models.boy import Boy
 from app.models.enums import RoleEnum
 from app.models.follow_up import FollowUp
@@ -13,50 +23,21 @@ from app.models.teacher import Teacher
 from app.schemas.follow_up import FollowUpCreate, FollowUpUpdate
 
 
-class FollowUpService(ClassScopedService):
-    """One row per contact - ``class_id`` is the boy's class on ``action_date``.
+class FollowUpService(BaseService):
+    """``class_id`` is the boy's class on ``action_date`` - a snapshot, kept so
+    history survives a promotion.
 
-    read : super_admin all | admin his class | teacher his own rows | user his own
+    read : super_admin all | admin his class | teacher his own rows | boy his own
     write: super_admin all | admin his class | teacher his own rows
     """
 
-    def _records_query(self):
-        role = self.scope.role
-        if role == RoleEnum.USER:
-            return self.db.query(FollowUp).filter(
-                FollowUp.boy_id == self.scope.boy_id
-            )
-        if role == RoleEnum.TEACHER:
-            return self.db.query(FollowUp).filter(
-                FollowUp.teacher_id == self.scope.teacher_id
-            )
-        return self._scoped(FollowUp)  # admin / super_admin
 
-    def _ensure_write(self, record: FollowUp) -> None:
-        self.scope.require_roles(
-            RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER
-        )
-        if self.scope.role == RoleEnum.TEACHER:
-            if record.teacher_id != self.scope.teacher_id:
-                self.scope.deny("You can only edit your own follow-ups.")
-            return
-        self.scope.ensure_class(record.class_id)  # admin
+    def query(self) -> Query:
+        return scope_follow_ups(self.db, self.db.query(FollowUp), self.user)
 
     # ------------------------------------------------------------------ read
-    def _resolve_teacher(self, teacher_id: int) -> Teacher:
-        teacher = get_or_404(self.db, Teacher, teacher_id, "Servant")
-        self.scope.ensure_teacher_visible(teacher)
-        return teacher
-
-    def _resolve_boy(self, boy_id: int) -> Boy:
-        boy = get_or_404(self.db, Boy, boy_id, "Boy")
-        self.scope.ensure_boy_visible(boy)
-        return boy
-
     def get(self, record_id: int) -> FollowUp:
-        record = (
-            self._records_query().filter(FollowUp.id == record_id).first()
-        )
+        record = self.query().filter(FollowUp.id == record_id).first()
         if record is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -71,9 +52,9 @@ class FollowUpService(ClassScopedService):
         boy_id: int | None = None,
         action_date: date | None = None,
     ) -> list[FollowUp]:
-        query = self._records_query()
+        query = self.query()
         if class_id is not None:
-            self.scope.ensure_class(class_id)
+            self.ensure_class(class_id)
             query = query.filter(FollowUp.class_id == class_id)
         if teacher_id is not None:
             query = query.filter(FollowUp.teacher_id == teacher_id)
@@ -85,13 +66,14 @@ class FollowUpService(ClassScopedService):
 
     # ----------------------------------------------------------------- write
     def create(self, data: FollowUpCreate) -> FollowUp:
-        self.scope.require_roles(
-            RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER
-        )
-        teacher = self._resolve_teacher(data.teacher_id)
+        ensure_roles(self.user, RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER)
+        teacher = self._resolve_servant(data.teacher_id)
         boy = self._resolve_boy(data.boy_id)
-        if self.scope.role == RoleEnum.TEACHER and teacher.id != self.scope.teacher_id:
-            self.scope.deny("You can only log follow-ups for yourself.")
+        if self.user.role == RoleEnum.TEACHER and teacher.id != self.user.teacher_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only log follow-ups for yourself.",
+            )
         if teacher.class_id != boy.class_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -105,23 +87,40 @@ class FollowUpService(ClassScopedService):
             action_date=data.action_date or date.today(),
             status=data.status,
             note=data.note,
-            recorded_by=self.current_user.id,
+            recorded_by=self.user_id,
         )
         self.db.add(record)
-        self._commit(f"FollowUp create boy={boy.id} teacher={teacher.id}")
+        commit(self.db, f"FollowUp create boy={boy.id} teacher={teacher.id}")
         return record
 
     def update(self, record_id: int, data: FollowUpUpdate) -> FollowUp:
         record = self.get(record_id)
-        self._ensure_write(record)
-        for field in data.model_fields_set:
-            setattr(record, field, getattr(data, field))
-        self._commit(f"FollowUp update id={record_id}")
+        self._ensure_may_edit(record)
+        apply_update(record, data, skip=("teacher_id", "boy_id", "class_id"))
+        commit(self.db, f"FollowUp update id={record_id}")
         return record
 
     def delete(self, record_id: int) -> None:
         record = self.get(record_id)
-        self.scope.require_manager()
-        self.scope.ensure_class(record.class_id)
+        self.ensure_manager()
         self.db.delete(record)
-        self._commit(f"FollowUp delete id={record_id}")
+        commit(self.db, f"FollowUp delete id={record_id}")
+
+    # -------------------------------------------------------------- internals
+    def _resolve_servant(self, teacher_id: int) -> Teacher:
+        teacher = get_or_404(self.db, Teacher, teacher_id, "Servant")
+        ensure_teacher_access(self.db, self.user, teacher)
+        return teacher
+
+    def _resolve_boy(self, boy_id: int) -> Boy:
+        boy = get_or_404(self.db, Boy, boy_id, "Boy")
+        ensure_boy_access(self.db, self.user, boy)
+        return boy
+
+    def _ensure_may_edit(self, record: FollowUp) -> None:
+        ensure_roles(self.user, RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER)
+        if self.user.role == RoleEnum.TEACHER and record.teacher_id != self.user.teacher_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only edit your own follow-ups.",
+            )
