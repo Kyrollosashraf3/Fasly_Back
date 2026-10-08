@@ -12,7 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_logger, settings
-from app.core.auth import ensure_bootstrap_admin, ensure_default_classes
+from app.core.auth import (
+    ensure_bootstrap_admin,
+    ensure_default_classes,
+    ensure_seeded_super_admins,
+)
 from app.core.auth.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.middleware import RequestLogMiddleware
 from app.db.database import create_tables
@@ -59,6 +63,7 @@ class FaslyApplication:
         create_tables()
         ensure_default_classes()
         ensure_bootstrap_admin()
+        ensure_seeded_super_admins()
         logger.info("Startup complete - ready to serve")
         yield
         logger.info("Shutting down %s v%s", settings.APP_NAME, settings.APP_VERSION)

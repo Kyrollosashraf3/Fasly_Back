@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     ADMIN_PHONE: str | None = None
     ADMIN_PASSWORD: str | None = None
 
+    # Extra church-wide admins, seeded on startup from a JSON array (idempotent):
+    #   [
+    #     {"name": "كيرلس اشرف فخري", "phone": "01281875199"},
+    #     ...
+    #   ]
+    # Each entry becomes a servant in the «كل الفصول» class and a super_admin
+    # login linked to that servant, so the account shows a name.
+    SEED_SUPER_ADMINS_JSON: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
     )

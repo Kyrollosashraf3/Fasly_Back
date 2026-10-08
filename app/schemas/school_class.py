@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field, field_validator
 from app.schemas.base import ORMResponse
 
 # The programme runs on a fixed catalogue of class names - no free typing.
+# «كل الفصول» is the virtual class the church-wide (super) admins live in; it
+# always sorts last, so it is only ever appended here.
+ALL_CLASSES_NAME = "كل الفصول"
+
 CLASS_NAMES: tuple[str, ...] = (
     "أولي ابتدائي",
     "تانية ابتدائي",
@@ -19,6 +23,7 @@ CLASS_NAMES: tuple[str, ...] = (
     "تانية ثانوي",
     "تالتة ثانوي",
     "شباب",
+    ALL_CLASSES_NAME,
 )
 
 def normalise_class_name(value: object) -> object:

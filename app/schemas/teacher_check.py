@@ -18,6 +18,9 @@ class TeacherCheckCreate(BaseModel):
     prepare: bool = Field(..., description="Did he prepare the lesson?")
     liturgy: bool = Field(..., description="Did he attend the liturgy?")
     follow: bool = Field(..., description="Did he run his follow-ups?")
+    teachers_meeting: bool = Field(
+        ..., description="Did he attend the servants' meeting?"
+    )
     date: DateType | None = Field(None, description="Defaults to today")
     note: str | None = None
 
@@ -33,6 +36,7 @@ class TeacherCheckUpdate(BaseModel):
     prepare: bool | None = None
     liturgy: bool | None = None
     follow: bool | None = None
+    teachers_meeting: bool | None = None
     note: str | None = None
 
 
@@ -45,6 +49,7 @@ class TeacherCheckResponse(ORMResponse):
     prepare: bool
     liturgy: bool
     follow: bool
+    teachers_meeting: bool = False
     note: str | None = None
     recorded_by: int | None = None
     created_at: datetime
@@ -58,6 +63,9 @@ class TeacherCheckItem(BaseModel):
     prepare: bool
     liturgy: bool
     follow: bool
+    teachers_meeting: bool = Field(
+        ..., description="Did he attend the servants' meeting?"
+    )
     note: str | None = None
 
 

@@ -9,8 +9,8 @@ PHONE_PATTERN = r"^01[0-9]{9}$"
 
 _TEACHER_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN)
 
-# Roles the Excel import may grant. super_admin is included on purpose: it is
-# the only role that does not need a servant / boy behind it.
+# Roles the Excel import may grant. super_admin is included on purpose:
+# it is the only role that does not need a servant / boy behind it.
 IMPORT_ROLES = (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.TEACHER, RoleEnum.USER)
 
 
@@ -30,9 +30,9 @@ def check_owner(role: RoleEnum, teacher_id: int | None, boy_id: int | None) -> N
             raise ValueError(f"role '{role.value}' requires boy_id")
         if teacher_id is not None:
             raise ValueError(f"role '{role.value}' must not set teacher_id")
-    else:  # SUPER_ADMIN owns no record - he sees every class
-        if teacher_id is not None or boy_id is not None:
-            raise ValueError("role 'super_admin' must not set teacher_id or boy_id")
+    else:  # SUPER_ADMIN may carry a teacher (his name) but never a boy
+        if boy_id is not None:
+            raise ValueError("role 'super_admin' must not set boy_id")
 
 
 def normalise_phone(value: object) -> object:

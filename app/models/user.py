@@ -29,7 +29,8 @@ class User(Base):
 
         role=teacher | role=admin -> teacher_id   (class comes from teacher)
         role=user                 -> boy_id       (class comes from boy)
-        role=super_admin          -> neither      (sees every class)
+        role=super_admin          -> teacher_id optional, boy_id never
+                                     (sees every class; teacher gives a name)
     """
 
     __tablename__ = TABLE
@@ -37,7 +38,7 @@ class User(Base):
         CheckConstraint(
             "(role IN ('teacher', 'admin') AND teacher_id IS NOT NULL AND boy_id IS NULL)"
             " OR (role = 'user' AND boy_id IS NOT NULL AND teacher_id IS NULL)"
-            " OR (role = 'super_admin' AND teacher_id IS NULL AND boy_id IS NULL)",
+            " OR (role = 'super_admin' AND boy_id IS NULL)",
             name="ck_users_role_owner",
         ),
     )

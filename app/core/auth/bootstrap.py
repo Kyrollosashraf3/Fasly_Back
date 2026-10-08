@@ -1,5 +1,7 @@
-"""Seeds the first super admin and the default classes on startup."""
+"""Seeds the first super admin, the default classes and the curated list of
+church-wide admins on startup."""
 
+import json
 from datetime import date
 import re
 
@@ -9,8 +11,9 @@ from app.core.auth.security import get_password_hash
 from app.db.database import SessionLocal
 from app.models.enums import RoleEnum
 from app.models.school_class import SchoolClass
+from app.models.teacher import Teacher
 from app.models.user import User
-from app.schemas.school_class import CLASS_NAMES
+from app.schemas.school_class import ALL_CLASSES_NAME, CLASS_NAMES
 from app.schemas.user import PHONE_PATTERN, normalise_phone
 
 logger = get_logger(__name__)
@@ -89,6 +92,103 @@ def ensure_bootstrap_admin() -> None:
     except Exception:
         db.rollback()
         logger.exception("Failed to create bootstrap admin")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_seeded_super_admins() -> None:
+    """Create the church-wide admins listed in ``SEED_SUPER_ADMINS_JSON``.
+
+    Each entry is ``{"name": "...", "phone": "..."}``. On every startup each
+    entry ends up as a servant in the «كل الفصول» class and as a
+    ``super_admin`` login linked to that servant, so the account has a name.
+
+    Idempotent and additive: a phone already registered is never duplicated.
+    When the login already exists the missing piece (the servant and/or the
+    ``teacher_id`` link) is added; existing teachers of the same phone are
+    reused.
+    """
+    raw = settings.SEED_SUPER_ADMINS_JSON
+    if not raw:
+        logger.info("Super-admin seed skipped (SEED_SUPER_ADMINS_JSON not set)")
+        return
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Super-admin seed skipped (SEED_SUPER_ADMINS_JSON is not valid JSON)"
+        )
+        return
+    if not isinstance(entries, list) or not entries:
+        logger.info("Super-admin seed skipped (empty list)")
+        return
+
+    db = SessionLocal()
+    try:
+        all_class = (
+            db.query(SchoolClass).filter(SchoolClass.name == ALL_CLASSES_NAME).first()
+        )
+        if all_class is None:
+            all_class = SchoolClass(
+                name=ALL_CLASSES_NAME, academic_year=current_academic_year()
+            )
+            db.add(all_class)
+            db.flush()
+
+        for entry in entries:
+            name = str(entry.get("name") or "").strip()
+            phone = entry.get("phone")
+            if not name or not phone:
+                logger.warning(
+                    "Super-admin seed: skipped entry without name/phone: %r", entry
+                )
+                continue
+            phone = str(normalise_phone(phone))
+            if not re.fullmatch(PHONE_PATTERN, phone):
+                logger.warning("Super-admin seed: skipped bad phone %r", phone)
+                continue
+
+            teacher = (
+                db.query(Teacher).filter(Teacher.phone == phone).first()
+                or db.query(Teacher)
+                .filter(Teacher.teacher_name == name, Teacher.phone == phone)
+                .first()
+            )
+            if teacher is None:
+                teacher = Teacher(
+                    teacher_name=name, phone=phone, class_id=all_class.id
+                )
+                db.add(teacher)
+                db.flush()
+                logger.info("Super-admin seed: created servant %s (%s)", name, phone)
+
+            user = db.query(User).filter(User.phone == phone).first()
+            if user is None:
+                user = User(
+                    phone=phone, role=RoleEnum.SUPER_ADMIN, teacher_id=teacher.id
+                )
+                db.add(user)
+                db.flush()
+                logger.info(
+                    "Super-admin seed: created login %s -> servant %s", phone, name
+                )
+            elif user.role != RoleEnum.SUPER_ADMIN:
+                logger.warning(
+                    "Super-admin seed: %s already exists with role %s - untouched",
+                    phone,
+                    user.role,
+                )
+            elif user.teacher_id != teacher.id:
+                user.teacher_id = teacher.id
+                logger.info(
+                    "Super-admin seed: attached servant %s to login %s", name, phone
+                )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to seed super admins")
         raise
     finally:
         db.close()
