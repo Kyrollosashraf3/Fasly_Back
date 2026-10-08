@@ -9,12 +9,11 @@ router = APIRouter(tags=["Meta"])
 
 @router.get("/", include_in_schema=False)
 def root() -> dict:
-    """The API's front door: where things are, and where the UI lives."""
+    """The API's front door: where things are."""
     return {
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "docs": "/docs",
-        "ui": "/ui",
     }
 
 

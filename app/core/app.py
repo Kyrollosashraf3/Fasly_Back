@@ -1,15 +1,14 @@
 """Application factory: builds and wires the whole FastAPI app.
 
-Lifespan, middleware, routers and the static React UI are all registered
-here so ``app.main`` stays a thin entry point.
+Lifespan, middleware and routers are all registered here so ``app.main``
+stays a thin entry point. The React UI lives separately in ``front_fasly``
+and talks to this API over HTTP.
 """
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_logger, settings
@@ -32,10 +31,6 @@ from app.routes import (
 
 logger = get_logger(__name__)
 
-# Production build of the React UI - `npm run build` in front_fasly writes
-# here (vite outDir). Served under /ui so one process hosts API + UI.
-REACT_DIR = Path(__file__).resolve().parent.parent / "static_react"
-
 
 class FaslyApplication:
     """OOP wrapper that creates and configures the FastAPI application."""
@@ -51,7 +46,6 @@ class FaslyApplication:
         self.app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
         self._register_middleware()
         self._register_routers()
-        self._register_frontend()
         logger.info(
             "%s v%s initialized (%d routes)",
             settings.APP_NAME,
@@ -94,15 +88,6 @@ class FaslyApplication:
             dashboard_router,
         ):
             self.app.include_router(router)
-
-    def _register_frontend(self) -> None:
-        """Mount the built React app under /ui (its hash router owns /ui/*)."""
-        if not REACT_DIR.is_dir():
-            logger.warning(
-                "static_react not built yet - run `npm run build` in front_fasly"
-            )
-            return
-        self.app.mount("/ui", StaticFiles(directory=REACT_DIR, html=True), name="ui")
 
 
 def create_app() -> FastAPI:
