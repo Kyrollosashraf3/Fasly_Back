@@ -71,7 +71,6 @@ class BoyService(BaseService):
             father_name=data.father_name,
             national_id=data.national_id,
             skills=data.skills,
-            skills_custom=data.skills_custom,
             class_id=data.class_id,
             last_visit_date=data.last_visit_date,
             note=data.note,

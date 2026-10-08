@@ -57,7 +57,6 @@ class Teacher(Base):
         nullable=True,
     )
     skills = Column(ARRAY(String(50)), nullable=True)
-    skills_custom = Column(Text, nullable=True)
     last_visit_date = Column(Date, nullable=True, index=True)
     note = Column(Text, nullable=True)
     created_at = Column(

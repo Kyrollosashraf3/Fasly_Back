@@ -53,7 +53,6 @@ class TeacherService(BaseService):
             class_id=data.class_id,
             father_name=data.father_name,
             skills=data.skills,
-            skills_custom=data.skills_custom,
             last_visit_date=data.last_visit_date,
             note=data.note,
         )

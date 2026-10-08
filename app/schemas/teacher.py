@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.enums import FatherEnum, SkillEnum
+from app.models.enums import FatherEnum
 from app.schemas.base import ORMResponse
 
 
@@ -21,8 +21,8 @@ class TeacherCreate(BaseModel):
     location: str | None = Field(None, max_length=500)
     class_id: int = Field(..., description="His class - FK classes.id")
     father_name: FatherEnum | None = None
-    skills: list[SkillEnum] | None = None
-    skills_custom: str | None = None
+    # Free text too - when «أخرى» is picked, the typed skill lives in here.
+    skills: list[str] | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit by the father - nullable"
     )
@@ -31,7 +31,7 @@ class TeacherCreate(BaseModel):
     @field_validator("skills", mode="before")
     @classmethod
     def _coerce_skills(cls, value):
-        """Accept a bare string too (old clients / Excel) - always a list."""
+        """Accept a bare value too (old clients / Excel) - always a list."""
         if value is None or isinstance(value, list):
             return value
         if isinstance(value, str) and not value.strip():
@@ -57,8 +57,8 @@ class TeacherUpdate(BaseModel):
     location: str | None = Field(None, max_length=500)
     class_id: int | None = None
     father_name: FatherEnum | None = None
-    skills: list[SkillEnum] | None = None
-    skills_custom: str | None = None
+    # Free text too - when «أخرى» is picked, the typed skill lives in here.
+    skills: list[str] | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit by the father - nullable"
     )
@@ -67,7 +67,7 @@ class TeacherUpdate(BaseModel):
     @field_validator("skills", mode="before")
     @classmethod
     def _coerce_skills(cls, value):
-        """Accept a bare string too (old clients / Excel) - always a list."""
+        """Accept a bare value too (old clients / Excel) - always a list."""
         if value is None or isinstance(value, list):
             return value
         if isinstance(value, str) and not value.strip():
@@ -92,8 +92,7 @@ class TeacherResponse(ORMResponse):
     location: str | None = None
     class_id: int
     father_name: FatherEnum | None = None
-    skills: list[SkillEnum] | None = None
-    skills_custom: str | None = None
+    skills: list[str] | None = None
     last_visit_date: date | None = None
     note: str | None = None
     created_at: datetime

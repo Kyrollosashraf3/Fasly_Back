@@ -4,10 +4,10 @@ Expected sheet: first row = header with the collection's column names.
 
     boys     : boy_name | gender | birth_date | phone | phone_2 | zone |
                 address | location | father_name | national_id | skills |
-                skills_custom | class_name | teacher_name |
+                class_name | teacher_name |
                 last_visit_date | note | issue_flag
     teachers : teacher_name | phone | phone_2 | zone | address | location |
-                class_name | last_visit_date | note
+                father_name | skills | class_name | last_visit_date | note
     groups   : teacher_name | boy_name | class_name
     users    : phone | class_name | name | role
 
@@ -53,7 +53,6 @@ BOY_HEADERS = [
     "father_name",
     "national_id",
     "skills",
-    "skills_custom",
     "class_name",
     "teacher_name",
     "last_visit_date",
@@ -150,12 +149,12 @@ def _parse_father(value) -> FatherEnum | None:
     return FatherEnum(key) if key else None
 
 
-def _parse_skills(value) -> list[SkillEnum] | None:
-    """One cell may hold several skills: 'رسم, تمثيل' -> [DRAWING, ACTING]."""
+def _parse_skills(value) -> list[str] | None:
+    """One cell may hold several skills: 'رسم, تمثيل' -> ['رسم', 'تمثيل']."""
     text = _str(value)
     if text is None:
         return None
-    out: list[SkillEnum] = []
+    out: list[str] = []
     for part in re.split(r"[,/|؛،]+", text):
         key = part.strip()
         if not key:
@@ -164,8 +163,8 @@ def _parse_skills(value) -> list[SkillEnum] | None:
             skill = _SKILL_MAP[key]
         else:
             skill = SkillEnum.OTHER
-        if skill not in out:
-            out.append(skill)
+        if skill.value not in out:
+            out.append(skill.value)
     return out or None
 
 
@@ -265,7 +264,6 @@ def _row_to_boy(
         father_name=_parse_father(row.get("father_name")),
         national_id=_str(row.get("national_id")),
         skills=_parse_skills(row.get("skills")),
-        skills_custom=_str(row.get("skills_custom")),
         class_id=class_id,
         teacher_id=teacher_id,
         last_visit_date=_parse_date(
@@ -289,7 +287,6 @@ def _row_to_teacher(row: dict, classes: dict[str, int]) -> TeacherCreate:
         location=_str(row.get("location")),
         father_name=_parse_father(row.get("father_name")),
         skills=_parse_skills(row.get("skills")),
-        skills_custom=_str(row.get("skills_custom")),
         class_id=_resolve_class(row.get("class_name"), classes),
         last_visit_date=_parse_date(
             row.get("last_visit_date"), field="last_visit_date"

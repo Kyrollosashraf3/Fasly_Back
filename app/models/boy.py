@@ -66,7 +66,6 @@ class Boy(Base):
     )
     national_id = Column(String(20), nullable=True)
     skills = Column(ARRAY(String(50)), nullable=True)
-    skills_custom = Column(Text, nullable=True)
     class_id = Column(
         Integer,
         ForeignKey("classes.id", ondelete="RESTRICT"),
