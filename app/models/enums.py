@@ -41,3 +41,29 @@ class FollowEnum(str, Enum):
     OTHER = "other"
 
 FOLLOW_ENUM_NAME = "follow_enum"
+
+
+class FatherEnum(str, Enum):
+    """ابونا الاعتراف الخاص بالولد (optional)."""
+    KIERLOS = "ابونا كيرلس روماني"
+    ARSANIOUS = "ابونا ارسانيوس عزت"
+    FAMES = "ابونا فام عبدالمسيح"
+
+FATHER_ENUM_NAME = "father_enum"
+
+
+class SkillEnum(str, Enum):
+    """مهارات الولد - predefined skills + 'أخرى'."""
+    ACTING = "تمثيل"
+    DRAWING = "رسم"
+    COLORING = "تلوين"
+    PLAYING = "عزف"
+    DECOR = "ديكور"
+    PROGRAMMING = "برمجة"
+    GRAPHIC_DESIGN = "تصميم جرافيك"
+    EXCEL = "اكسيل"
+    COMPUTER = "كمبيوتر"
+    COMPOSITION = "تأليف"
+    OTHER = "أخرى"
+
+SKILL_ENUM_NAME = "skill_enum"

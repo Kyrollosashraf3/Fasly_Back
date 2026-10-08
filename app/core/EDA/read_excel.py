@@ -3,8 +3,9 @@
 Expected sheet: first row = header with the collection's column names.
 
     boys     : boy_name | gender | birth_date | phone | phone_2 | zone |
-               address | location | class_name | teacher_name |
-               last_visit_date | note | issue_flag
+                address | location | father_name | national_id | skills |
+                skills_custom | class_name | teacher_name |
+                last_visit_date | note | issue_flag
     teachers : teacher_name | phone | class_name | last_visit_date | note
     groups   : teacher_name | boy_name | class_name
     users    : phone | class_name | name | role
@@ -31,7 +32,7 @@ from openpyxl import load_workbook
 from pydantic import ValidationError
 
 from app.config.logger import get_logger
-from app.models.enums import GenderEnum, RoleEnum
+from app.models.enums import FatherEnum, GenderEnum, RoleEnum, SkillEnum
 from app.schemas.boy import BoyCreate
 from app.schemas.teacher import TeacherCreate
 from app.schemas.user import UserImportRow, normalise_phone
@@ -47,6 +48,10 @@ BOY_HEADERS = [
     "zone",
     "address",
     "location",
+    "father_name",
+    "national_id",
+    "skills",
+    "skills_custom",
     "class_name",
     "teacher_name",
     "last_visit_date",
@@ -80,6 +85,28 @@ _GENDER_MAP = {
     "بنت": GenderEnum.FEMALE,
 }
 
+_FATHER_MAP = {
+    "ابونا كيرلس روماني": FatherEnum.KIERLOS,,
+    "ابونا ارسانيوس عزت": FatherEnum.ARSANIOUS,
+    "ابونا فام عبدالمسيح": FatherEnum.FAMES,
+}
+
+_SKILL_MAP = {
+    "تمثيل": SkillEnum.ACTING,
+    "رسم": SkillEnum.DRAWING,
+    "تلوين": SkillEnum.COLORING,
+    "عزف": SkillEnum.PLAYING,
+    "ديكور": SkillEnum.DECOR,
+    "برمجة": SkillEnum.PROGRAMMING,
+    "تصميم جرافيك": SkillEnum.GRAPHIC_DESIGN,
+    "جرافيك": SkillEnum.GRAPHIC_DESIGN,
+    "اكسيل": SkillEnum.EXCEL,
+    "excel": SkillEnum.EXCEL,
+    "كمبيوتر": SkillEnum.COMPUTER,
+    "تأليف": SkillEnum.COMPOSITION,
+    "اخرى": SkillEnum.OTHER,
+}
+
 _TRUE_SET = {"1", "true", "yes", "y", "نعم", "صح", "✓"}
 _FALSE_SET = {"0", "false", "no", "n", "لا", "خطأ", ""}
 
@@ -102,6 +129,28 @@ def _parse_gender(value) -> GenderEnum:
     if text in _GENDER_MAP:
         return _GENDER_MAP[text]
     raise ValueError(f"bad gender {value!r} (use m/f)")
+
+
+def _parse_father(value) -> FatherEnum | None:
+    text = _str(value)
+    if text is None:
+        return None
+    key = text.strip()
+    if key in _FATHER_MAP:
+        return _FATHER_MAP[key]
+    return FatherEnum(key) if key else None
+
+
+def _parse_skill(value) -> SkillEnum | None:
+    text = _str(value)
+    if text is None:
+        return None
+    key = text.strip()
+    if key in _SKILL_MAP:
+        return _SKILL_MAP[key]
+    if key == "":
+        return None
+    return SkillEnum.OTHER
 
 
 def _resolve_class(value, classes: dict[str, int]) -> int:
@@ -186,6 +235,12 @@ def _row_to_boy(
                 f"unknown teacher_name {servant!r} in this class "
                 f"(known: {', '.join(known) or '-'})"
             )
+    skill_val = _parse_skill(row.get("skills"))
+    custom_skill = _str(row.get("skills_custom"))
+    if skill_val == SkillEnum.OTHER and custom_skill:
+        skills_custom_out = custom_skill
+    else:
+        skills_custom_out = custom_skill
     return BoyCreate(
         boy_name=name,
         gender=_parse_gender(
@@ -197,6 +252,10 @@ def _row_to_boy(
         zone=_str(row.get("zone")),
         address=_str(row.get("address")),
         location=_str(row.get("location")),
+        father_name=_parse_father(row.get("father_name")),
+        national_id=_str(row.get("national_id")),
+        skills=skill_val,
+        skills_custom=skills_custom_out if custom_skill else None,
         class_id=class_id,
         teacher_id=teacher_id,
         last_visit_date=_parse_date(

@@ -42,7 +42,7 @@ class BoyService(BaseService):
         query = self.query()
         if class_id is not None:
             self.ensure_class(class_id)
-            query = query.filter(Boy.class_id == class_id)
+            #query = query.filter(Boy.class_id == class_id)
         if issue_flag is not None:
             query = query.filter(Boy.issue_flag == issue_flag)
         return query.order_by(Boy.boy_name).all()
@@ -68,6 +68,10 @@ class BoyService(BaseService):
             zone=data.zone,
             address=data.address,
             location=data.location,
+            father_name=data.father_name,
+            national_id=data.national_id,
+            skills=data.skills,
+            skills_custom=data.skills_custom,
             class_id=data.class_id,
             last_visit_date=data.last_visit_date,
             note=data.note,
@@ -89,7 +93,7 @@ class BoyService(BaseService):
 
     def update(self, boy_id: int, data: BoyUpdate) -> Boy:
         boy = self.get(boy_id)
-        self._ensure_may_write()
+        
         self.ensure_class(boy.class_id)
 
         old_class = boy.class_id

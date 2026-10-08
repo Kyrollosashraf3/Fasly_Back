@@ -15,7 +15,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
-from app.models.enums import GENDER_ENUM_NAME, GenderEnum
+from app.models.enums import (
+    FATHER_ENUM_NAME,
+    GENDER_ENUM_NAME,
+    SKILL_ENUM_NAME,
+    FatherEnum,
+    GenderEnum,
+    SkillEnum,
+)
 
 TABLE = "boys"
 
@@ -50,6 +57,24 @@ class Boy(Base):
     zone = Column(String(255), nullable=True)
     address = Column(Text, nullable=True)
     location = Column(String(500), nullable=True)
+    father_name = Column(
+        Enum(
+            FatherEnum,
+            name=FATHER_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=True,
+    )
+    national_id = Column(String(20), nullable=True)
+    skills = Column(
+        Enum(
+            SkillEnum,
+            name=SKILL_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=True,
+    )
+    skills_custom = Column(Text, nullable=True)
     class_id = Column(
         Integer,
         ForeignKey("classes.id", ondelete="RESTRICT"),

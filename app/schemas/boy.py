@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.enums import GenderEnum
+from app.models.enums import FatherEnum, GenderEnum, SkillEnum
 from app.schemas.base import ORMResponse
 
 
@@ -18,6 +18,10 @@ class BoyCreate(BaseModel):
     zone: str | None = Field(None, max_length=255)
     address: str | None = None
     location: str | None = Field(None, max_length=500)
+    father_name: FatherEnum | None = None
+    national_id: str | None = Field(None, max_length=20)
+    skills: SkillEnum | None = None
+    skills_custom: str | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit for this boy - nullable"
     )
@@ -58,6 +62,10 @@ class BoyUpdate(BaseModel):
     zone: str | None = Field(None, max_length=255)
     address: str | None = None
     location: str | None = Field(None, max_length=500)
+    father_name: FatherEnum | None = None
+    national_id: str | None = Field(None, max_length=20)
+    skills: SkillEnum | None = None
+    skills_custom: str | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit for this boy - nullable"
     )
@@ -93,6 +101,10 @@ class BoyResponse(ORMResponse):
     zone: str | None = None
     address: str | None = None
     location: str | None = None
+    father_name: FatherEnum | None = None
+    national_id: str | None = None
+    skills: SkillEnum | None = None
+    skills_custom: str | None = None
     last_visit_date: date | None = None
     note: str | None = None
     issue_flag: bool = False
