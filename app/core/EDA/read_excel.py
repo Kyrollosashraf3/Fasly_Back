@@ -28,6 +28,7 @@ from datetime import date, datetime
 from io import BytesIO, StringIO
 from typing import Callable
 import csv
+import re
 
 from openpyxl import load_workbook
 from pydantic import ValidationError
@@ -149,16 +150,23 @@ def _parse_father(value) -> FatherEnum | None:
     return FatherEnum(key) if key else None
 
 
-def _parse_skill(value) -> SkillEnum | None:
+def _parse_skills(value) -> list[SkillEnum] | None:
+    """One cell may hold several skills: 'رسم, تمثيل' -> [DRAWING, ACTING]."""
     text = _str(value)
     if text is None:
         return None
-    key = text.strip()
-    if key in _SKILL_MAP:
-        return _SKILL_MAP[key]
-    if key == "":
-        return None
-    return SkillEnum.OTHER
+    out: list[SkillEnum] = []
+    for part in re.split(r"[,/|؛،]+", text):
+        key = part.strip()
+        if not key:
+            continue
+        if key in _SKILL_MAP:
+            skill = _SKILL_MAP[key]
+        else:
+            skill = SkillEnum.OTHER
+        if skill not in out:
+            out.append(skill)
+    return out or None
 
 
 def _resolve_class(value, classes: dict[str, int]) -> int:
@@ -243,15 +251,6 @@ def _row_to_boy(
                 f"unknown teacher_name {servant!r} in this class "
                 f"(known: {', '.join(known) or '-'})"
             )
-    skill_val = _parse_skill(row.get("skills"))
-    custom_skill = _str(row.get("skills_custom"))
-    if skill_val == SkillEnum.OTHER and custom_skill:
-        skills_custom_out = custom_skill
-    else:
-        skills_custom_out = custom_skill
-    skill_val = _parse_skill(row.get("skills"))
-    custom_skill = _str(row.get("skills_custom"))
-    skills_custom_out = custom_skill
     return BoyCreate(
         boy_name=name,
         gender=_parse_gender(
@@ -265,8 +264,8 @@ def _row_to_boy(
         location=_str(row.get("location")),
         father_name=_parse_father(row.get("father_name")),
         national_id=_str(row.get("national_id")),
-        skills=skill_val,
-        skills_custom=skills_custom_out,
+        skills=_parse_skills(row.get("skills")),
+        skills_custom=_str(row.get("skills_custom")),
         class_id=class_id,
         teacher_id=teacher_id,
         last_visit_date=_parse_date(
@@ -288,6 +287,9 @@ def _row_to_teacher(row: dict, classes: dict[str, int]) -> TeacherCreate:
         zone=_str(row.get("zone")),
         address=_str(row.get("address")),
         location=_str(row.get("location")),
+        father_name=_parse_father(row.get("father_name")),
+        skills=_parse_skills(row.get("skills")),
+        skills_custom=_str(row.get("skills_custom")),
         class_id=_resolve_class(row.get("class_name"), classes),
         last_visit_date=_parse_date(
             row.get("last_visit_date"), field="last_visit_date"

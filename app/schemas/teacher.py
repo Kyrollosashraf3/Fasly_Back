@@ -21,12 +21,22 @@ class TeacherCreate(BaseModel):
     location: str | None = Field(None, max_length=500)
     class_id: int = Field(..., description="His class - FK classes.id")
     father_name: FatherEnum | None = None
-    skills: SkillEnum | None = None
+    skills: list[SkillEnum] | None = None
     skills_custom: str | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit by the father - nullable"
     )
     note: str | None = None
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_skills(cls, value):
+        """Accept a bare string too (old clients / Excel) - always a list."""
+        if value is None or isinstance(value, list):
+            return value
+        if isinstance(value, str) and not value.strip():
+            return None
+        return [value]
 
     @field_validator("last_visit_date")
     @classmethod
@@ -47,12 +57,22 @@ class TeacherUpdate(BaseModel):
     location: str | None = Field(None, max_length=500)
     class_id: int | None = None
     father_name: FatherEnum | None = None
-    skills: SkillEnum | None = None
+    skills: list[SkillEnum] | None = None
     skills_custom: str | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit by the father - nullable"
     )
     note: str | None = None
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_skills(cls, value):
+        """Accept a bare string too (old clients / Excel) - always a list."""
+        if value is None or isinstance(value, list):
+            return value
+        if isinstance(value, str) and not value.strip():
+            return None
+        return [value]
 
     @field_validator("last_visit_date")
     @classmethod
@@ -72,7 +92,7 @@ class TeacherResponse(ORMResponse):
     location: str | None = None
     class_id: int
     father_name: FatherEnum | None = None
-    skills: SkillEnum | None = None
+    skills: list[SkillEnum] | None = None
     skills_custom: str | None = None
     last_visit_date: date | None = None
     note: str | None = None

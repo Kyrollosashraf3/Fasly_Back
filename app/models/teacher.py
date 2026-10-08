@@ -9,15 +9,11 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
-from app.models.enums import (
-    FATHER_ENUM_NAME,
-    SKILL_ENUM_NAME,
-    FatherEnum,
-    SkillEnum,
-)
+from app.models.enums import FATHER_ENUM_NAME, FatherEnum
 
 TABLE = "teachers"
 
@@ -60,14 +56,7 @@ class Teacher(Base):
         ),
         nullable=True,
     )
-    skills = Column(
-        Enum(
-            SkillEnum,
-            name=SKILL_ENUM_NAME,
-            values_callable=lambda enum: [member.value for member in enum],
-        ),
-        nullable=True,
-    )
+    skills = Column(ARRAY(String(50)), nullable=True)
     skills_custom = Column(Text, nullable=True)
     last_visit_date = Column(Date, nullable=True, index=True)
     note = Column(Text, nullable=True)

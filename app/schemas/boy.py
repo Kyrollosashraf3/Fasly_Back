@@ -20,7 +20,7 @@ class BoyCreate(BaseModel):
     location: str | None = Field(None, max_length=500)
     father_name: FatherEnum | None = None
     national_id: str | None = Field(None, max_length=20)
-    skills: SkillEnum | None = None
+    skills: list[SkillEnum] | None = None
     skills_custom: str | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit for this boy - nullable"
@@ -34,6 +34,16 @@ class BoyCreate(BaseModel):
             "groups row, so that servant can already take his attendance"
         ),
     )
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_skills(cls, value):
+        """Accept a bare string too (old clients / Excel) - always a list."""
+        if value is None or isinstance(value, list):
+            return value
+        if isinstance(value, str) and not value.strip():
+            return None
+        return [value]
 
     @field_validator("birth_date")
     @classmethod
@@ -64,7 +74,7 @@ class BoyUpdate(BaseModel):
     location: str | None = Field(None, max_length=500)
     father_name: FatherEnum | None = None
     national_id: str | None = Field(None, max_length=20)
-    skills: SkillEnum | None = None
+    skills: list[SkillEnum] | None = None
     skills_custom: str | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit for this boy - nullable"
@@ -73,6 +83,16 @@ class BoyUpdate(BaseModel):
     issue_flag: bool | None = None
     # ``null`` = drop him from his current group; absent = leave it alone.
     teacher_id: int | None = None
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_skills(cls, value):
+        """Accept a bare string too (old clients / Excel) - always a list."""
+        if value is None or isinstance(value, list):
+            return value
+        if isinstance(value, str) and not value.strip():
+            return None
+        return [value]
 
     @field_validator("birth_date")
     @classmethod
@@ -103,7 +123,7 @@ class BoyResponse(ORMResponse):
     location: str | None = None
     father_name: FatherEnum | None = None
     national_id: str | None = None
-    skills: SkillEnum | None = None
+    skills: list[SkillEnum] | None = None
     skills_custom: str | None = None
     last_visit_date: date | None = None
     note: str | None = None

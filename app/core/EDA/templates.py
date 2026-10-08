@@ -20,6 +20,7 @@ from openpyxl.utils import get_column_letter
 
 from app.config.logger import get_logger
 from app.core.EDA.read_excel import BOY_HEADERS, TEACHER_HEADERS, USER_HEADERS
+from app.models.enums import SkillEnum
 
 logger = get_logger(__name__)
 
@@ -274,6 +275,10 @@ def build_boys_export(boys: list, class_label_fn) -> bytes:
             "zone": b.zone,
             "address": b.address,
             "location": b.location,
+            "father_name": b.father_name.value if b.father_name else None,
+            "national_id": b.national_id,
+            "skills": _skills_cell(b.skills),
+            "skills_custom": b.skills_custom,
             "class_name": class_label_fn(b.class_id),
             "teacher_name": b.teacher_name,
             "last_visit_date": b.last_visit_date,
@@ -294,6 +299,9 @@ def build_teachers_export(teachers: list, class_label_fn) -> bytes:
             "zone": t.zone,
             "address": t.address,
             "location": t.location,
+            "father_name": t.father_name.value if t.father_name else None,
+            "skills": _skills_cell(t.skills),
+            "skills_custom": t.skills_custom,
             "class_name": class_label_fn(t.class_id),
             "last_visit_date": t.last_visit_date,
             "note": t.note,
@@ -301,3 +309,10 @@ def build_teachers_export(teachers: list, class_label_fn) -> bytes:
         for t in teachers
     ]
     return _workbook(TEACHER_HEADERS, rows, "الخدام")
+
+
+def _skills_cell(skills) -> str:
+    """A skills column on its way to Excel: enum list -> 'رسم, تمثيل'."""
+    if not skills:
+        return ""
+    return ", ".join(s.value if isinstance(s, SkillEnum) else str(s) for s in skills)

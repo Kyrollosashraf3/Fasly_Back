@@ -12,16 +12,15 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
 from app.models.enums import (
     FATHER_ENUM_NAME,
     GENDER_ENUM_NAME,
-    SKILL_ENUM_NAME,
     FatherEnum,
     GenderEnum,
-    SkillEnum,
 )
 
 TABLE = "boys"
@@ -66,14 +65,7 @@ class Boy(Base):
         nullable=True,
     )
     national_id = Column(String(20), nullable=True)
-    skills = Column(
-        Enum(
-            SkillEnum,
-            name=SKILL_ENUM_NAME,
-            values_callable=lambda enum: [member.value for member in enum],
-        ),
-        nullable=True,
-    )
+    skills = Column(ARRAY(String(50)), nullable=True)
     skills_custom = Column(Text, nullable=True)
     class_id = Column(
         Integer,
