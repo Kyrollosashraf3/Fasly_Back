@@ -6,7 +6,8 @@ Expected sheet: first row = header with the collection's column names.
                 address | location | father_name | national_id | skills |
                 skills_custom | class_name | teacher_name |
                 last_visit_date | note | issue_flag
-    teachers : teacher_name | phone | class_name | last_visit_date | note
+    teachers : teacher_name | phone | phone_2 | zone | address | location |
+                class_name | last_visit_date | note
     groups   : teacher_name | boy_name | class_name
     users    : phone | class_name | name | role
 
@@ -62,6 +63,10 @@ BOY_HEADERS = [
 TEACHER_HEADERS = [
     "teacher_name",
     "phone",
+    "phone_2",
+    "zone",
+    "address",
+    "location",
     "class_name",
     "last_visit_date",
     "note",
@@ -86,9 +91,12 @@ _GENDER_MAP = {
 }
 
 _FATHER_MAP = {
-    "ابونا كيرلس روماني": FatherEnum.KIERLOS,,
+    "ابونا كيرلس روماني": FatherEnum.KIERLOS,
+    "كيرلس روماني": FatherEnum.KIERLOS,
     "ابونا ارسانيوس عزت": FatherEnum.ARSANIOUS,
+    "ارسانيوس عزت": FatherEnum.ARSANIOUS,
     "ابونا فام عبدالمسيح": FatherEnum.FAMES,
+    "فام عبدالمسيح": FatherEnum.FAMES,
 }
 
 _SKILL_MAP = {
@@ -241,6 +249,9 @@ def _row_to_boy(
         skills_custom_out = custom_skill
     else:
         skills_custom_out = custom_skill
+    skill_val = _parse_skill(row.get("skills"))
+    custom_skill = _str(row.get("skills_custom"))
+    skills_custom_out = custom_skill
     return BoyCreate(
         boy_name=name,
         gender=_parse_gender(
@@ -255,7 +266,7 @@ def _row_to_boy(
         father_name=_parse_father(row.get("father_name")),
         national_id=_str(row.get("national_id")),
         skills=skill_val,
-        skills_custom=skills_custom_out if custom_skill else None,
+        skills_custom=skills_custom_out,
         class_id=class_id,
         teacher_id=teacher_id,
         last_visit_date=_parse_date(
@@ -273,6 +284,10 @@ def _row_to_teacher(row: dict, classes: dict[str, int]) -> TeacherCreate:
     return TeacherCreate(
         teacher_name=name,
         phone=_str(row.get("phone")),
+        phone_2=_str(row.get("phone_2")),
+        zone=_str(row.get("zone")),
+        address=_str(row.get("address")),
+        location=_str(row.get("location")),
         class_id=_resolve_class(row.get("class_name"), classes),
         last_visit_date=_parse_date(
             row.get("last_visit_date"), field="last_visit_date"

@@ -206,6 +206,10 @@ def build_teachers_template(class_names: list[str]) -> bytes:
             {
                 "teacher_name": name,
                 "phone": phone,
+                "phone_2": None,
+                "zone": None,
+                "address": None,
+                "location": None,
                 "class_name": names[i % len(names)] if names else None,
                 "last_visit_date": visit,
                 "note": note,
@@ -286,6 +290,10 @@ def build_teachers_export(teachers: list, class_label_fn) -> bytes:
         {
             "teacher_name": t.teacher_name,
             "phone": t.phone,
+            "phone_2": t.phone_2,
+            "zone": t.zone,
+            "address": t.address,
+            "location": t.location,
             "class_name": class_label_fn(t.class_id),
             "last_visit_date": t.last_visit_date,
             "note": t.note,

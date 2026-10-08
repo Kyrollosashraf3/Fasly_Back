@@ -1,7 +1,23 @@
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
+from app.models.enums import (
+    FATHER_ENUM_NAME,
+    SKILL_ENUM_NAME,
+    FatherEnum,
+    SkillEnum,
+)
 
 TABLE = "teachers"
 
@@ -26,12 +42,33 @@ class Teacher(Base):
     id = Column(Integer, primary_key=True, index=True)
     teacher_name = Column(String(255), nullable=False, index=True)
     phone = Column(String(50), nullable=True)
+    phone_2 = Column(String(50), nullable=True)
+    zone = Column(String(255), nullable=True)
+    address = Column(Text, nullable=True)
+    location = Column(String(500), nullable=True)
     class_id = Column(
         Integer,
         ForeignKey("classes.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
+    father_name = Column(
+        Enum(
+            FatherEnum,
+            name=FATHER_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=True,
+    )
+    skills = Column(
+        Enum(
+            SkillEnum,
+            name=SKILL_ENUM_NAME,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=True,
+    )
+    skills_custom = Column(Text, nullable=True)
     last_visit_date = Column(Date, nullable=True, index=True)
     note = Column(Text, nullable=True)
     created_at = Column(

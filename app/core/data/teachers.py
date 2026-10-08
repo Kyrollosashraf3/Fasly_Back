@@ -46,7 +46,14 @@ class TeacherService(BaseService):
         teacher = Teacher(
             teacher_name=teacher_name,
             phone=data.phone,
+            phone_2=data.phone_2,
+            zone=data.zone,
+            address=data.address,
+            location=data.location,
             class_id=data.class_id,
+            father_name=data.father_name,
+            skills=data.skills,
+            skills_custom=data.skills_custom,
             last_visit_date=data.last_visit_date,
             note=data.note,
         )

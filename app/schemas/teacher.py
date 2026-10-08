@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.enums import FatherEnum, SkillEnum
 from app.schemas.base import ORMResponse
 
 
@@ -14,7 +15,14 @@ class TeacherCreate(BaseModel):
 
     teacher_name: str = Field(..., min_length=1, max_length=255)
     phone: str | None = Field(None, max_length=50)
+    phone_2: str | None = Field(None, max_length=50)
+    zone: str | None = Field(None, max_length=255)
+    address: str | None = None
+    location: str | None = Field(None, max_length=500)
     class_id: int = Field(..., description="His class - FK classes.id")
+    father_name: FatherEnum | None = None
+    skills: SkillEnum | None = None
+    skills_custom: str | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit by the father - nullable"
     )
@@ -33,7 +41,14 @@ class TeacherUpdate(BaseModel):
 
     teacher_name: str | None = Field(None, min_length=1, max_length=255)
     phone: str | None = Field(None, max_length=50)
+    phone_2: str | None = Field(None, max_length=50)
+    zone: str | None = Field(None, max_length=255)
+    address: str | None = None
+    location: str | None = Field(None, max_length=500)
     class_id: int | None = None
+    father_name: FatherEnum | None = None
+    skills: SkillEnum | None = None
+    skills_custom: str | None = None
     last_visit_date: date | None = Field(
         None, description="Last confession/visit by the father - nullable"
     )
@@ -51,7 +66,14 @@ class TeacherResponse(ORMResponse):
     id: int
     teacher_name: str
     phone: str | None = None
+    phone_2: str | None = None
+    zone: str | None = None
+    address: str | None = None
+    location: str | None = None
     class_id: int
+    father_name: FatherEnum | None = None
+    skills: SkillEnum | None = None
+    skills_custom: str | None = None
     last_visit_date: date | None = None
     note: str | None = None
     created_at: datetime
