@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from fastapi import HTTPException, status
-from sqlalchemy import case
 from sqlalchemy.orm import Query
 
 from app.core.data.base import BaseService
@@ -17,11 +16,7 @@ from app.models.boy import Boy
 from app.models.enums import RoleEnum
 from app.models.school_class import SchoolClass
 from app.models.teacher import Teacher
-from app.schemas.school_class import (
-    ALL_CLASSES_NAME,
-    SchoolClassCreate,
-    SchoolClassUpdate,
-)
+from app.schemas.school_class import SchoolClassCreate, SchoolClassUpdate
 
 
 class ClassService(BaseService):
@@ -34,18 +29,9 @@ class ClassService(BaseService):
         return self.db.query(SchoolClass)
 
     def list(self) -> list[SchoolClass]:
-        # «كل الفصول» (the ad-com admin's class) always sorts last, whatever
-        # its id or academic year.
-        all_last = case(
-            (SchoolClass.name == ALL_CLASSES_NAME, 1), else_=0
-        )
         return (
             self.query()
-            .order_by(
-                SchoolClass.academic_year.desc(),
-                all_last,
-                SchoolClass.id,
-            )
+            .order_by(SchoolClass.academic_year.desc(), SchoolClass.id)
             .all()
         )
 

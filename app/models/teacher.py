@@ -25,8 +25,11 @@ class Teacher(Base):
     via ``users.teacher_id``. ``duty`` was dropped - what he can see is
     driven entirely by ``users.role``.
 
-    ``last_visit_date`` is the last time the father (أبونا) came for
+``last_visit_date`` is the last time the father (أبونا) came for
     confession/visit. It starts NULL and is filled in as visits happen.
+
+    ``class_id`` is NULL for a church-wide (super) admin: those servants do
+    not belong to one class, their scope is every class.
 
     ``follow_ups``/``teacher_checks`` are history and are NOT cascade-deleted:
     the FK is RESTRICT, so a servant with recorded history cannot be dropped
@@ -45,7 +48,7 @@ class Teacher(Base):
     class_id = Column(
         Integer,
         ForeignKey("classes.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     father_name = Column(
