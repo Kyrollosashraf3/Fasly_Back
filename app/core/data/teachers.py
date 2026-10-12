@@ -39,14 +39,24 @@ class TeacherService(BaseService):
         return teacher
 
     def create(self, data: TeacherCreate) -> Teacher:
+        from app.core.auth.security import get_password_hash
+        from app.models.enums import RoleEnum
+        from app.models.user import User
+        from app.schemas.user import normalise_phone
+
         self.ensure_manager()
         self.ensure_class(data.class_id)
         teacher_name = data.teacher_name.strip()
         self._ensure_name_free(teacher_name, data.class_id)
+
+        # normalise phones
+        norm_phone = normalise_phone(data.phone) if data.phone else None
+        norm_phone2 = normalise_phone(data.phone_2) if data.phone_2 else None
+
         teacher = Teacher(
             teacher_name=teacher_name,
-            phone=data.phone,
-            phone_2=data.phone_2,
+            phone=norm_phone,
+            phone_2=norm_phone2,
             zone=data.zone,
             address=data.address,
             location=data.location,
@@ -58,6 +68,24 @@ class TeacherService(BaseService):
         )
         self.db.add(teacher)
         commit(self.db, f"Servant create name={teacher_name}")
+
+        # create user account if teacher has any phone
+        target_phone = norm_phone or norm_phone2
+        if target_phone:
+            from app.core.data.common import ensure_unique
+
+            ensure_unique(self.db, User, "phone", target_phone, label="Account")
+            # also ensure no other teacher/user has this phone? keep simple
+            user = User(
+                phone=target_phone,
+                password_hash=None,
+                role=RoleEnum.TEACHER,
+                teacher_id=teacher.id,
+                boy_id=None,
+            )
+            self.db.add(user)
+            commit(self.db, f"User created for teacher {teacher.id} phone={target_phone}")
+
         return teacher
 
     def add_list(self, items: list[TeacherCreate]) -> dict:

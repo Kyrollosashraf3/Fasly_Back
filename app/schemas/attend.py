@@ -15,6 +15,7 @@ class AttendCreate(BaseModel):
 
     boy_id: int
     present: bool
+    liturgy: bool = False
     date: DateType | None = Field(None, description="Defaults to today")
     note: str | None = None
 
@@ -23,6 +24,7 @@ class AttendUpdate(BaseModel):
     """Only the outcome is editable - boy/date/class are the row's identity."""
 
     present: bool | None = None
+    liturgy: bool | None = None
     note: str | None = None
 
 
@@ -32,6 +34,7 @@ class AttendResponse(ORMResponse):
     class_id: int
     date: DateType
     present: bool
+    liturgy: bool = False
     note: str | None = None
     recorded_by: int | None = None
     created_at: datetime
@@ -42,6 +45,7 @@ class AttendItem(BaseModel):
 
     boy_id: int
     present: bool = False
+    liturgy: bool = False
     note: str | None = None
 
 

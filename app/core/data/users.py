@@ -26,6 +26,7 @@ from app.models.boy import Boy
 from app.models.enums import RoleEnum
 from app.models.teacher import Teacher
 from app.models.user import User
+from app.models.teacher import Teacher
 from app.schemas.user import (
     UserCreate,
     UserImportRow,
@@ -37,10 +38,17 @@ from app.schemas.user import (
 #: Roles that live on a servant row (and therefore inherit his class).
 OWNER_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN)
 
+from sqlalchemy import or_
 
-def get_user_by_phone(db, phone: str) -> User | None:
-    """Login lookup by mobile number - the only handle there is."""
-    return db.query(User).filter(User.phone == normalise_phone(phone)).first()
+def get_user_by_phone(db, phone: str) -> Teacher | None:
+    normalized = normalise_phone(phone)
+    return db.query(Teacher).filter(
+        or_(
+            Teacher.phone == normalized,
+            Teacher.phone_2 == normalized
+        )
+    ).first()
+
 
 
 class UserService(BaseService):
@@ -307,8 +315,8 @@ def complete_signup(db, phone: str, password: str) -> User:
 
     404 unknown number, 409 the password is already set (signup happens once).
     """
-    user = get_user_by_phone(db, phone)
-    if user is None:
+    user_phone = get_user_by_phone(db, phone)
+    if user_phone is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account is registered with that phone number.",
@@ -319,5 +327,6 @@ def complete_signup(db, phone: str, password: str) -> User:
             detail="This number already has a password. Use login instead.",
         )
     user.password_hash = get_password_hash(password)
+    # pending_signup is a property, but the meaning is "no password"
     commit(db, f"Signup phone={phone} user_id={user.id}")
     return user

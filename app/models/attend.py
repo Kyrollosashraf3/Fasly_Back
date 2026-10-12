@@ -50,6 +50,7 @@ class Attend(Base):
     )
     date = Column(Date, nullable=False, default=date.today, index=True)
     present = Column(Boolean, nullable=False, default=False)
+    liturgy = Column(Boolean, nullable=False, default=False)
     note = Column(Text, nullable=True)
     recorded_by = Column(
         Integer,

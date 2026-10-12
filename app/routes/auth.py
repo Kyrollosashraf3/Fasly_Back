@@ -117,50 +117,7 @@ def list_users(
     return UserService(db, current_user).list_users()
 
 
-@router.post("/users/import")
-def import_users(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Bulk-create accounts from a sheet: ``phone | class_name | name | role``.
 
-    The servant named in each row is created when missing, so one file is
-    enough to stand the accounts up.
-    """
-    from app.core.EDA.importer import run_import
-    from app.core.EDA.read_excel import read_users_workbook
-
-    classes = ClassService(db, current_user).label_lookup()
-    is_csv = (file.filename or "").lower().endswith(".csv")
-    return run_import(
-        file,
-        reader=lambda data: read_users_workbook(
-            data, classes=classes, csv_file=is_csv
-        ),
-        service=UserService(db, current_user),
-        name_key="phone",
-    )
-
-
-@router.get("/users/template")
-def users_template(
-    format: str = "xlsx",
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Sample accounts sheet: ``phone | class_name | name | role``."""
-    from app.core.EDA.templates import build_users_template, build_users_template_csv
-    from app.routes.sheets import csv_response, writable_class_names, xlsx_response
-
-    names = writable_class_names(db, current_user)
-    if format.lower() == "csv":
-        return csv_response(
-            build_users_template_csv(names), "fasly-users-template.csv"
-        )
-    return xlsx_response(
-        build_users_template(names), "fasly-users-template.xlsx"
-    )
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -169,7 +126,10 @@ def register_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    return UserService(db, current_user).create_user(user_in)
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Not found.",
+    )
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
