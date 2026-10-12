@@ -90,7 +90,8 @@ class TeacherResponse(ORMResponse):
     zone: str | None = None
     address: str | None = None
     location: str | None = None
-    class_id: int
+    # NULL for a church-wide (super) admin: he belongs to no single class.
+    class_id: int | None = None
     father_name: FatherEnum | None = None
     skills: list[str] | None = None
     last_visit_date: date | None = None
