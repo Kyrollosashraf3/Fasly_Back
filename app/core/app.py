@@ -69,14 +69,25 @@ class FaslyApplication:
         logger.info("Shutting down %s v%s", settings.APP_NAME, settings.APP_VERSION)
 
     def _register_middleware(self) -> None:
-        origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
-        self.app.add_middleware(
-            CORSMiddleware,
-            allow_origins=origins,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+        origins_raw = settings.CORS_ORIGINS or "*"
+        origins = [o.strip() for o in origins_raw.split(",") if o.strip()]
+
+        if "*" in origins:
+            self.app.add_middleware(
+                CORSMiddleware,
+                allow_origins=["*"],
+                allow_credentials=False,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+        else:
+            self.app.add_middleware(
+                CORSMiddleware,
+                allow_origins=origins,
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
         self.app.add_middleware(RequestLogMiddleware)
 
     def _register_routers(self) -> None:
