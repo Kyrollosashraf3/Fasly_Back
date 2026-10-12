@@ -100,6 +100,9 @@ class TeacherService(BaseService):
     def update(self, teacher_id: int, data: TeacherUpdate) -> Teacher:
         teacher = self.get(teacher_id)
         self.ensure_manager()
+        # Track phone changes to sync to user
+        old_phone = teacher.phone
+        old_phone2 = teacher.phone_2
         apply_update(teacher, data, strip=("teacher_name",))
         self.ensure_class(teacher.class_id)
         if data.model_fields_set & {"teacher_name", "class_id"}:
@@ -107,6 +110,24 @@ class TeacherService(BaseService):
                 teacher.teacher_name, teacher.class_id, exclude_id=teacher_id
             )
         commit(self.db, f"Servant update id={teacher_id}")
+        # sync phone to linked user if changed
+        try:
+            from app.core.data.common import ensure_unique
+            from app.models.user import User
+            from app.schemas.user import normalise_phone
+
+            new_target = teacher.phone or teacher.phone_2
+            if new_target:
+                # update linked user if exists
+                user = self.db.query(User).filter(User.teacher_id == teacher_id).first()
+                if user:
+                    old_user_phone = user.phone
+                    if user.phone != new_target:
+                        ensure_unique(self.db, User, "phone", new_target, exclude_id=user.id, label="Account")
+                        user.phone = new_target
+                        commit(self.db, f"User phone sync teacher={teacher_id}")
+        except Exception:
+            pass
         return teacher
 
     def delete(self, teacher_id: int) -> None:
