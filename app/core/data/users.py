@@ -40,14 +40,9 @@ OWNER_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN)
 
 from sqlalchemy import or_
 
-def get_user_by_phone(db, phone: str) -> Teacher | None:
+def get_user_by_phone(db, phone: str):
     normalized = normalise_phone(phone)
-    return db.query(Teacher).filter(
-        or_(
-            Teacher.phone == normalized,
-            Teacher.phone_2 == normalized
-        )
-    ).first()
+    return db.query(User).filter(User.phone == normalized).first()
 
 
 
@@ -315,8 +310,8 @@ def complete_signup(db, phone: str, password: str) -> User:
 
     404 unknown number, 409 the password is already set (signup happens once).
     """
-    user_phone = get_user_by_phone(db, phone)
-    if user_phone is None:
+    user = get_user_by_phone(db, phone)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No account is registered with that phone number.",
@@ -327,6 +322,5 @@ def complete_signup(db, phone: str, password: str) -> User:
             detail="This number already has a password. Use login instead.",
         )
     user.password_hash = get_password_hash(password)
-    # pending_signup is a property, but the meaning is "no password"
     commit(db, f"Signup phone={phone} user_id={user.id}")
     return user
