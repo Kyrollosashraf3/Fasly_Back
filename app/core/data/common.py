@@ -286,6 +286,36 @@ def ensure_unique(
         )
 
 
+def ensure_name_free(
+    db: Session,
+    model: Any,
+    name_field: str,
+    name: str,
+    class_id: int | None,
+    *,
+    label: str,
+    exclude_id: int | None = None,
+) -> None:
+    """409 when another row already carries this name in the same class.
+
+    A person's name only has to be unique *inside* a class, and the comparison
+    ignores case and runs of whitespace (see :func:`normalise_name`), so
+    ``'Mina '`` and ``'mina'`` are treated as the same boy/servant. Used by the
+    create *and* the spreadsheet import of both the boys and servants
+    directories, so a re-uploaded sheet no longer creates twins.
+    """
+    wanted = normalise_name(name)
+    query = db.query(model).filter(model.class_id == class_id)
+    if exclude_id is not None:
+        query = query.filter(model.id != exclude_id)
+    for row in query.all():
+        if normalise_name(getattr(row, name_field)) == wanted:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{label}: '{name}' already exists in that class.",
+            )
+
+
 def apply_update(
     record,
     data,

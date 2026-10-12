@@ -5,7 +5,13 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Query
 
 from app.core.data.base import BaseService
-from app.core.data.common import apply_update, bulk_create, commit, scope_teachers
+from app.core.data.common import (
+    apply_update,
+    bulk_create,
+    commit,
+    ensure_name_free,
+    scope_teachers,
+)
 from app.models.teacher import Teacher
 from app.schemas.teacher import TeacherCreate, TeacherUpdate
 
@@ -140,14 +146,13 @@ class TeacherService(BaseService):
     def _ensure_name_free(
         self, teacher_name: str, class_id: int, exclude_id: int | None = None
     ) -> None:
-        """Names only need to be unique *inside* a class."""
-        query = self.db.query(Teacher).filter(
-            Teacher.teacher_name == teacher_name, Teacher.class_id == class_id
+        """Names only need to be unique *inside* a class - case/space-insensitive."""
+        ensure_name_free(
+            self.db,
+            Teacher,
+            "teacher_name",
+            teacher_name,
+            class_id,
+            label="Teacher",
+            exclude_id=exclude_id,
         )
-        if exclude_id is not None:
-            query = query.filter(Teacher.id != exclude_id)
-        if query.first() is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Teacher: '{teacher_name}' already exists in that class.",
-            )

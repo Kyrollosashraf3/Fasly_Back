@@ -9,6 +9,7 @@ from app.core.data.common import (
     apply_update,
     bulk_create,
     commit,
+    ensure_name_free,
     ensure_teacher_access,
     get_or_404,
     scope_boys,
@@ -59,8 +60,14 @@ class BoyService(BaseService):
     def create(self, data: BoyCreate) -> Boy:
         self._ensure_may_write()
         self.ensure_class(data.class_id)
+        boy_name = data.boy_name.strip()
+        # One boy per name inside a class - applies to the form and to a
+        # spreadsheet re-upload alike (bulk import calls create per row).
+        ensure_name_free(
+            self.db, Boy, "boy_name", boy_name, data.class_id, label="Boy"
+        )
         boy = Boy(
-            boy_name=data.boy_name.strip(),
+            boy_name=boy_name,
             gender=data.gender,
             birth_date=data.birth_date,
             phone=data.phone,
