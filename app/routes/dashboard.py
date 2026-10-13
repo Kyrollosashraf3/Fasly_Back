@@ -19,11 +19,12 @@ def dashboard_summary(
     top_n: int = Query(default=5, ge=1, le=50),
     trend_n: int = Query(default=8, ge=1, le=52),
     teacher_trend_n: int = Query(default=8, ge=1, le=52),
+    period_days: int = Query(default=30, ge=1, le=365),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Attendance, streaks, absences and servant scores - all already scoped
-    to the classes this login may see."""
+    """Attendance, streaks, absences, servant scores, follow-up coverage and
+    late confessions - all already scoped to the classes this login may see."""
     return DashboardService(db, current_user).summary(
         class_id=class_id,
         streak_n=streak_n,
@@ -31,6 +32,7 @@ def dashboard_summary(
         top_n=top_n,
         trend_n=trend_n,
         teacher_trend_n=teacher_trend_n,
+        period_days=period_days,
     )
 
 
