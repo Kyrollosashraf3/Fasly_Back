@@ -18,7 +18,8 @@ class BoyCreate(BaseModel):
     phone_2: str | None = Field(None, max_length=50)
     zone: str | None = Field(None, max_length=255)
     address: str | None = None
-    location: str | None = Field(None, max_length=500)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
     father_name: FatherEnum | None = None
     national_id: str | None = Field(None, max_length=20)
     # Free text too - when «أخرى» is picked, the typed skill lives in here.
@@ -78,7 +79,8 @@ class BoyUpdate(BaseModel):
     phone_2: str | None = Field(None, max_length=50)
     zone: str | None = Field(None, max_length=255)
     address: str | None = None
-    location: str | None = Field(None, max_length=500)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
     father_name: FatherEnum | None = None
     national_id: str | None = Field(None, max_length=20)
     # Free text too - when «أخرى» is picked, the typed skill lives in here.
@@ -133,7 +135,8 @@ class BoyResponse(ORMResponse):
     phone_2: str | None = None
     zone: str | None = None
     address: str | None = None
-    location: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     father_name: FatherEnum | None = None
     national_id: str | None = None
     skills: list[str] | None = None

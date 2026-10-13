@@ -6,6 +6,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -55,7 +56,8 @@ class Boy(Base):
     phone_2 = Column(String(50), nullable=True)
     zone = Column(String(255), nullable=True)
     address = Column(Text, nullable=True)
-    location = Column(String(500), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
     father_name = Column(
         Enum(
             FatherEnum,

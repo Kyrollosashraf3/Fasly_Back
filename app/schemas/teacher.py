@@ -20,7 +20,8 @@ class TeacherCreate(BaseModel):
     phone_2: str | None = Field(None, max_length=50)
     zone: str | None = Field(None, max_length=255)
     address: str | None = None
-    location: str | None = Field(None, max_length=500)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
     class_id: int = Field(..., description="His class - FK classes.id")
     father_name: FatherEnum | None = None
     # Free text too - when «أخرى» is picked, the typed skill lives in here.
@@ -70,7 +71,8 @@ class TeacherUpdate(BaseModel):
     phone_2: str | None = Field(None, max_length=50)
     zone: str | None = Field(None, max_length=255)
     address: str | None = None
-    location: str | None = Field(None, max_length=500)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
     class_id: int | None = None
     father_name: FatherEnum | None = None
     # Free text too - when «أخرى» is picked, the typed skill lives in here.
@@ -120,7 +122,8 @@ class TeacherResponse(ORMResponse):
     phone_2: str | None = None
     zone: str | None = None
     address: str | None = None
-    location: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     # NULL for a church-wide (super) admin: he belongs to no single class.
     class_id: int | None = None
     father_name: FatherEnum | None = None

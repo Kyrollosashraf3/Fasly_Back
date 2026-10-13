@@ -3,11 +3,12 @@
 Expected sheet: first row = header with the collection's column names.
 
     boys     : boy_name | gender | birth_date | phone | phone_2 | zone |
-                address | location | father_name | national_id | skills |
-                class_name | teacher_name |
+                address | latitude | longitude | father_name | national_id |
+                skills | class_name | teacher_name |
                 last_visit_date | note | issue_flag
-    teachers : teacher_name | phone | phone_2 | zone | address | location |
-                father_name | skills | class_name | last_visit_date | note
+    teachers : teacher_name | phone | phone_2 | zone | address |
+                latitude | longitude | father_name | skills | class_name |
+                last_visit_date | note
     groups   : teacher_name | boy_name | class_name
     users    : phone | class_name | name | role
 
@@ -49,7 +50,8 @@ BOY_HEADERS = [
     "phone_2",
     "zone",
     "address",
-    "location",
+    "latitude",
+    "longitude",
     "father_name",
     "national_id",
     "skills",
@@ -66,7 +68,8 @@ TEACHER_HEADERS = [
     "phone_2",
     "zone",
     "address",
-    "location",
+    "latitude",
+    "longitude",
     "class_name",
     "last_visit_date",
     "note",
@@ -126,6 +129,17 @@ def _str(value) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _parse_float(value) -> float | None:
+    """Coordinate cell -> float (None when blank)."""
+    text = _str(value)
+    if text is None:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        raise ValueError(f"bad coordinate {value!r} (use a number)")
 
 
 def _norm(label: str) -> str:
@@ -260,7 +274,8 @@ def _row_to_boy(
         phone_2=_str(row.get("phone_2")),
         zone=_str(row.get("zone")),
         address=_str(row.get("address")),
-        location=_str(row.get("location")),
+        latitude=_parse_float(row.get("latitude")),
+        longitude=_parse_float(row.get("longitude")),
         father_name=_parse_father(row.get("father_name")),
         national_id=_str(row.get("national_id")),
         skills=_parse_skills(row.get("skills")),
@@ -284,7 +299,8 @@ def _row_to_teacher(row: dict, classes: dict[str, int]) -> TeacherCreate:
         phone_2=_str(row.get("phone_2")),
         zone=_str(row.get("zone")),
         address=_str(row.get("address")),
-        location=_str(row.get("location")),
+        latitude=_parse_float(row.get("latitude")),
+        longitude=_parse_float(row.get("longitude")),
         father_name=_parse_father(row.get("father_name")),
         skills=_parse_skills(row.get("skills")),
         class_id=_resolve_class(row.get("class_name"), classes),
