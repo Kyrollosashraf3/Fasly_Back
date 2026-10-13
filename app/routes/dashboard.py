@@ -20,6 +20,7 @@ def dashboard_summary(
     trend_n: int = Query(default=8, ge=1, le=52),
     teacher_trend_n: int = Query(default=8, ge=1, le=52),
     period_days: int = Query(default=30, ge=1, le=365),
+    date_mode: str = Query(default="all", pattern="^(all|last_friday|season)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -33,6 +34,21 @@ def dashboard_summary(
         trend_n=trend_n,
         teacher_trend_n=teacher_trend_n,
         period_days=period_days,
+        date_mode=date_mode,
+    )
+
+
+@router.get("/birthdays")
+def dashboard_birthdays(
+    kind: str = Query(default="boys", pattern="^(boys|teachers|all)$"),
+    window: str = Query(default="twoweeks", pattern="^(twoweeks|month)$"),
+    class_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upcoming birthdays for boys and/or servants (a servant only sees boys)."""
+    return DashboardService(db, current_user).birthdays(
+        kind=kind, window=window, class_id=class_id
     )
 
 

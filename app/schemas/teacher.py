@@ -15,6 +15,7 @@ class TeacherCreate(BaseModel):
     """
 
     teacher_name: str = Field(..., min_length=1, max_length=255)
+    birth_date: date | None = None
     phone: str | None = Field(None, max_length=50)
     phone_2: str | None = Field(None, max_length=50)
     zone: str | None = Field(None, max_length=255)
@@ -52,11 +53,19 @@ class TeacherCreate(BaseModel):
         """Store every phone shape as ``01xxxxxxxxx`` (see ``common``)."""
         return normalise_phone(value)
 
+    @field_validator("birth_date")
+    @classmethod
+    def _birth_not_in_future(cls, value: date | None) -> date | None:
+        if value is not None and value > date.today():
+            raise ValueError("birth_date cannot be in the future")
+        return value
+
 
 class TeacherUpdate(BaseModel):
     """Partial update - all fields optional."""
 
     teacher_name: str | None = Field(None, min_length=1, max_length=255)
+    birth_date: date | None = None
     phone: str | None = Field(None, max_length=50)
     phone_2: str | None = Field(None, max_length=50)
     zone: str | None = Field(None, max_length=255)
@@ -94,10 +103,19 @@ class TeacherUpdate(BaseModel):
         """Store every phone shape as ``01xxxxxxxxx`` (see ``common``)."""
         return normalise_phone(value)
 
+    @field_validator("birth_date")
+    @classmethod
+    def _birth_not_in_future(cls, value: date | None) -> date | None:
+        if value is not None and value > date.today():
+            raise ValueError("birth_date cannot be in the future")
+        return value
+
 
 class TeacherResponse(ORMResponse):
     id: int
     teacher_name: str
+    birth_date: date | None = None
+    age: int | None = None
     phone: str | None = None
     phone_2: str | None = None
     zone: str | None = None

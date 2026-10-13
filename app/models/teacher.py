@@ -40,6 +40,7 @@ class Teacher(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     teacher_name = Column(String(255), nullable=False, index=True)
+    birth_date = Column(Date, nullable=True)
     phone = Column(String(50), nullable=True)
     phone_2 = Column(String(50), nullable=True)
     zone = Column(String(255), nullable=True)
@@ -82,6 +83,20 @@ class Teacher(Base):
     groups = relationship("Group", back_populates="teacher", cascade="all, delete-orphan")
     follow_ups = relationship("FollowUp", back_populates="teacher")
     teacher_checks = relationship("TeacherCheck", back_populates="teacher")
+
+    @property
+    def age(self) -> int | None:
+        """Derived from ``birth_date`` - never stored in the table."""
+        if self.birth_date is None:
+            return None
+        from datetime import date
+
+        today = date.today()
+        return (
+            today.year
+            - self.birth_date.year
+            - ((today.month, today.day) < (self.birth_date.month, self.birth_date.day))
+        )
 
     def __repr__(self) -> str:
         return f"<Teacher id={self.id} name={self.teacher_name} class_id={self.class_id}>"

@@ -163,6 +163,21 @@ class DashboardService(BaseService):
     def _class_labels(self) -> dict[int, str]:
         return {row.id: row.name for row in self._classes()}
 
+    @staticmethod
+    def _date_range(date_mode: str) -> tuple[date | None, date | None]:
+        """Turn the date filter selection into a ``(from, to)`` window.
+
+        * ``last_friday`` -> that single day (the latest Friday on/before today)
+        * ``season``      -> the church service year start until today
+        * ``all``         -> no bounds (every recorded day)
+        """
+        if date_mode == "last_friday":
+            day = _last_friday_passed()
+            return day, day
+        if date_mode == "season":
+            return _season_start(), date.today()
+        return None, None
+
     def _boys(self) -> list[Boy]:
         return self._boys_query().all()
 
@@ -218,19 +233,41 @@ class DashboardService(BaseService):
         trend_n: int = 8,
         teacher_trend_n: int = 8,
         period_days: int = 30,
+        date_mode: str = "all",
     ) -> dict:
         classes = self._scope_classes(class_id)
         labels = self._class_labels()
         class_set = set(classes)
 
+        # The date filter drives the WHOLE page: a specific Friday, the whole
+        # period or the church year so far (see ``_date_range``).
+        date_from, date_to = self._date_range(date_mode)
+
+        def in_range(value) -> bool:
+            if value is None:
+                return False
+            if date_from is not None and value < date_from:
+                return False
+            if date_to is not None and value > date_to:
+                return False
+            return True
+
         # Narrow every source row to the classes in scope first, so the class
         # picker really drives the whole page: a super admin who selected one
         # class no longer sees counts summed over every class.
         boys = [b for b in self._boys() if b.class_id in class_set]
-        attends = [a for a in self._attends() if a.class_id in class_set]
-        checks = [c for c in self._checks() if c.class_id in class_set]
+        attends = [
+            a for a in self._attends() if a.class_id in class_set and in_range(a.date)
+        ]
+        checks = [
+            c for c in self._checks() if c.class_id in class_set and in_range(c.date)
+        ]
         teachers = [t for t in self._teachers() if t.class_id in class_set]
-        follow_ups = [f for f in self._follow_ups() if f.class_id in class_set]
+        follow_ups = [
+            f
+            for f in self._follow_ups()
+            if f.class_id in class_set and in_range(f.action_date)
+        ]
 
         boys_by_id = {b.id: b for b in boys}
         teachers_by_id = {t.id: t.teacher_name for t in teachers}
@@ -241,7 +278,7 @@ class DashboardService(BaseService):
         servant_list = self._servant_scores(checks, teachers_by_id)
 
         period_days = max(1, period_days)
-        period_start = date.today() - timedelta(days=period_days)
+        period_start = date_from or (date.today() - timedelta(days=period_days))
 
         result = {
             "scope": {
@@ -255,6 +292,9 @@ class DashboardService(BaseService):
                 "teacher_trend_n": max(1, teacher_trend_n),
                 "period_days": period_days,
                 "period_start": period_start.isoformat(),
+                "date_mode": date_mode,
+                "date_from": _iso(date_from),
+                "date_to": _iso(date_to),
             },
             "counts": {
                 "boys": len(boys),
@@ -536,6 +576,138 @@ class DashboardService(BaseService):
         return sorted(
             servants.values(), key=lambda s: (-s["score"], s["teacher_name"])
         )
+
+    # ---------------- birthdays ----------------
+    @staticmethod
+    def _birthday_occurrence(birth_date: date, year: int) -> date:
+        try:
+            return birth_date.replace(year=year)
+        except ValueError:  # 29 Feb on a non-leap year
+            return date(year, 2, 28)
+
+    @classmethod
+    def _birthday_offset(cls, birth_date: date, today: date) -> int:
+        """Signed days from today to the nearest birthday occurrence."""
+        offsets = [
+            (cls._birthday_occurrence(birth_date, year) - today).days
+            for year in (today.year - 1, today.year, today.year + 1)
+        ]
+        return min(offsets, key=abs)
+
+    @classmethod
+    def _in_birthday_window(cls, birth_date: date, window: str, today: date) -> bool:
+        if window == "month":
+            return birth_date.month == today.month
+        return abs(cls._birthday_offset(birth_date, today)) <= 7
+
+    def birthdays(
+        self,
+        kind: str = "boys",
+        window: str = "twoweeks",
+        class_id: int | None = None,
+    ) -> dict:
+        """Upcoming birthdays for boys and/or servants, scoped to the login.
+
+        A teacher only ever sees boys. Every row carries the contact phones,
+        attendance %, mass % and - for a boy - his responsible servant.
+        """
+        from app.core.data.common import ensure_staff
+
+        ensure_staff(self.user)
+
+        classes = self._scope_classes(class_id)
+        class_set = set(classes)
+        labels = self._class_labels()
+        today = date.today()
+
+        want_boys = True
+        want_teachers = kind in ("teachers", "all")
+        if self.user.role == RoleEnum.TEACHER:
+            # A servant only sees boys, whatever he asked for.
+            want_teachers = False
+
+        items: list[dict] = []
+
+        if want_boys:
+            attends_by_boy: dict[int, list] = {}
+            for a in self._attends():
+                if a.class_id in class_set:
+                    attends_by_boy.setdefault(a.boy_id, []).append(a)
+            for b in self._boys():
+                if b.class_id not in class_set or b.birth_date is None:
+                    continue
+                if not self._in_birthday_window(b.birth_date, window, today):
+                    continue
+                recs = attends_by_boy.get(b.id, [])
+                present = sum(1 for r in recs if r.present)
+                liturgy = sum(1 for r in recs if r.liturgy)
+                items.append(
+                    {
+                        "kind": "boy",
+                        "id": b.id,
+                        "name": b.boy_name,
+                        "birth_date": _iso(b.birth_date),
+                        "next_birthday": self._birthday_occurrence(
+                            b.birth_date, today.year
+                        ).isoformat(),
+                        "days_until": self._birthday_offset(b.birth_date, today),
+                        "age": b.age,
+                        "phone": b.phone,
+                        "phone_2": b.phone_2,
+                        "class_id": b.class_id,
+                        "class_name": labels.get(b.class_id),
+                        "servant_name": b.teacher_name,
+                        "attendance_percent": _pct(present, len(recs)),
+                        "liturgy_percent": _pct(liturgy, len(recs)),
+                    }
+                )
+
+        if want_teachers:
+            checks_by_teacher: dict[int, list] = {}
+            for c in self._checks():
+                if c.class_id in class_set:
+                    checks_by_teacher.setdefault(c.teacher_id, []).append(c)
+            for t in self._teachers():
+                if (
+                    t.class_id is None
+                    or t.class_id not in class_set
+                    or t.birth_date is None
+                ):
+                    continue
+                if not self._in_birthday_window(t.birth_date, window, today):
+                    continue
+                recs = checks_by_teacher.get(t.id, [])
+                present = sum(1 for r in recs if r.attend)
+                liturgy = sum(1 for r in recs if r.liturgy)
+                items.append(
+                    {
+                        "kind": "teacher",
+                        "id": t.id,
+                        "name": t.teacher_name,
+                        "birth_date": _iso(t.birth_date),
+                        "next_birthday": self._birthday_occurrence(
+                            t.birth_date, today.year
+                        ).isoformat(),
+                        "days_until": self._birthday_offset(t.birth_date, today),
+                        "age": t.age,
+                        "phone": t.phone,
+                        "phone_2": t.phone_2,
+                        "class_id": t.class_id,
+                        "class_name": labels.get(t.class_id),
+                        "servant_name": None,
+                        "attendance_percent": _pct(present, len(recs)),
+                        "liturgy_percent": _pct(liturgy, len(recs)),
+                    }
+                )
+
+        items.sort(key=lambda x: (x["days_until"], x["name"]))
+        return {
+            "kind": kind,
+            "window": window,
+            "today": today.isoformat(),
+            "count": len(items),
+            "items": items,
+        }
 
     # ---------------- boy drill-down ----------------
     def boy_profile(self, boy_id: int) -> dict:

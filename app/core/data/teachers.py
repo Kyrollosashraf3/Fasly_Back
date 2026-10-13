@@ -59,8 +59,20 @@ class TeacherService(BaseService):
         norm_phone = normalise_phone(data.phone) if data.phone else None
         norm_phone2 = normalise_phone(data.phone_2) if data.phone_2 else None
 
+        # prevent duplicate phones
+        from app.core.data.common import ensure_phone_free
+
+        ensure_phone_free(
+            self.db,
+            Teacher,
+            phone=norm_phone,
+            phone2=norm_phone2,
+            label="Servant",
+        )
+
         teacher = Teacher(
             teacher_name=teacher_name,
+            birth_date=data.birth_date,
             phone=norm_phone,
             phone_2=norm_phone2,
             zone=data.zone,

@@ -316,6 +316,53 @@ def ensure_name_free(
             )
 
 
+def ensure_phone_free(
+    db: Session,
+    model: Any,
+    *,
+    phone: str | None = None,
+    phone2: str | None = None,
+    exclude_id: int | None = None,
+    label: str = "Record",
+) -> None:
+    """409 when any of the provided phones is already in use on another row.
+
+    Phones are normalised before comparison against ``User`` (the login table)
+    and against the given ``model`` (Boy/Teacher).
+    """
+    from app.models.user import User
+
+    phones: list[str] = []
+    if phone:
+        phones.append(normalise_phone(phone))
+    if phone2:
+        phones.append(normalise_phone(phone2))
+    # dedupe
+    seen: set[str] = set()
+    for p in phones:
+        if not p:
+            continue
+        if p in seen:
+            continue
+        seen.add(p)
+        # check against User accounts
+        user_q = db.query(User).filter(User.phone == p)
+        if user_q.first() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{label}: phone '{p}' already exists.",
+            )
+        # check against the model itself (Boy/Teacher)
+        q = db.query(model).filter(or_(model.phone == p, model.phone_2 == p))
+        if exclude_id is not None:
+            q = q.filter(model.id != exclude_id)
+        if q.first() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{label}: phone '{p}' already exists.",
+            )
+
+
 def apply_update(
     record,
     data,

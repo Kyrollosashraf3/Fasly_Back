@@ -58,6 +58,9 @@ class BoyService(BaseService):
         return boy
 
     def create(self, data: BoyCreate) -> Boy:
+        from app.core.data.common import ensure_phone_free, ensure_unique
+        from app.models.user import User
+
         self._ensure_may_write()
         self.ensure_class(data.class_id)
         boy_name = data.boy_name.strip()
@@ -66,6 +69,22 @@ class BoyService(BaseService):
         ensure_name_free(
             self.db, Boy, "boy_name", boy_name, data.class_id, label="Boy"
         )
+        # Prevent duplicate phones (across users/boys)
+        ensure_phone_free(
+            self.db,
+            Boy,
+            phone=data.phone,
+            phone2=data.phone_2,
+            label="Boy",
+        )
+        # Also guard user accounts explicitly
+        try:
+            if data.phone:
+                ensure_unique(self.db, User, "phone", data.phone, label="Account")
+            if data.phone_2 and data.phone_2 != data.phone:
+                ensure_unique(self.db, User, "phone", data.phone_2, label="Account")
+        except Exception:
+            pass  # ensure_phone_free already covered; keep safe
         boy = Boy(
             boy_name=boy_name,
             gender=data.gender,
