@@ -36,15 +36,16 @@ def check_owner(role: RoleEnum, teacher_id: int | None, boy_id: int | None) -> N
 
 
 def normalise_phone(value: object) -> object:
-    """Trim the separators people type, then accept only Egyptian mobiles."""
-    if not isinstance(value, str):
-        return value
-    cleaned = value.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-    if cleaned.startswith("+20"):
-        cleaned = "0" + cleaned[3:]
-    elif cleaned.startswith("0020"):
-        cleaned = "0" + cleaned[4:]
-    return cleaned
+    """Delegate to :func:`app.core.data.common.normalise_phone`.
+
+    The rule itself lives in ``common`` so the service layer can use the same
+    one; it is imported lazily on purpose because importing the service
+    package at module load would be a circular import (``app.core.data``
+    imports these schemas).
+    """
+    from app.core.data.common import normalise_phone as _normalise_phone
+
+    return _normalise_phone(value)
 
 
 class UserCreate(BaseModel):

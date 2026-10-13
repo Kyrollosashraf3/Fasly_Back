@@ -29,6 +29,7 @@ from app.core.data.common import (
     get_or_404,
     my_class_id,
     normalise_name,
+    normalise_phone,
 )
 from app.core.data.follow_ups import FollowUpService
 from app.core.data.groups import GroupsService
@@ -70,4 +71,5 @@ __all__ = [
     "get_or_404",
     "my_class_id",
     "normalise_name",
+    "normalise_phone",
 ]

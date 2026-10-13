@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import FatherEnum
 from app.schemas.base import ORMResponse
+from app.schemas.user import normalise_phone
 
 
 class TeacherCreate(BaseModel):
@@ -45,6 +46,12 @@ class TeacherCreate(BaseModel):
             raise ValueError("last_visit_date cannot be in the future")
         return value
 
+    @field_validator("phone", "phone_2", mode="before")
+    @classmethod
+    def _normalise_phone(cls, value: object) -> object:
+        """Store every phone shape as ``01xxxxxxxxx`` (see ``common``)."""
+        return normalise_phone(value)
+
 
 class TeacherUpdate(BaseModel):
     """Partial update - all fields optional."""
@@ -80,6 +87,12 @@ class TeacherUpdate(BaseModel):
         if value is not None and value > date.today():
             raise ValueError("last_visit_date cannot be in the future")
         return value
+
+    @field_validator("phone", "phone_2", mode="before")
+    @classmethod
+    def _normalise_phone(cls, value: object) -> object:
+        """Store every phone shape as ``01xxxxxxxxx`` (see ``common``)."""
+        return normalise_phone(value)
 
 
 class TeacherResponse(ORMResponse):

@@ -375,6 +375,39 @@ def normalise_name(value: Any) -> str:
     return " ".join(str(value).split()).lower()
 
 
+def normalise_phone(value: Any) -> Any:
+    """Reduce every way a phone is written to the one shape stored in the DB.
+
+    A spreadsheet cell or a form can hand us any of::
+
+        1281875199            # bare 10-digit mobile (no trunk 0)
+        01281875199           # already correct
+        +201281875199         # country code with a plus
+        +2012 818 75199       # country code, human spacing
+        00201281875199        # country code dialled internationally
+
+    and every one of them must land in the database as ``01281875199`` so a
+    later login finds it again. Non-strings (``None``, a number) pass through
+    untouched so a nullable column stays nullable.
+
+    Rules, applied in order:
+    * keep the digits only - drops ``+``, spaces, dashes and brackets;
+    * ``0020…`` (international prefix) -> ``0…``;
+    * ``20…`` written with 12 digits (country code without a plus) -> ``0…``;
+    * a bare 10-digit mobile ``1…`` -> prepend the trunk ``0``.
+    """
+    if not isinstance(value, str):
+        return value
+    cleaned = re.sub(r"\D", "", value)
+    if cleaned.startswith("0020"):
+        cleaned = "0" + cleaned[4:]
+    elif cleaned.startswith("20") and len(cleaned) >= 12:
+        cleaned = "0" + cleaned[2:]
+    if len(cleaned) == 10 and cleaned.startswith("1"):
+        cleaned = "0" + cleaned
+    return cleaned
+
+
 _DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 
 

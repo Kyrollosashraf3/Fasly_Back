@@ -10,6 +10,7 @@ from app.core.data.common import (
     bulk_create,
     commit,
     ensure_name_free,
+    normalise_phone,
     scope_teachers,
 )
 from app.models.teacher import Teacher
@@ -48,7 +49,6 @@ class TeacherService(BaseService):
         from app.core.auth.security import get_password_hash
         from app.models.enums import RoleEnum
         from app.models.user import User
-        from app.schemas.user import normalise_phone
 
         self.ensure_manager()
         self.ensure_class(data.class_id)
@@ -120,7 +120,6 @@ class TeacherService(BaseService):
         try:
             from app.core.data.common import ensure_unique
             from app.models.user import User
-            from app.schemas.user import normalise_phone
 
             new_target = teacher.phone or teacher.phone_2
             if new_target:

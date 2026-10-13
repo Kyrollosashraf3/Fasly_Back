@@ -20,6 +20,7 @@ from app.core.data.common import (
     ensure_unique,
     get_or_404,
     normalise_name,
+    normalise_phone,
     scope_users,
 )
 from app.models.boy import Boy
@@ -32,7 +33,6 @@ from app.schemas.user import (
     UserImportRow,
     UserUpdate,
     check_owner,
-    normalise_phone,
 )
 
 #: Roles that live on a servant row (and therefore inherit his class).

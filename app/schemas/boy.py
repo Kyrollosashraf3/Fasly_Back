@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import FatherEnum, GenderEnum
 from app.schemas.base import ORMResponse
+from app.schemas.user import normalise_phone
 
 
 class BoyCreate(BaseModel):
@@ -59,6 +60,12 @@ class BoyCreate(BaseModel):
             raise ValueError("last_visit_date cannot be in the future")
         return value
 
+    @field_validator("phone", "phone_2", mode="before")
+    @classmethod
+    def _normalise_phone(cls, value: object) -> object:
+        """Store every phone shape as ``01xxxxxxxxx`` (see ``common``)."""
+        return normalise_phone(value)
+
 
 class BoyUpdate(BaseModel):
     """Partial update - all fields optional. ``age`` is never accepted."""
@@ -107,6 +114,12 @@ class BoyUpdate(BaseModel):
         if value is not None and value > date.today():
             raise ValueError("last_visit_date cannot be in the future")
         return value
+
+    @field_validator("phone", "phone_2", mode="before")
+    @classmethod
+    def _normalise_phone(cls, value: object) -> object:
+        """Store every phone shape as ``01xxxxxxxxx`` (see ``common``)."""
+        return normalise_phone(value)
 
 
 class BoyResponse(ORMResponse):
