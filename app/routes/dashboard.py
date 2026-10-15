@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
 from app.core.DA.dashboard import DashboardService
+from app.core.DA.follow_up_performance import FollowUpPerformanceService
 from app.db.database import get_db
 from app.models.user import User
 
@@ -35,6 +36,23 @@ def dashboard_summary(
         teacher_trend_n=teacher_trend_n,
         period_days=period_days,
         date_mode=date_mode,
+    )
+
+
+@router.get("/follow-up")
+def dashboard_follow_up(
+    class_id: int | None = None,
+    period: str = Query(default="month", pattern="^(week|month|season|all)$"),
+    teacher_id: int | None = None,
+    boy_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Follow-up performance: coverage %, reached vs pending boys, a servant
+    breakdown (who logged and who did not) and a ranked boy list - all scoped
+    to the login and the chosen period."""
+    return FollowUpPerformanceService(db, current_user).performance(
+        class_id=class_id, period=period, teacher_id=teacher_id, boy_id=boy_id
     )
 
 
