@@ -43,7 +43,7 @@ class BoyService(BaseService):
         query = self.query()
         if class_id is not None:
             self.ensure_class(class_id)
-            #query = query.filter(Boy.class_id == class_id)
+            query = query.filter(Boy.class_id == class_id)
         if issue_flag is not None:
             query = query.filter(Boy.issue_flag == issue_flag)
         return query.order_by(Boy.boy_name).all()
@@ -99,8 +99,8 @@ class BoyService(BaseService):
         return bulk_create(self.create, items, label="boys", name_attr="boy_name")
 
     def update(self, boy_id: int, data: BoyUpdate) -> Boy:
+        self._ensure_may_write()
         boy = self.get(boy_id)
-        
         self.ensure_class(boy.class_id)
 
         old_class = boy.class_id
