@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.core.data.base import WeeklySheetService
-from app.core.data.common import ensure_teacher_access, scope_checks
+from app.core.data.common import deny, ensure_teacher_access, scope_checks
 from app.models.enums import RoleEnum
 from app.models.teacher import Teacher
 from app.models.teacher_check import TeacherCheck
@@ -17,7 +17,7 @@ class TeacherCheckService(WeeklySheetService):
     """``class_id`` on every row is a snapshot of the servant's class on ``date``.
 
     read : super_admin all | admin his class | teacher himself  (a boy: 403)
-    write: super_admin all | admin his class
+    write: super_admin all | admin his class | teacher his own row
     """
 
 
@@ -35,6 +35,10 @@ class TeacherCheckService(WeeklySheetService):
         ensure_teacher_access(self.db, self.user, teacher)
 
     def can_write(self, teacher: Teacher) -> None:
+        if self.user.role == RoleEnum.TEACHER:
+            if teacher.id != self.user.teacher_id:
+                deny("You can only check yourself.")
+            return
         self.ensure_manager()
         self.ensure_class(teacher.class_id)
 

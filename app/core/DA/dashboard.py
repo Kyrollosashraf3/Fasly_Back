@@ -85,19 +85,57 @@ def _fridays_between(start: date, end: date) -> list[date]:
     return out
 
 
-def _trailing_streak(history: list, last_date: date | None) -> int:
-    """Consecutive presences counting BACKWARD from the last recorded friday.
+def _completed_sessions(attends: list, class_ids: set | None = None) -> set[date]:
+    """Set of Friday dates where at least one attendance row exists.
 
-    The boy must have a record on the last friday itself; the count stops at
-    the first absence going back.
+    A session is considered "completed" when at least one boy's attendance was
+    recorded for that date (optionally filtered to ``class_ids``). Only completed
+    sessions count for absence: a Friday with no records was simply not taken yet.
+    """
+    dates: set[date] = set()
+    for a in attends:
+        if a.date is None:
+            continue
+        if class_ids is not None and a.class_id not in class_ids:
+            continue
+        dates.add(a.date)
+    return dates
+
+
+def _trailing_streak(
+    history: list, last_date: date | None, session_dates: set[date] | None = None
+) -> int:
+    """Consecutive presences counting BACKWARD from the last completed session.
+
+    A boy is counted as absent on a completed session where he has no record.
+    The streak stops at the first absence (explicit or implicit).
     """
     if not history or last_date is None:
         return 0
-    if history[-1].date != last_date:
+
+    if session_dates is None:
+        # Legacy: only look at recorded rows
+        if history[-1].date != last_date:
+            return 0
+        n = 0
+        for r in reversed(history):
+            if r.present:
+                n += 1
+            else:
+                break
+        return n
+
+    # Build a presence map from recorded rows
+    by_date: dict[date, bool] = {r.date: r.present for r in history}
+    # Walk completed sessions backwards, anchored at the most recent session
+    # completed for this boy's own class (not a global Friday).
+    ordered = sorted(session_dates, reverse=True)
+    if not ordered:
         return 0
     n = 0
-    for r in reversed(history):
-        if r.present:
+    for d in ordered:
+        present = by_date.get(d, False)  # missing record = absent
+        if present:
             n += 1
         else:
             break
@@ -309,17 +347,17 @@ class DashboardService(BaseService):
             "teachers_trend": _per_date(
                 checks, teacher_trend_n, {"present": lambda r: r.attend}
             ),
-            "attendance": self._attendance_stats(attends, classes),
+            "attendance": self._attendance_stats(attends, classes, boys),
             "servants": servant_list,
             "top_servants": _top_with_ties(servant_list, top_n),
             "streaks": self._streaks(
-                histories, boys_by_id, classes, last_date, streak_n
+                histories, boys_by_id, classes, last_date, streak_n, attends
             ),
             "last_friday": self._last_friday(
-                attends, boys_by_id, classes, last_date
+                attends, boys_by_id, boys, classes, last_date
             ),
             "frequent_absent": self._frequent_absent(
-                histories, boys_by_id, classes, absent_n
+                histories, boys_by_id, boys, classes, absent_n, attends
             ),
             "follow": {
                 "period_days": period_days,
@@ -438,30 +476,67 @@ class DashboardService(BaseService):
             "ok_count": ok,
         }
 
-    @staticmethod
-    def _attendance_stats(attends: list, classes: list[int]) -> dict:
-        present = sum(1 for a in attends if a.present)
-        liturgy = sum(1 for a in attends if a.liturgy)
+    def _attendance_stats(self, attends: list, classes: list[int], boys: list) -> dict:
+        """Overall and per-class attendance stats with session-aware absence.
+
+        Missing record on a completed session = absent. Sessions with no records
+        are ignored.
+        """
+        boys_by_class: dict[int, list] = {}
+        for b in boys:
+            boys_by_class.setdefault(b.class_id, []).append(b)
+
+        session_dates_by_class: dict[int, set[date]] = {}
+        for a in attends:
+            if a.date:
+                session_dates_by_class.setdefault(a.class_id, set()).add(a.date)
+
+        present_total = 0
+        liturgy_total = 0
+        total_total = 0
+        absent_total = 0
         by_class = {}
         for c in classes:
-            recs = [a for a in attends if a.class_id == c]
-            p = sum(1 for r in recs if r.present)
-            l = sum(1 for r in recs if r.liturgy)
+            class_boys = boys_by_class.get(c, [])
+            sessions = session_dates_by_class.get(c, set())
+            n_sessions = len(sessions)
+            # Build a lookup: (boy_id, date) -> record
+            recs_map: dict[tuple, object] = {}
+            for a in attends:
+                if a.class_id == c:
+                    recs_map[(a.boy_id, a.date)] = a
+
+            p = 0
+            l = 0
+            total = len(class_boys) * n_sessions
+            for b in class_boys:
+                for d in sessions:
+                    rec = recs_map.get((b.id, d))
+                    if rec and rec.present:
+                        p += 1
+                    if rec and rec.liturgy:
+                        l += 1
+            absent = total - p
             by_class[c] = {
                 "present": p,
-                "absent": len(recs) - p,
-                "total": len(recs),
-                "percent": _pct(p, len(recs)),
+                "absent": absent,
+                "total": total,
+                "percent": _pct(p, total),
                 "liturgy": l,
-                "liturgy_percent": _pct(l, len(recs)),
+                "liturgy_percent": _pct(l, total),
+                "sessions": n_sessions,
             }
+            present_total += p
+            liturgy_total += l
+            total_total += total
+            absent_total += absent
         return {
-            "present": present,
-            "absent": len(attends) - present,
-            "total": len(attends),
-            "percent": _pct(present, len(attends)),
-            "liturgy_present": liturgy,
-            "liturgy_percent": _pct(liturgy, len(attends)),
+            "present": present_total,
+            "absent": absent_total,
+            "total": total_total,
+            "percent": _pct(present_total, total_total),
+            "liturgy_present": liturgy_total,
+            "liturgy_percent": _pct(liturgy_total, total_total),
             "by_class": by_class,
         }
 
@@ -476,72 +551,126 @@ class DashboardService(BaseService):
             return boy.class_id
         return fallback
 
-    def _streaks(self, histories, boys_by_id, classes, last_date, streak_n) -> dict:
-        """Boys present N consecutive fridays up to the last recorded one."""
+    def _streaks(
+        self, histories, boys_by_id, classes, last_date, streak_n, all_attends: list
+    ) -> dict:
+        """Boys present N consecutive fridays up to their class's last session."""
+        # Sessions are completed per class: a Friday another class recorded is
+        # not a session for this class, so it must not break a boy's streak.
+        class_sessions = {c: _completed_sessions(all_attends, {c}) for c in classes}
         groups = {c: [] for c in classes}
         for boy_id, h in histories.items():
-            s = _trailing_streak(h, last_date)
+            c = self._boy_class(boys_by_id, boy_id, h[0].class_id)
+            if c not in groups:
+                continue
+            sessions = class_sessions.get(c, set())
+            anchor = max(sessions) if sessions else None
+            s = _trailing_streak(h, anchor, sessions)
             if s >= streak_n:
-                c = self._boy_class(boys_by_id, boy_id, h[0].class_id)
-                if c in groups:
-                    groups[c].append(
-                        {
-                            "boy_id": boy_id,
-                            "boy_name": self._boy_name(boys_by_id, boy_id),
-                            "streak": s,
-                        }
-                    )
+                groups[c].append(
+                    {
+                        "boy_id": boy_id,
+                        "boy_name": self._boy_name(boys_by_id, boy_id),
+                        "streak": s,
+                    }
+                )
         for lst in groups.values():
             lst.sort(key=lambda x: (-x["streak"], x["boy_name"]))
         return groups
 
-    def _last_friday(self, attends, boys_by_id, classes, last_date) -> dict:
-        """Absentees of the last recorded friday, grouped by class."""
-        absent, present_n = [], 0
-        if last_date:
-            for a in attends:
-                if a.date != last_date:
-                    continue
-                if a.present:
-                    present_n += 1
-                else:
-                    absent.append(
-                        {
-                            "boy_id": a.boy_id,
-                            "boy_name": self._boy_name(boys_by_id, a.boy_id),
-                            "class_id": a.class_id,
-                        }
-                    )
-            absent.sort(key=lambda x: x["boy_name"])
+    def _last_friday(
+        self, attends, boys_by_id, boys: list, classes, last_date
+    ) -> dict:
+        """Absentees of the last session completed for each boy's class.
+
+        A session is completed per class: a Friday another class recorded is not
+        a session for this class, so its boys are neither present nor absent.
+        A boy with NO record on his class's last session counts as absent
+        (Solution B: only-true recording, missing = absent on completed session).
+        """
+        class_set = set(classes)
+        class_last: dict[int, date] = {}
+        for a in attends:
+            if a.date is None or a.class_id not in class_set:
+                continue
+            if a.class_id not in class_last or a.date > class_last[a.class_id]:
+                class_last[a.class_id] = a.date
+
+        recs = {(a.boy_id, a.date): a for a in attends}
+        absent: list[dict] = []
+        present_n = 0
+        for b in boys:
+            session = class_last.get(b.class_id)
+            if session is None:
+                # No completed session for this class yet - not "absent".
+                continue
+            rec = recs.get((b.id, session))
+            if rec is not None and rec.present:
+                present_n += 1
+                continue
+            absent.append(
+                {
+                    "boy_id": b.id,
+                    "boy_name": b.boy_name or "—",
+                    "class_id": b.class_id,
+                    "date": _iso(session),
+                }
+            )
+        absent.sort(key=lambda x: x["boy_name"])
         by_class = {c: [] for c in classes}
         for row in absent:
             if row["class_id"] in by_class:
                 by_class[row["class_id"]].append(row)
         return {
-            "date": _iso(last_date),
+            "date": _iso(max(class_last.values())) if class_last else None,
+            "dates": {c: _iso(d) for c, d in class_last.items()},
             "present_count": present_n,
             "absent_count": len(absent),
             "absent": absent,
             "by_class": by_class,
         }
 
-    def _frequent_absent(self, histories, boys_by_id, classes, absent_n) -> dict:
-        """Boys absent on more than N fridays, grouped by class."""
+    def _frequent_absent(
+        self, histories, boys_by_id, boys: list, classes, absent_n, all_attends: list
+    ) -> dict:
+        """Boys absent on more than N completed sessions, grouped by class.
+
+        Missing record on a completed session = absent (Solution B).
+        """
         groups = {c: [] for c in classes}
-        for boy_id, h in histories.items():
-            n_abs = sum(1 for r in h if not r.present)
+        # per-class session sets
+        class_sessions: dict[int, set[date]] = {}
+        for a in all_attends:
+            if a.date:
+                class_sessions.setdefault(a.class_id, set()).add(a.date)
+
+        # build presence map: boy_id -> {date -> present}
+        presence: dict[int, dict[date, bool]] = {}
+        for a in all_attends:
+            if a.date:
+                presence.setdefault(a.boy_id, {})[a.date] = a.present
+
+        for b in boys:
+            c = b.class_id
+            if c not in groups:
+                continue
+            sessions = class_sessions.get(c, set())
+            n_sessions = len(sessions)
+            if not n_sessions:
+                continue
+            boy_map = presence.get(b.id, {})
+            n_present = sum(1 for d in sessions if boy_map.get(d, False))
+            n_abs = n_sessions - n_present
             if n_abs > absent_n:
-                c = self._boy_class(boys_by_id, boy_id, h[0].class_id)
-                if c in groups:
-                    groups[c].append(
-                        {
-                            "boy_id": boy_id,
-                            "boy_name": self._boy_name(boys_by_id, boy_id),
-                            "absent_count": n_abs,
-                            "present_count": len(h) - n_abs,
-                            "percent": _pct(len(h) - n_abs, len(h)),
-                        }
-                    )
+                groups[c].append(
+                    {
+                        "boy_id": b.id,
+                        "boy_name": b.boy_name or "—",
+                        "absent_count": n_abs,
+                        "present_count": n_present,
+                        "percent": _pct(n_present, n_sessions),
+                    }
+                )
         for lst in groups.values():
             lst.sort(key=lambda x: (-x["absent_count"], x["boy_name"]))
         return groups
@@ -720,10 +849,28 @@ class DashboardService(BaseService):
             .order_by(Attend.date)
             .all()
         )
-        present = sum(1 for r in recs if r.present)
+        # Completed sessions come from every class this boy has records in, so a
+        # promoted boy keeps the sessions taken while he was in his old class.
+        # A session only counts for the class that actually recorded it.
+        boy_class_ids = {r.class_id for r in recs if r.class_id is not None}
+        boy_class_ids.add(boy.class_id)
+        class_attends = (
+            self.db.query(Attend)
+            .filter(Attend.class_id.in_(boy_class_ids))
+            .all()
+        )
+        session_dates = _completed_sessions(class_attends, boy_class_ids)
+        by_date_rec = {r.date: r for r in recs}
+        present_sessions = sum(
+            1 for d in session_dates
+            if by_date_rec.get(d) and by_date_rec[d].present
+        )
+        total_sessions = len(session_dates)
+
         notes = [r.note for r in recs if r.note]
         if boy.note:
             notes.insert(0, f"boy master note: {boy.note}")
+        season = self._season_table(recs, session_dates)
         return {
             "boy": {
                 "id": boy.id,
@@ -749,34 +896,61 @@ class DashboardService(BaseService):
                 }
                 for r in recs
             ],
-            "present": present,
-            "absent": len(recs) - present,
-            "total": len(recs),
-            "percent": _pct(present, len(recs)),
+            # session-aware totals: missing record on completed session = absent
+            "present": present_sessions,
+            "absent": total_sessions - present_sessions,
+            "total": total_sessions,
+            "percent": _pct(present_sessions, total_sessions),
             "notes": notes,
-            "season": self._season_table(recs),
+            "season": season,
+            "session_dates": sorted(d.isoformat() for d in session_dates),
             "followups": self._boy_followups(boy_id),
         }
 
     @staticmethod
-    def _season_table(recs: list) -> dict:
-        """Every Friday since season start -> present/absent (missing = absent)."""
+    def _season_table(
+        recs: list, session_dates: set[date] | None = None
+    ) -> dict:
+        """Every Friday since season start -> present/absent.
+
+        When ``session_dates`` is provided, only those Fridays are treated as
+        completed sessions (missing record = absent). Fridays before the first
+        recorded session and with no records are omitted from the grid so the
+        frontend can render them as "not taken yet".
+
+        Without ``session_dates`` every Friday since season start is shown,
+        and missing record = absent (legacy / single-boy view already correct).
+        """
         season_start = _season_start()
         by_date = {r.date: r for r in recs}
-        fridays = [
-            {
-                "date": d.isoformat(),
-                "present": by_date[d].present if d in by_date else False,
-                "note": by_date[d].note if d in by_date else None,
-            }
-            for d in _fridays_between(season_start, _last_friday_passed())
-        ]
-        present = sum(1 for f in fridays if f["present"])
+        all_season_fridays = _fridays_between(season_start, _last_friday_passed())
+        fridays = []
+        for d in all_season_fridays:
+            if session_dates is not None and d not in session_dates:
+                # Not a completed session — show as "pending", not absent
+                fridays.append(
+                    {
+                        "date": d.isoformat(),
+                        "present": None,  # None = session not taken yet
+                        "note": None,
+                    }
+                )
+            else:
+                fridays.append(
+                    {
+                        "date": d.isoformat(),
+                        "present": by_date[d].present if d in by_date else False,
+                        "note": by_date[d].note if d in by_date else None,
+                    }
+                )
+        completed = [f for f in fridays if f["present"] is not None]
+        present = sum(1 for f in completed if f["present"])
+        total_completed = len(completed)
         return {
             "start": season_start.isoformat(),
             "present": present,
-            "total": len(fridays),
-            "percent": _pct(present, len(fridays)),
+            "total": total_completed,
+            "percent": _pct(present, total_completed),
             "fridays": fridays,
         }
 

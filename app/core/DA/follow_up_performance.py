@@ -29,6 +29,7 @@ from app.core.data.base import BaseService
 from app.core.data.common import (
     my_class_id,
     scope_boys,
+    scope_checks,
     scope_follow_ups,
     scope_teachers,
 )
@@ -38,9 +39,16 @@ from app.models.follow_up import FollowUp
 from app.models.group import Group
 from app.models.school_class import SchoolClass
 from app.models.teacher import Teacher
+from app.models.teacher_check import TeacherCheck
 
 #: The period windows the module offers (mirrors the query pattern).
 PERIODS = ("week", "month", "season", "all")
+
+#: The five ticks the amin records per servant each Friday (max score 5).
+SERVANT_FLAGS = ("attend", "prepare", "liturgy", "follow", "teachers_meeting")
+
+#: Below this average score (out of 5) a servant is flagged for follow-up.
+WEAK_SCORE = 3.0
 
 
 def _pct(part: int, total: int) -> float:
@@ -163,7 +171,33 @@ class FollowUpPerformanceService(BaseService):
             rows.append(f)
         return rows
 
-    # ------------------------------------------------------------ main report
+    def _checks(
+        self,
+        class_set: set[int],
+        period_from: date | None,
+        period_to: date | None,
+        teacher_id: int | None,
+    ) -> list[TeacherCheck]:
+        """Servant review rows in scope, inside the period (a boy never gets here)."""
+        if self.user.role == RoleEnum.USER:
+            return []
+        try:
+            query = scope_checks(self.db, self.db.query(TeacherCheck), self.user)
+        except HTTPException:
+            return []
+        rows = []
+        for r in query.all():
+            if r.class_id not in class_set or r.date is None:
+                continue
+            if period_from is not None and r.date < period_from:
+                continue
+            if period_to is not None and r.date > period_to:
+                continue
+            if teacher_id is not None and r.teacher_id != teacher_id:
+                continue
+            rows.append(r)
+        return rows
+
     def performance(
         self,
         class_id: int | None = None,
@@ -189,6 +223,7 @@ class FollowUpPerformanceService(BaseService):
         servant_names = {t.id: t.teacher_name for t in servants}
         group_map = self._group_map(class_set)
         follow_ups = self._follow_ups(class_set, period_from, period_to, teacher_id)
+        checks = self._checks(class_set, period_from, period_to, teacher_id)
 
         by_boy: dict[int, list[FollowUp]] = {}
         for f in follow_ups:
@@ -208,9 +243,11 @@ class FollowUpPerformanceService(BaseService):
         servant_rows = self._servants_report(
             servants, boys_by_id, group_map, by_boy, follow_ups, labels
         )
+        needs_attention = self._needs_attention(servants, checks, labels)
         totals["servants"] = len(servant_rows)
         totals["servants_active"] = sum(1 for s in servant_rows if s["active"])
         totals["servants_inactive"] = totals["servants"] - totals["servants_active"]
+        totals["needs_attention"] = len(needs_attention)
 
         return {
             "scope": {
@@ -228,8 +265,72 @@ class FollowUpPerformanceService(BaseService):
             "totals": totals,
             "by_class": self._by_class(classes, boys, by_boy, follow_ups, labels),
             "servants": servant_rows,
+            "needs_attention": needs_attention,
             "ranking": ranking,
         }
+
+    # ------------------------------------------------------- needs attention
+    @staticmethod
+    def _needs_attention(
+        servants: list[Teacher],
+        checks: list[TeacherCheck],
+        labels: dict[int, str],
+    ) -> list[dict]:
+        """Servants to follow up with: weak reviews - or no review - in the period.
+
+        A servant's score is the sum of his five ticks per review (max 5). The
+        rows carry the contacts, so an amin can call or message him right away.
+        """
+        agg: dict[int, dict] = {}
+        for r in checks:
+            row = agg.setdefault(r.teacher_id, {"score": 0, "checks": 0, "last": None})
+            row["checks"] += 1
+            row["score"] += sum(1 for flag in SERVANT_FLAGS if getattr(r, flag))
+            if row["last"] is None or r.date > row["last"]:
+                row["last"] = r.date
+
+        rows = []
+        for t in servants:
+            row = agg.get(t.id)
+            if row is None:
+                rows.append(
+                    {
+                        "teacher_id": t.id,
+                        "teacher_name": t.teacher_name,
+                        "class_id": t.class_id,
+                        "class_name": labels.get(t.class_id, ""),
+                        "phone": t.phone,
+                        "phone_2": t.phone_2,
+                        "checks": 0,
+                        "score": 0,
+                        "avg": 0.0,
+                        "last": None,
+                        "reason": "no_checks",
+                    }
+                )
+                continue
+            avg = round(row["score"] / row["checks"], 2) if row["checks"] else 0.0
+            if avg >= WEAK_SCORE:
+                continue
+            rows.append(
+                {
+                    "teacher_id": t.id,
+                    "teacher_name": t.teacher_name,
+                    "class_id": t.class_id,
+                    "class_name": labels.get(t.class_id, ""),
+                    "phone": t.phone,
+                    "phone_2": t.phone_2,
+                    "checks": row["checks"],
+                    "score": row["score"],
+                    "avg": avg,
+                    "last": _iso(row["last"]),
+                    "reason": "low_score",
+                }
+            )
+        rows.sort(
+            key=lambda x: (x["reason"] != "low_score", x["avg"], x["teacher_name"])
+        )
+        return rows[:10]
 
     # -------------------------------------------------------------- rollups
     @staticmethod
@@ -312,6 +413,8 @@ class FollowUpPerformanceService(BaseService):
                     "teacher_name": t.teacher_name,
                     "class_id": t.class_id,
                     "class_name": labels.get(t.class_id, ""),
+                    "phone": t.phone,
+                    "phone_2": t.phone_2,
                     "group_size": len(group_ids),
                     "covered": covered,
                     "not_covered": len(group_ids) - covered,
