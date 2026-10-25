@@ -35,6 +35,7 @@ from app.core.data.follow_ups import FollowUpService
 from app.core.data.groups import GroupsService
 from app.core.data.teacher_checks import TeacherCheckService
 from app.core.data.teachers import TeacherService
+from app.core.data.trips import TripService
 from app.core.data.users import (
     UserService,
     complete_signup,
@@ -54,6 +55,7 @@ __all__ = [
     "GroupsService",
     "TeacherCheckService",
     "TeacherService",
+    "TripService",
     "UserService",
     # signup (pre-login, no service)
     "complete_signup",

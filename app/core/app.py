@@ -31,6 +31,7 @@ from app.routes import (
     groups_router,
     teacher_checks_router,
     teachers_router,
+    trips_router,
 )
 
 logger = get_logger(__name__)
@@ -101,6 +102,7 @@ class FaslyApplication:
             attendance_router,
             follow_ups_router,
             teacher_checks_router,
+            trips_router,
             dashboard_router,
         ):
             self.app.include_router(router)

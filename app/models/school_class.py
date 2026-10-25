@@ -31,6 +31,7 @@ class SchoolClass(Base):
     attends = relationship("Attend", back_populates="class_")
     follow_ups = relationship("FollowUp", back_populates="class_")
     teacher_checks = relationship("TeacherCheck", back_populates="class_")
+    trips = relationship("Trip", back_populates="class_")
 
     def __repr__(self) -> str:
         return (

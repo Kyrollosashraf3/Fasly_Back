@@ -7,6 +7,7 @@ from app.models.group import Group
 from app.models.school_class import SchoolClass
 from app.models.teacher import Teacher
 from app.models.teacher_check import TeacherCheck
+from app.models.trip import Trip
 from app.models.user import User
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "Attend",
     "FollowUp",
     "TeacherCheck",
+    "Trip",
 ]

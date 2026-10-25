@@ -10,6 +10,7 @@ from app.routes.follow_ups import router as follow_ups_router
 from app.routes.groups import router as groups_router
 from app.routes.teacher_checks import router as teacher_checks_router
 from app.routes.teachers import router as teachers_router
+from app.routes.trips import router as trips_router
 
 __all__ = [
     "base_router",
@@ -21,5 +22,6 @@ __all__ = [
     "follow_ups_router",
     "groups_router",
     "teacher_checks_router",
+    "trips_router",
     "dashboard_router",
 ]
