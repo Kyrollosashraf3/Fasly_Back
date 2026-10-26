@@ -9,6 +9,8 @@ from app.routes.dashboard import router as dashboard_router
 from app.routes.follow_ups import router as follow_ups_router
 from app.routes.groups import router as groups_router
 from app.routes.subscriptions import router as subscriptions_router
+from app.routes.task_values import router as task_values_router
+from app.routes.tasks import router as tasks_router
 from app.routes.teacher_checks import router as teacher_checks_router
 from app.routes.teachers import router as teachers_router
 from app.routes.trips import router as trips_router
@@ -25,5 +27,7 @@ __all__ = [
     "subscriptions_router",
     "teacher_checks_router",
     "trips_router",
+    "tasks_router",
+    "task_values_router",
     "dashboard_router",
 ]
