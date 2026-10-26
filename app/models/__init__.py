@@ -5,6 +5,7 @@ from app.models.boy import Boy
 from app.models.follow_up import FollowUp
 from app.models.group import Group
 from app.models.school_class import SchoolClass
+from app.models.subscription import Subscription
 from app.models.teacher import Teacher
 from app.models.teacher_check import TeacherCheck
 from app.models.trip import Trip
@@ -20,4 +21,5 @@ __all__ = [
     "FollowUp",
     "TeacherCheck",
     "Trip",
+    "Subscription",
 ]

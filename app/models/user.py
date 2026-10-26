@@ -87,6 +87,7 @@ class User(Base):
     teacher_checks = relationship("TeacherCheck", back_populates="recorder")
     follow_ups = relationship("FollowUp", back_populates="recorder")
     trips = relationship("Trip", back_populates="recorder")
+    subscriptions = relationship("Subscription", back_populates="creator")
 
     @property
     def display_name(self) -> str | None:

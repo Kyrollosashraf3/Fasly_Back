@@ -27,6 +27,20 @@ class TripCreate(BaseModel):
         None,
         description="تاريخ التسجيل - إذا لم يُرسل يعتمد تاريخ اليوم",
     )
+    status: str | None = Field(
+        'active',
+        description="حالة الرحلة: active أو inactive",
+    )
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _validate_status(cls, value: object) -> object:
+        if value is None:
+            return 'active'
+        v = str(value).strip().lower()
+        if v not in ('active', 'inactive'):
+            return 'active'
+        return v
 
     @field_validator("name", mode="before")
     @classmethod
@@ -43,6 +57,7 @@ class TripUpdate(BaseModel):
     cost: int | None = Field(None, ge=0)
     class_id: int | None = None
     created_at: date | None = None
+    status: str | None = Field(None, description="active أو inactive")
 
     @field_validator("name", mode="before")
     @classmethod
@@ -51,6 +66,16 @@ class TripUpdate(BaseModel):
             return value.strip() or value
         return value
 
+    @field_validator("status", mode="before")
+    @classmethod
+    def _validate_status(cls, value: object) -> object:
+        if value is None:
+            return value
+        v = str(value).strip().lower()
+        if v not in ('active', 'inactive'):
+            return value
+        return v
+
 
 class TripResponse(ORMResponse):
     id: int
@@ -58,3 +83,4 @@ class TripResponse(ORMResponse):
     cost: int
     class_id: int
     created_at: date
+    status: str

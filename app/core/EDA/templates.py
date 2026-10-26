@@ -19,7 +19,12 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.config.logger import get_logger
-from app.core.EDA.read_excel import BOY_HEADERS, TEACHER_HEADERS, USER_HEADERS
+from app.core.EDA.read_excel import (
+    BOY_HEADERS,
+    GROUP_HEADERS,
+    TEACHER_HEADERS,
+    USER_HEADERS,
+)
 from app.models.enums import SkillEnum
 
 logger = get_logger(__name__)
@@ -62,6 +67,13 @@ BOY_DOCS = {
     **ARABIC_DOCS,
     "teacher_name": "اسم الخادم في نفس الفصل (اختياري) — يتسجل مع الولد في مجموعته على طول",
     "last_visit_date": "آخر زيارة/اعتراف للولد YYYY-MM-DD (اختياري، فاضي لو لسه مفيش)",
+}
+
+# The groups sheet: one row per boy, saying which servant's group he is in.
+GROUP_DOCS = {
+    "teacher_name": "اسم الخادم كما هو مسجل بالبرنامج (إلزامي)",
+    "boy_name": "اسم الولد كما هو مسجل بالبرنامج (إلزامي)",
+    "class_name": "اسم الفصل كما هو مسجل بالبرنامج",
 }
 
 # 10 Egyptian sample rows spread over the available classes.
@@ -221,6 +233,17 @@ def build_teachers_template(class_names: list[str]) -> bytes:
         )
     logger.info("Teachers template built: %d rows", len(rows))
     return _workbook(TEACHER_HEADERS, rows, "الخدام")
+
+
+def build_groups_template(rows: list[dict]) -> bytes:
+    """The current groups in the exact columns the importer reads.
+
+    Downloading this sheet, moving a boy to another servant's row and
+    uploading it back is the whole round-trip: the reader resolves the
+    servant / boy names inside each boy's class.
+    """
+    logger.info("Groups template built: %d rows", len(rows))
+    return _workbook(GROUP_HEADERS, rows, "المجموعات", GROUP_DOCS)
 
 
 # phone, servant/boy name, role - one row per login.

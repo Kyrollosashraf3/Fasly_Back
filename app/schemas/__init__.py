@@ -34,6 +34,13 @@ from app.schemas.school_class import (
     SchoolClassResponse,
     SchoolClassUpdate,
 )
+from app.schemas.subscription import (
+    BoyTripSummary,
+    BoyTripTotal,
+    SubscriptionCreate,
+    SubscriptionResponse,
+    SubscriptionUpdate,
+)
 from app.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
 from app.schemas.teacher_check import (
     TeacherCheckBulkCreate,
@@ -82,6 +89,11 @@ __all__ = [
     "GroupAssign",
     "GroupUnassign",
     "GroupResponse",
+    "SubscriptionCreate",
+    "SubscriptionUpdate",
+    "SubscriptionResponse",
+    "BoyTripSummary",
+    "BoyTripTotal",
     "UserCreate",
     "UserImportRow",
     "UserUpdate",

@@ -28,6 +28,7 @@ class Trip(Base):
         index=True,
     )
     created_at = Column(Date, nullable=False, default=date.today, index=True)
+    status = Column(String(20), nullable=False, default='active', index=True)
     recorded_by = Column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -38,6 +39,7 @@ class Trip(Base):
     # Relationships
     class_ = relationship("SchoolClass", back_populates="trips")
     recorder = relationship("User", back_populates="trips")
+    subscriptions = relationship("Subscription", back_populates="trip")
 
     def __repr__(self) -> str:
         return (

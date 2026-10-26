@@ -26,8 +26,24 @@ class TripService(BaseService):
     def query(self) -> Query:
         return self.classes_query(Trip)
 
-    def list(self) -> list[Trip]:
-        return self.query().order_by(Trip.created_at.desc(), Trip.id.desc()).all()
+    def list(
+        self,
+        status: str | None = 'active',
+        class_id: int | None = None,
+    ) -> list[Trip]:
+        """Trips in scope, newest first.
+
+        ``status`` defaults to the active trips the module is about; the amin
+        can ask for ``inactive`` to revisit an old trip. ``class_id`` narrows
+        the catalogue to one class (a super admin choosing a class filter).
+        """
+        query = self.query()
+        if class_id is not None:
+            self.ensure_class(class_id)
+            query = query.filter(Trip.class_id == class_id)
+        if status in ('active', 'inactive'):
+            query = query.filter(Trip.status == status)
+        return query.order_by(Trip.created_at.desc(), Trip.id.desc()).all()
 
     def get(self, trip_id: int) -> Trip:
         trip = self.query().filter(Trip.id == trip_id).first()
@@ -69,6 +85,7 @@ class TripService(BaseService):
             cost=data.cost,
             class_id=effective_class_id,
             created_at=data.created_at or date.today(),
+            status=data.status or 'active',
             recorded_by=self.user_id,
         )
         self.db.add(trip)

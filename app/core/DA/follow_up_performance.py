@@ -136,6 +136,20 @@ class FollowUpPerformanceService(BaseService):
         )
         return {boy_id: teacher_id for boy_id, teacher_id in rows}
 
+    def _group_servant_names(self, class_set: set[int]) -> dict[int, str]:
+        """``teacher_id -> name`` for every group owner in scope.
+
+        The outside-group card names the boy's *responsible* servant, who may
+        be another servant than the one whose card is open, so the names are
+        read for the whole class rather than only the current servant.
+        """
+        return {
+            teacher.id: teacher.teacher_name
+            for teacher in self.db.query(Teacher)
+            .filter(Teacher.class_id.in_(class_set))
+            .all()
+        }
+
     def _group_boy_ids(self, teacher_id: int) -> set[int]:
         return {
             row[0]
@@ -222,6 +236,7 @@ class FollowUpPerformanceService(BaseService):
         servants = self._servants(class_set, teacher_id)
         servant_names = {t.id: t.teacher_name for t in servants}
         group_map = self._group_map(class_set)
+        group_servant_names = self._group_servant_names(class_set)
         follow_ups = self._follow_ups(class_set, period_from, period_to, teacher_id)
         checks = self._checks(class_set, period_from, period_to, teacher_id)
 
@@ -241,7 +256,13 @@ class FollowUpPerformanceService(BaseService):
         }
 
         servant_rows = self._servants_report(
-            servants, boys_by_id, group_map, by_boy, follow_ups, labels
+            servants,
+            boys_by_id,
+            group_map,
+            follow_ups,
+            labels,
+            servant_names,
+            group_servant_names,
         )
         needs_attention = self._needs_attention(servants, checks, labels)
         totals["servants"] = len(servant_rows)
@@ -388,11 +409,19 @@ class FollowUpPerformanceService(BaseService):
         servants: list[Teacher],
         boys_by_id: dict[int, Boy],
         group_map: dict[int, int],
-        by_boy: dict[int, list[FollowUp]],
         follow_ups: list[FollowUp],
         labels: dict[int, str],
+        servant_names: dict[int, str],
+        group_servant_names: dict[int, str],
     ) -> list[dict]:
-        """Per-servant: his group coverage and how many follow-ups he logged."""
+        """Per-servant: his group coverage and how many follow-ups he logged.
+
+        Coverage is only the boys of *his own* group that he himself followed
+        divided by his group size - a follow-up someone else logged does not
+        count for him. He may also contact boys outside the group; both counts
+        are returned with the boys behind them, so the screen can open a
+        history card for either number.
+        """
         logged_by: dict[int, list[FollowUp]] = {}
         for f in follow_ups:
             logged_by.setdefault(f.teacher_id, []).append(f)
@@ -404,8 +433,16 @@ class FollowUpPerformanceService(BaseService):
                 for boy_id, teacher_id in group_map.items()
                 if teacher_id == t.id and boy_id in boys_by_id
             }
-            covered = sum(1 for boy_id in group_ids if by_boy.get(boy_id))
             logged = logged_by.get(t.id, [])
+            logged_ids = {f.boy_id for f in logged if f.boy_id in boys_by_id}
+            inside_ids = logged_ids & group_ids
+            outside_ids = logged_ids - group_ids
+            covered = len(inside_ids)
+            # The card behind a count is about *this* servant's contacts, so the
+            # history is narrowed to the rows he logged himself.
+            logged_by_boy: dict[int, list[FollowUp]] = {}
+            for f in logged:
+                logged_by_boy.setdefault(f.boy_id, []).append(f)
             last = max((f.action_date for f in logged), default=None)
             rows.append(
                 {
@@ -420,11 +457,85 @@ class FollowUpPerformanceService(BaseService):
                     "not_covered": len(group_ids) - covered,
                     "percent": _pct(covered, len(group_ids)),
                     "logged": len(logged),
+                    "inside_count": len(inside_ids),
+                    "outside_count": len(outside_ids),
+                    "boys_inside": FollowUpPerformanceService._servant_boy_rows(
+                        inside_ids,
+                        boys_by_id,
+                        logged_by_boy,
+                        labels,
+                        servant_names,
+                        group_map,
+                        group_servant_names,
+                    ),
+                    "boys_outside": FollowUpPerformanceService._servant_boy_rows(
+                        outside_ids,
+                        boys_by_id,
+                        logged_by_boy,
+                        labels,
+                        servant_names,
+                        group_map,
+                        group_servant_names,
+                    ),
                     "last": _iso(last),
                     "active": bool(logged),
                 }
             )
         rows.sort(key=lambda s: (-s["percent"], s["teacher_name"]))
+        return rows
+
+    @staticmethod
+    def _servant_boy_rows(
+        boy_ids: set[int],
+        boys_by_id: dict[int, Boy],
+        by_boy: dict[int, list[FollowUp]],
+        labels: dict[int, str],
+        servant_names: dict[int, str],
+        group_map: dict[int, int],
+        group_servant_names: dict[int, str],
+    ) -> list[dict]:
+        """The boys behind one servant count, newest follow-up first.
+
+        ``servant_name`` is the boy's own group servant (his responsible
+        servant), which the outside-group card shows - not necessarily the
+        servant who happened to record the follow-up.
+        """
+        rows = []
+        for boy_id in boy_ids:
+            boy = boys_by_id.get(boy_id)
+            if boy is None:
+                continue
+            owner_id = group_map.get(boy.id)
+            ordered = sorted(
+                by_boy.get(boy_id, []),
+                key=lambda r: (r.action_date, r.id),
+                reverse=True,
+            )
+            last = ordered[0] if ordered else None
+            rows.append(
+                {
+                    "id": boy.id,
+                    "boy_id": boy.id,
+                    "boy_name": boy.boy_name,
+                    "class_id": boy.class_id,
+                    "class_name": labels.get(boy.class_id, ""),
+                    "servant_id": owner_id,
+                    "servant_name": group_servant_names.get(owner_id) if owner_id else None,
+                    "last_date": _iso(last.action_date) if last else None,
+                    "last_status": last.status.value if last and last.status else None,
+                    "history": [
+                        {
+                            "date": _iso(r.action_date),
+                            "status": r.status.value if r.status else None,
+                            "teacher_id": r.teacher_id,
+                            "teacher_name": servant_names.get(r.teacher_id, "—"),
+                            "note": r.note,
+                        }
+                        for r in ordered[:6]
+                    ],
+                }
+            )
+        rows.sort(key=lambda b: b["last_date"] or "", reverse=True)
         return rows
 
     @staticmethod

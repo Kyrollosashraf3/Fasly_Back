@@ -16,6 +16,7 @@ class RoleEnum(str, Enum):
     SUPER_ADMIN = "super_admin"
 
 ROLE_ENUM_NAME = "role_enum"
+SUBSCRIPTION_TYPE_ENUM_NAME = "subscription_type_enum"
 
 ###########################
 
@@ -50,6 +51,12 @@ class FatherEnum(str, Enum):
     FAMES = "ابونا فام عبدالمسيح"
 
 FATHER_ENUM_NAME = "father_enum"
+
+
+class SubscriptionTypeEnum(str, Enum):
+    """نوع الحركة المالية للولد في الرحلة."""
+    CHARGE = "charge"    # مصروف (دفع)
+    RECOVER = "recover"  # استرداد (رد)
 
 
 class SkillEnum(str, Enum):

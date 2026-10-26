@@ -53,6 +53,34 @@ def unassign_group(
     return GroupsService(db, current_user).unassign(data.boy_ids)
 
 
+@router.get("/template")
+def groups_template(
+    class_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Current groups as a sheet the user can edit and upload back.
+
+    One row per boy: teacher_name | boy_name | class_name - exactly the
+    columns ``/groups/import`` reads.
+    """
+    from app.core.EDA.templates import build_groups_template
+    from app.routes.sheets import class_labels, xlsx_response
+
+    payload = GroupsService(db, current_user).list(class_id=class_id)
+    labels = class_labels(db, current_user)
+    rows = [
+        {
+            "teacher_name": group["teacher_name"],
+            "boy_name": boy["boy_name"],
+            "class_name": labels.get(group["class_id"], ""),
+        }
+        for group in payload["groups"]
+        for boy in group["boys"]
+    ]
+    return xlsx_response(build_groups_template(rows), "follow_up_groups_template.xlsx")
+
+
 @router.post("/import")
 def import_groups(
     file: UploadFile = File(...),
@@ -74,9 +102,10 @@ def import_groups(
 
     result = GroupsService(db, current_user).import_rows(rows)
     failed = parse_errors + result["failed"]
+    assigned = sum(bucket.get("assigned", 0) for bucket in result["created"])
     return {
         "total_rows": len(rows) + len(parse_errors),
-        "created_count": len(result["created"]),
+        "created_count": assigned,
         "failed_count": len(failed),
         "created": result["created"],
         "failed": failed,

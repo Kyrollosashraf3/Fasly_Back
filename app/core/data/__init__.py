@@ -33,6 +33,7 @@ from app.core.data.common import (
 )
 from app.core.data.follow_ups import FollowUpService
 from app.core.data.groups import GroupsService
+from app.core.data.subscriptions import SubscriptionService
 from app.core.data.teacher_checks import TeacherCheckService
 from app.core.data.teachers import TeacherService
 from app.core.data.trips import TripService
@@ -53,6 +54,7 @@ __all__ = [
     "ClassService",
     "FollowUpService",
     "GroupsService",
+    "SubscriptionService",
     "TeacherCheckService",
     "TeacherService",
     "TripService",

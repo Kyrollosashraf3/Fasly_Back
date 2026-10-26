@@ -6,7 +6,7 @@ column added to a model on a database that already exists is applied once
 with ``ALTER TABLE <table> ADD COLUMN <column>`` (see the README).
 """
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config.logger import get_logger
@@ -31,6 +31,23 @@ def get_db():
         db.close()
 
 
+def _add_missing_columns() -> None:
+    """Add columns that exist on ORM models but are missing from an already
+    created table (no migration tool is used in this project).
+
+    ``ADD COLUMN IF NOT EXISTS`` is a no-op when the column is already there,
+    so this is safe to run on every startup.
+    """
+    statements = [
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS note VARCHAR",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS date DATE",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+    logger.info("Missing-column check complete")
+
+
 def create_tables() -> None:
     """Create every table the ORM declares that does not exist yet.
 
@@ -40,6 +57,7 @@ def create_tables() -> None:
     from app import models  # noqa: F401  (registers the ORM on Base.metadata)
 
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
     logger.info(
         "Database tables are ready: %s", ", ".join(sorted(Base.metadata.tables))
     )

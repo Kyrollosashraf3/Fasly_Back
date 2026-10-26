@@ -97,6 +97,7 @@ class Boy(Base):
     attends = relationship("Attend", back_populates="boy")
     follow_ups = relationship("FollowUp", back_populates="boy")
     groups = relationship("Group", back_populates="boy", cascade="all, delete-orphan")
+    subscriptions = relationship("Subscription", back_populates="boy")
 
     @property
     def teacher_id(self) -> int | None:

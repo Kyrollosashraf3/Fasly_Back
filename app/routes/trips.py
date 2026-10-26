@@ -1,6 +1,6 @@
 """Trips - اشتراكات الفصول في الرحلات: إضافة، تعديل، حذف."""
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
@@ -14,10 +14,15 @@ router = APIRouter(prefix="/trips", tags=["Trips"])
 
 @router.get("", response_model=list[TripResponse])
 def list_trips(
+    status_filter: str | None = Query('active', alias='status'),
+    class_id: int | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return TripService(db, current_user).list()
+    return TripService(db, current_user).list(
+        status=status_filter,
+        class_id=class_id,
+    )
 
 
 @router.post("", response_model=TripResponse, status_code=status.HTTP_201_CREATED)

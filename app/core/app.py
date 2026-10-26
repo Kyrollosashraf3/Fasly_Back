@@ -29,6 +29,7 @@ from app.routes import (
     dashboard_router,
     follow_ups_router,
     groups_router,
+    subscriptions_router,
     teacher_checks_router,
     teachers_router,
     trips_router,
@@ -103,6 +104,7 @@ class FaslyApplication:
             follow_ups_router,
             teacher_checks_router,
             trips_router,
+            subscriptions_router,
             dashboard_router,
         ):
             self.app.include_router(router)
