@@ -59,6 +59,18 @@ def _iso(value: date | None) -> str | None:
     return value.isoformat() if value else None
 
 
+def _unique_follow_ups(rows: list[FollowUp]) -> list[FollowUp]:
+    """Drop duplicate ORM rows (same ``id``) before aggregating."""
+    seen: set[int] = set()
+    out: list[FollowUp] = []
+    for row in rows:
+        if row.id in seen:
+            continue
+        seen.add(row.id)
+        out.append(row)
+    return out
+
+
 class FollowUpPerformanceService(BaseService):
     """Follow-up analytics. Read-only: the same scope the CRUD routes use.
 
@@ -237,7 +249,9 @@ class FollowUpPerformanceService(BaseService):
         servant_names = {t.id: t.teacher_name for t in servants}
         group_map = self._group_map(class_set)
         group_servant_names = self._group_servant_names(class_set)
-        follow_ups = self._follow_ups(class_set, period_from, period_to, teacher_id)
+        follow_ups = _unique_follow_ups(
+            self._follow_ups(class_set, period_from, period_to, teacher_id)
+        )
         checks = self._checks(class_set, period_from, period_to, teacher_id)
 
         by_boy: dict[int, list[FollowUp]] = {}
@@ -391,6 +405,7 @@ class FollowUpPerformanceService(BaseService):
                     else None,
                     "history": [
                         {
+                            "id": r.id,
                             "date": _iso(r.action_date),
                             "status": r.status.value if r.status else None,
                             "teacher_id": r.teacher_id,
@@ -525,6 +540,7 @@ class FollowUpPerformanceService(BaseService):
                     "last_status": last.status.value if last and last.status else None,
                     "history": [
                         {
+                            "id": r.id,
                             "date": _iso(r.action_date),
                             "status": r.status.value if r.status else None,
                             "teacher_id": r.teacher_id,
