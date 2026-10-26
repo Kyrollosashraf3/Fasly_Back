@@ -129,6 +129,25 @@ class SubscriptionService(BaseService):
                 detail="تم تسجيل هذا الاشتراك مسبقاً لنفس الولد والرحلة والمبلغ خلال الدقيقتين اللي فاتت.",
             )
 
+        # ----------------------------- validation قبل الحفظ
+        # Get boy's summary to check balance
+        boy_summary = self.get_boy_trip_summary(trip.id, data.boy_id)
+
+        if data.type == SubscriptionTypeEnum.CHARGE:
+            # حالة الدفع: لا يُسمح بمبلغ أكبر من الباقي عليه
+            if data.value > boy_summary.remaining:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"المبلغ أكبر من الباقي عليه ({boy_summary.remaining} جنيه).",
+                )
+        elif data.type == SubscriptionTypeEnum.RECOVER:
+            # حالة السحب: لا يُسمح بسحب أكثر مما دفعه الولد مسبقاً (total_charged)
+            if data.value > boy_summary.total_charged:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"لا يمكن سحب أكثر من المدفوع مسبقاً ({boy_summary.total_charged} جنيه).",
+                )
+
         sub = Subscription(
             boy_id=data.boy_id,
             trip_id=data.trip_id,
