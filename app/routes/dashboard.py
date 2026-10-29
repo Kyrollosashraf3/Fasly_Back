@@ -8,6 +8,7 @@ from app.core.DA.dashboard import DashboardService
 from app.core.DA.follow_up_performance import FollowUpPerformanceService
 from app.db.database import get_db
 from app.models.user import User
+from app.routes.sheets import xlsx_response
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -36,6 +37,33 @@ def dashboard_summary(
         teacher_trend_n=teacher_trend_n,
         period_days=period_days,
         date_mode=date_mode,
+    )
+
+
+@router.get("/teachers/export")
+def dashboard_teachers_export(
+    class_id: int | None = None,
+    date_mode: str = Query(default="all", pattern="^(all|last_friday|season)$"),
+    metric: str = Query(
+        default="all",
+        pattern="^(attend|liturgy|follow|prepare|teachers_meeting|all)$",
+    ),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The "تفاصيل الخدام" table as a simple sheet - same rows, same order."""
+    # lazy: openpyxl only loads when someone asks for a file
+    from app.core.EDA.write_servants import build_servants_workbook
+
+    summary = DashboardService(db, current_user).summary(
+        class_id=class_id, date_mode=date_mode
+    )
+    return xlsx_response(
+        build_servants_workbook(
+            summary["servants"], summary["scope"], metric=metric, order=order
+        ),
+        "servants-details.xlsx",
     )
 
 
