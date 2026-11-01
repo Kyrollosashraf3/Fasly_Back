@@ -75,6 +75,25 @@ def import_teachers(
     )
 
 
+@router.get("/me", response_model=TeacherResponse)
+def my_record(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The logged-in servant's own directory row - name, birth date, آخر اعتراف..."""
+    return TeacherService(db, current_user).get_self()
+
+
+@router.patch("/me", response_model=TeacherResponse)
+def update_my_record(
+    data: TeacherUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """A servant updating his own data. His phone and his class are locked."""
+    return TeacherService(db, current_user).self_update(data)
+
+
 @router.get("/{teacher_id}", response_model=TeacherResponse)
 def get_teacher(
     teacher_id: int,

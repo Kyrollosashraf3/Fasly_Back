@@ -88,13 +88,16 @@ def dashboard_follow_up(
 def dashboard_birthdays(
     kind: str = Query(default="boys", pattern="^(boys|teachers|all)$"),
     window: str = Query(default="twoweeks", pattern="^(twoweeks|month)$"),
+    month: int | None = Query(default=None, ge=1, le=12),
     class_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upcoming birthdays for boys and/or servants (a servant only sees boys)."""
+    """Upcoming birthdays for boys and/or servants (a servant only sees boys).
+
+    `month` overrides the quick `window` when set."""
     return DashboardService(db, current_user).birthdays(
-        kind=kind, window=window, class_id=class_id
+        kind=kind, window=window, class_id=class_id, month=month
     )
 
 

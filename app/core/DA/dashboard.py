@@ -724,7 +724,12 @@ class DashboardService(BaseService):
         return min(offsets, key=abs)
 
     @classmethod
-    def _in_birthday_window(cls, birth_date: date, window: str, today: date) -> bool:
+    def _in_birthday_window(
+        cls, birth_date: date, window: str, today: date, month: int | None = None
+    ) -> bool:
+        """A chosen month replaces the quick window."""
+        if month is not None:
+            return birth_date.month == month
         if window == "month":
             return birth_date.month == today.month
         return abs(cls._birthday_offset(birth_date, today)) <= 7
@@ -734,6 +739,7 @@ class DashboardService(BaseService):
         kind: str = "boys",
         window: str = "twoweeks",
         class_id: int | None = None,
+        month: int | None = None,
     ) -> dict:
         """Upcoming birthdays for boys and/or servants, scoped to the login.
 
@@ -765,7 +771,7 @@ class DashboardService(BaseService):
             for b in self._boys():
                 if b.class_id not in class_set or b.birth_date is None:
                     continue
-                if not self._in_birthday_window(b.birth_date, window, today):
+                if not self._in_birthday_window(b.birth_date, window, today, month):
                     continue
                 recs = attends_by_boy.get(b.id, [])
                 present = sum(1 for r in recs if r.present)
@@ -803,7 +809,7 @@ class DashboardService(BaseService):
                     or t.birth_date is None
                 ):
                     continue
-                if not self._in_birthday_window(t.birth_date, window, today):
+                if not self._in_birthday_window(t.birth_date, window, today, month):
                     continue
                 recs = checks_by_teacher.get(t.id, [])
                 present = sum(1 for r in recs if r.attend)
@@ -829,10 +835,15 @@ class DashboardService(BaseService):
                     }
                 )
 
-        items.sort(key=lambda x: (x["days_until"], x["name"]))
+        # Inside a chosen month the servant walks the list by day, not by distance.
+        if month is None:
+            items.sort(key=lambda x: (x["days_until"], x["name"]))
+        else:
+            items.sort(key=lambda x: (int(x["birth_date"].split("-")[2]), x["name"]))
         return {
             "kind": kind,
             "window": window,
+            "month": month,
             "today": today.isoformat(),
             "count": len(items),
             "items": items,

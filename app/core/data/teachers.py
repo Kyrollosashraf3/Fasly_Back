@@ -25,6 +25,9 @@ class TeacherService(BaseService):
     write: super_admin all | admin his class
     """
 
+    #: A servant's own edit never touches these: the phone is how he logs in,
+    #: and the class is the amin's decision - not his.
+    SELF_LOCKED = ("phone", "phone_2", "class_id", "latitude", "longitude")
 
     def query(self) -> Query:
         return scope_teachers(self.db, self.db.query(Teacher), self.user)
@@ -43,6 +46,21 @@ class TeacherService(BaseService):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Servant {teacher_id} not found.",
             )
+        return teacher
+
+    def get_self(self) -> Teacher:
+        """The servant row this login is attached to."""
+        return self._my_teacher()
+
+    def self_update(self, data: TeacherUpdate) -> Teacher:
+        """A servant editing his own data - the locked fields are ignored."""
+        teacher = self._my_teacher()
+        apply_update(teacher, data, skip=self.SELF_LOCKED, strip=("teacher_name",))
+        if "teacher_name" in data.model_fields_set:
+            self._ensure_name_free(
+                teacher.teacher_name, teacher.class_id, exclude_id=teacher.id
+            )
+        commit(self.db, f"Servant self-update id={teacher.id}")
         return teacher
 
     def create(self, data: TeacherCreate) -> Teacher:
@@ -154,6 +172,16 @@ class TeacherService(BaseService):
         self.db.delete(teacher)
         # A servant with recorded follow-ups / reviews is refused by RESTRICT.
         commit(self.db, f"Servant delete id={teacher_id}")
+
+    def _my_teacher(self) -> Teacher:
+        """Resolve the login to his own row through the normal read scope, so
+        a servant can only ever reach himself and an unlinked login gets a 404."""
+        if self.user.teacher_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="This account is not attached to a servant record.",
+            )
+        return self.get(self.user.teacher_id)
 
     def _ensure_name_free(
         self, teacher_name: str, class_id: int, exclude_id: int | None = None
