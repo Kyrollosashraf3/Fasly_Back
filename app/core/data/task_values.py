@@ -115,7 +115,11 @@ class TaskValueService(BaseService):
         if duplicate is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"{boy.boy_name} سمّع هذه المسابقة من قبل.",
+                detail=(
+                    f"{boy.boy_name} سمّع «{task.task_name}» من قبل "
+                    f"في {duplicate.action_date:%d/%m/%Y}. "
+                    "كل مسابقة لها تسجيلها لوحدها."
+                ),
             )
 
         record = TaskValue(
