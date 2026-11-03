@@ -50,6 +50,53 @@ def dashboard_summary(
     )
 
 
+@router.get("/my-performance")
+def dashboard_my_performance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The home screen's own numbers.
+
+    A servant is measured on his group and his reviews, a class amin on his
+    whole class, the general amin on every class. Both windows come back at
+    once: the last 7 days and the church year so far.
+    """
+    return DashboardService(db, current_user).my_performance()
+
+
+@router.get("/today-check")
+def dashboard_today_check(
+    class_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """«فحص اليوم»: the boys at today's liturgy, then today's reciters per
+    competition. Every active competition comes back, empty or not."""
+    return DashboardService(db, current_user).today_check(class_id=class_id)
+
+
+@router.get("/today-check/export")
+def dashboard_today_check_export(
+    class_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The same lists as one workbook - a sheet per class, a block per list.
+
+    The general amin gets every class in his scope; a class amin and a servant
+    get their own class alone.
+    """
+    # lazy: openpyxl only loads when someone asks for a file
+    from app.core.EDA.write_today_check import build_today_check_workbook
+
+    return xlsx_response(
+        build_today_check_workbook(
+            DashboardService(db, current_user).today_check_book(class_id=class_id)
+        ),
+        "today-check.xlsx",
+    )
+
+
 @router.get("/teachers/export")
 def dashboard_teachers_export(
     class_id: int | None = None,

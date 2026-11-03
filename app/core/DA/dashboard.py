@@ -33,9 +33,12 @@ from app.models.attend import Attend
 from app.models.boy import Boy
 from app.models.enums import RoleEnum
 from app.models.follow_up import FollowUp
+from app.models.group import Group
 from app.models.school_class import SchoolClass
 from app.models.teacher import Teacher
 from app.models.teacher_check import TeacherCheck
+from app.models.task import Task
+from app.models.task_value import TaskValue
 
 logger = get_logger(__name__)
 
@@ -424,6 +427,229 @@ class DashboardService(BaseService):
             len(teachers),
         )
         return result
+
+    # ---------------- home dashboard ----------------
+    def _group_boy_ids(self, teacher_id: int) -> set[int]:
+        """The boys in one servant's follow-up group."""
+        return {
+            row[0]
+            for row in self.db.query(Group.boy_id).filter(
+                Group.teacher_id == teacher_id
+            )
+        }
+
+    def my_performance(self) -> dict:
+        """The numbers the home screen is built on, for whoever is looking.
+
+        A servant is measured on his own group and his own reviews; a class
+        amin on his whole class; the general amin on every class. Two windows
+        come back from one read - the last 7 days and the church year so far -
+        so the screen never asks twice.
+
+        Denominators are the honest ones: an attendance ratio is boys times the
+        Fridays that actually have records, a review ratio is the reviews that
+        were filled in, and coverage is the boys reached at least once.
+        """
+        classes = self._scope_classes(None)
+        class_set = set(classes)
+
+        teacher_id = (
+            self.user.teacher_id if self.user.role == RoleEnum.TEACHER else None
+        )
+        group_ids = self._group_boy_ids(teacher_id) if teacher_id else None
+
+        boys = [
+            b
+            for b in self._boys()
+            if b.class_id in class_set
+            and (group_ids is None or b.id in group_ids)
+        ]
+        boy_ids = {b.id for b in boys}
+        attends = [a for a in self._attends() if a.boy_id in boy_ids]
+        checks = [c for c in self._checks() if c.class_id in class_set]
+        follow_ups = [
+            f
+            for f in self._follow_ups()
+            if f.class_id in class_set
+            and (teacher_id is None or f.teacher_id == teacher_id)
+        ]
+        servants = [t for t in self._teachers() if t.class_id in class_set]
+
+        season_from = _season_start()
+        week_from = date.today() - timedelta(days=7)
+
+        week = self._window_stats(boys, attends, checks, follow_ups, week_from)
+        season = self._window_stats(boys, attends, checks, follow_ups, season_from)
+
+        # The sets behind the coverage ratios are bookkeeping, not payload.
+        week.pop("reached")
+        season.pop("reached")
+
+        if teacher_id:
+            kind = "group"
+        elif len(classes) == 1:
+            kind = "class"
+        else:
+            kind = "all"
+
+        return {
+            "scope": {
+                "kind": kind,
+                "class_id": classes[0] if len(classes) == 1 else None,
+                "teacher_id": teacher_id,
+                "boys": len(boys),
+                "servants": len(servants),
+                "season_from": _iso(season_from),
+                "week_from": _iso(week_from),
+            },
+            "week": week,
+            "season": season,
+        }
+
+    @staticmethod
+    def _window_stats(
+        boys: list,
+        attends: list,
+        checks: list,
+        follow_ups: list,
+        date_from: date,
+    ) -> dict:
+        """One window of the six home ratios, plus the counts behind them."""
+        today = date.today()
+
+        def inside(value) -> bool:
+            """Rows from ``date_from`` up to today, inclusive."""
+            return value is not None and date_from <= value <= today
+
+        sessions = {a.date for a in attends if inside(a.date)}
+        recs = {(a.boy_id, a.date): a for a in attends if inside(a.date)}
+        total = len(boys) * len(sessions)
+        present = sum(
+            1
+            for b in boys
+            for d in sessions
+            if getattr(recs.get((b.id, d)), "present", False)
+        )
+        liturgy = sum(
+            1
+            for b in boys
+            for d in sessions
+            if getattr(recs.get((b.id, d)), "liturgy", False)
+        )
+
+        filled = [c for c in checks if inside(c.date)]
+        prepare = sum(1 for c in filled if c.prepare)
+        meeting = sum(1 for c in filled if c.teachers_meeting)
+
+        logged = [f for f in follow_ups if inside(f.action_date)]
+        reached = {f.boy_id for f in logged}
+        followed = sum(1 for b in boys if b.id in reached)
+
+        return {
+            "sessions": len(sessions),
+            "checks": len(filled),
+            "present": present,
+            "absent": total - present,
+            "total": total,
+            "liturgy_present": liturgy,
+            "attendance": _pct(present, total),
+            "liturgy": _pct(liturgy, total),
+            "prepare": _pct(prepare, len(filled)),
+            "teachers_meeting": _pct(meeting, len(filled)),
+            "follow": _pct(followed, len(boys)),
+            "follow_ups": len(logged),
+            "followed_boys": followed,
+            "pending_boys": len(boys) - followed,
+            "reached": reached,
+        }
+
+    # ---------------- today check ----------------
+    def today_check(self, class_id: int | None = None) -> dict:
+        """Today's roll-call: the liturgy list, then one list per competition.
+
+        «فحص اليوم» reads this, and the sheet export renders exactly the same
+        payload, so the screen and the file can never disagree. A competition
+        with no recitation today still gets its list - an empty box is the
+        answer the amin came for.
+        """
+        from app.core.data.common import ensure_staff
+
+        ensure_staff(self.user)
+
+        classes = self._scope_classes(class_id)
+        class_set = set(classes)
+        today = date.today()
+        labels = self._class_labels()
+        # Naming a recitation or an attendance row means looking the boy up, so
+        # the class filter is applied here once and every list inherits it.
+        boys_by_id = {b.id: b for b in self._boys() if b.class_id in class_set}
+
+        def named(boy_ids) -> list[dict]:
+            """Boy rows, by name, without repeats."""
+            rows = {boys_by_id[i] for i in boy_ids if i in boys_by_id}
+            return [
+                {
+                    "boy_id": b.id,
+                    "boy_name": b.boy_name,
+                    "phone": b.phone,
+                    "class_name": labels.get(b.class_id),
+                }
+                for b in sorted(rows, key=lambda x: x.boy_name or "")
+            ]
+
+        attends = scope_boys(
+            self.db, self.db.query(Attend), Attend, self.user, Attend.boy_id
+        ).all()
+        boys = named(
+            [a.boy_id for a in attends if a.date == today and a.liturgy]
+        )
+
+        recitations = self.db.query(TaskValue).filter(
+            TaskValue.class_id.in_(class_set), TaskValue.action_date == today
+        )
+        by_task: dict[int, list[int]] = {}
+        for v in recitations:
+            by_task.setdefault(v.task_id, []).append(v.boy_id)
+
+        tasks = (
+            self.db.query(Task)
+            .filter(Task.class_id.in_(class_set), Task.status == "active")
+            .order_by(Task.task_name)
+            .all()
+        )
+
+        lists = [
+            {
+                "task_id": t.id,
+                "task_name": t.task_name,
+                "value": t.value,
+                "boys": named(by_task.get(t.id, [])),
+            }
+            for t in tasks
+        ]
+        for item in lists:
+            item["count"] = len(item["boys"])
+
+        return {
+            "date": _iso(today),
+            "class_id": classes[0] if len(classes) == 1 else None,
+            "class_name": labels.get(classes[0]) if len(classes) == 1 else None,
+            "liturgy": {"count": len(boys), "boys": boys},
+            "tasks": lists,
+        }
+
+    def today_check_book(self, class_id: int | None = None) -> dict:
+        """One today-check payload per class the login owns.
+
+        The general amin gets a sheet for every class - each class lists its
+        own competitions, so the sheets cannot be merged into one table. A
+        class amin and a servant get their single class, which is exactly what
+        ``_scope_classes`` hands back.
+        """
+        sheets = [
+            self.today_check(class_id=cid) for cid in self._scope_classes(class_id)
+        ]
+        return {"date": _iso(date.today()), "sheets": sheets}
 
     @staticmethod
     def _histories(attends: list) -> dict:
@@ -814,7 +1040,7 @@ class DashboardService(BaseService):
         labels = self._class_labels()
         today = date.today()
 
-        want_boys = True
+        want_boys = kind in ("boys", "all")
         want_teachers = kind in ("teachers", "all")
         if self.user.role == RoleEnum.TEACHER:
             # A servant only sees boys, whatever he asked for.
