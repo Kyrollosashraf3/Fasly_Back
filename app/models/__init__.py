@@ -4,6 +4,8 @@ from app.models.attend import Attend
 from app.models.boy import Boy
 from app.models.follow_up import FollowUp
 from app.models.group import Group
+from app.models.notification_log import NotificationLog
+from app.models.push_device import PushDevice
 from app.models.school_class import SchoolClass
 from app.models.subscription import Subscription
 from app.models.task import Task
@@ -26,4 +28,6 @@ __all__ = [
     "Subscription",
     "Task",
     "TaskValue",
+    "PushDevice",
+    "NotificationLog",
 ]

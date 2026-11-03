@@ -17,3 +17,6 @@ python-multipart
 
 # EDA / excel import-export
 openpyxl
+
+# web push (notifications to the servants' phones)
+pywebpush

@@ -41,6 +41,21 @@ class Settings(BaseSettings):
     # name.
     SEED_SUPER_ADMINS_JSON: str | None = None
 
+    # Web Push (إشعارات على تليفونات الخدام)
+    # VAPID keys from scripts/make_vapid_keys.py. Without both, push stays off
+    # and /notifications/vapid-key answers 503 so the app hides the banner.
+    VAPID_PUBLIC_KEY: str | None = None
+    VAPID_PRIVATE_KEY: str | None = None
+    VAPID_CLAIMS_EMAIL: str | None = None
+    # The church day: reminders fire in this zone, not the server's.
+    PUSH_TIMEZONE: str = "Africa/Cairo"
+    # Hour of the daily «افحص مجموعتك» reminder, 24h in PUSH_TIMEZONE.
+    FOLLOW_UP_REMINDER_HOUR: int = 15
+    # Hour of the birthday and Wednesday nudges; a birthday is news for the
+    # morning, and a Wednesday needs telling before the evening meeting.
+    BIRTHDAY_REMINDER_HOUR: int = 9
+    WEDNESDAY_REMINDER_HOUR: int = 10
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
     )

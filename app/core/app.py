@@ -5,6 +5,7 @@ stays a thin entry point. The React UI lives separately in ``front_fasly``
 and talks to this API over HTTP.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,6 +20,7 @@ from app.core.auth import (
 )
 from app.core.auth.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.middleware import RequestLogMiddleware
+from app.core.notifications import notification_loop, push_enabled
 from app.db.database import create_tables
 from app.routes import (
     attendance_router,
@@ -29,6 +31,7 @@ from app.routes import (
     dashboard_router,
     follow_ups_router,
     groups_router,
+    notifications_router,
     subscriptions_router,
     task_values_router,
     tasks_router,
@@ -68,8 +71,14 @@ class FaslyApplication:
         ensure_default_classes()
         ensure_bootstrap_admin()
         ensure_seeded_super_admins()
+        # The daily reminders run in this process: nothing else owns a clock.
+        loop_task = None
+        if push_enabled():
+            loop_task = asyncio.create_task(notification_loop())
         logger.info("Startup complete - ready to serve")
         yield
+        if loop_task is not None:
+            loop_task.cancel()
         logger.info("Shutting down %s v%s", settings.APP_NAME, settings.APP_VERSION)
 
     def _register_middleware(self) -> None:
@@ -107,6 +116,7 @@ class FaslyApplication:
             teacher_checks_router,
             trips_router,
             subscriptions_router,
+            notifications_router,
             tasks_router,
             task_values_router,
             dashboard_router,
