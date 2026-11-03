@@ -29,9 +29,10 @@ from app.core.data.common import (
     scope_follow_ups,
     scope_teachers,
 )
+from app.core.data.names import normalise
 from app.models.attend import Attend
 from app.models.boy import Boy
-from app.models.enums import RoleEnum
+from app.models.enums import GenderEnum, RoleEnum
 from app.models.follow_up import FollowUp
 from app.models.group import Group
 from app.models.school_class import SchoolClass
@@ -580,8 +581,25 @@ class DashboardService(BaseService):
             for task in tasks
         ]
 
-    def today_check(self, class_id: int, task_id: int, status: str = "all") -> dict:
-        """Every boy in the class, complete only when all three checks pass.
+    def today_check(
+        self,
+        class_id: int,
+        task_id: int,
+        status: str = "all",
+        gender: GenderEnum = GenderEnum.MALE,
+        search: str = "",
+    ) -> dict:
+        """Every boy of one gender in the class, complete only when all three pass.
+
+        Attendance is *this week's* service, i.e. the most recent Friday: today
+        when today is Friday, otherwise the Friday already past. The sheet is
+        read on any day of the week, so "today" would show an empty service.
+
+        The recitation carries no date on purpose - a boy who said this task's
+        portion has said it, whichever Friday it was.
+
+        ``search`` keeps the names that contain it once spelling is folded, so
+        the downloaded sheet holds the same rows the page's search bar shows.
 
         This read-only page intentionally lets every servant inspect every class;
         the rest of the dashboard keeps its usual class scope.
@@ -594,24 +612,22 @@ class DashboardService(BaseService):
         if task.class_id != class_id:
             raise HTTPException(status_code=400, detail="Task does not belong to this class.")
 
-        today = date.today()
+        check_date = _last_friday_passed()
         boys = (
             self.db.query(Boy)
-            .filter(Boy.class_id == class_id)
+            .filter(Boy.class_id == class_id, Boy.gender == gender)
             .order_by(Boy.boy_name)
             .all()
         )
         attends = (
             self.db.query(Attend)
-            .filter(Attend.class_id == class_id, Attend.date == today)
+            .filter(Attend.class_id == class_id, Attend.date == check_date)
             .all()
         )
         attendance_by_boy = {attend.boy_id: attend for attend in attends}
         recited_boy_ids = {
             row.boy_id
-            for row in self.db.query(TaskValue)
-            .filter(TaskValue.task_id == task_id, TaskValue.action_date == today)
-            .all()
+            for row in self.db.query(TaskValue).filter(TaskValue.task_id == task_id).all()
         }
 
         rows = []
@@ -631,12 +647,16 @@ class DashboardService(BaseService):
                 }
             )
 
+        if search.strip():
+            needle = normalise(search)
+            rows = [row for row in rows if needle in normalise(row["boy_name"])]
+
         if status != "all":
             wanted = status == "complete"
             rows = [row for row in rows if row["complete"] is wanted]
 
         return {
-            "date": _iso(today),
+            "date": _iso(check_date),
             "class_id": school_class.id,
             "class_name": school_class.name,
             "task_id": task.id,

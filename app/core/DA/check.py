@@ -136,6 +136,9 @@ class NameCheckService(BaseService):
                             "birth_date": _iso(by_id[i].birth_date),
                             "age": by_id[i].age,
                             "phone": by_id[i].phone,
+                            # The id as well as the name: logging a follow-up
+                            # for one of these boys credits his own servant.
+                            "teacher_id": by_id[i].teacher_id,
                             "teacher_name": by_id[i].teacher_name,
                             "issue_flag": by_id[i].issue_flag,
                         }

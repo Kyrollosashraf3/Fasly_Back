@@ -9,6 +9,7 @@ from app.core.auth.deps import get_current_user
 from app.core.DA.dashboard import DashboardService
 from app.core.DA.follow_up_performance import FollowUpPerformanceService
 from app.db.database import get_db
+from app.models.enums import GenderEnum
 from app.models.user import User
 from app.routes.sheets import xlsx_response
 
@@ -78,11 +79,12 @@ def dashboard_today_check(
     class_id: int,
     task_id: int,
     status: str = Query(default="all", pattern="^(all|complete|incomplete)$"),
+    gender: GenderEnum = Query(default=GenderEnum.MALE),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return DashboardService(db, current_user).today_check(
-        class_id=class_id, task_id=task_id, status=status
+        class_id=class_id, task_id=task_id, status=status, gender=gender
     )
 
 
@@ -91,13 +93,15 @@ def dashboard_today_check_export(
     class_id: int,
     task_id: int,
     status: str = Query(default="all", pattern="^(all|complete|incomplete)$"),
+    gender: GenderEnum = Query(default=GenderEnum.MALE),
+    search: str = "",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     from app.core.EDA.write_today_check import build_today_check_workbook
 
     sheet = DashboardService(db, current_user).today_check(
-        class_id=class_id, task_id=task_id, status=status
+        class_id=class_id, task_id=task_id, status=status, gender=gender, search=search
     )
     return xlsx_response(build_today_check_workbook(sheet), "today-check.xlsx")
 
