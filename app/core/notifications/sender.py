@@ -13,7 +13,7 @@ from pywebpush import WebPushException, webpush
 from sqlalchemy.orm import Session
 
 from app.config import get_logger
-from app.core.notifications.vapid import claims, push_enabled, vapid_private_key_pem
+from app.core.notifications.vapid import claims, push_enabled, vapid_private_key
 from app.models.push_device import PushDevice
 
 logger = get_logger(__name__)
@@ -55,7 +55,7 @@ def deliver(
         return 0, len(devices)
 
     sent = failed = 0
-    pem = vapid_private_key_pem()
+    private_key = vapid_private_key()
 
     for device in devices:
         payload = {
@@ -71,7 +71,7 @@ def deliver(
                     "keys": {"p256dh": device.p256dh, "auth": device.auth},
                 },
                 data=json.dumps(payload, ensure_ascii=False),
-                vapid_private_key=pem,
+                vapid_private_key=private_key,
                 vapid_claims=claims(),
                 ttl=ttl,
             )

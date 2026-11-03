@@ -4,6 +4,10 @@ Generated once with ``python scripts/make_vapid_keys.py`` and kept in ``.env``.
 Only the public half ever reaches a browser.
 """
 
+import base64
+
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
 from app.config import settings
 
 
@@ -16,15 +20,23 @@ def vapid_public_key() -> str:
     return settings.VAPID_PUBLIC_KEY or ""
 
 
-def vapid_private_key_pem() -> str:
-    """The private half as PEM.
+def vapid_private_key() -> str:
+    """The private half in the only form pywebpush can read.
 
-    ``.env`` holds it on one line with ``\\n`` escapes - a real multi-line PEM
-    would be cut at its first newline by dotenv parsing - so unescape here. A
-    key mounted from a file still arrives as a plain PEM and passes through.
+    ``py_vapid`` parses a key string as the raw 32-byte scalar - or as DER - and
+    never as PEM, so the PEM that ``make_vapid_keys.py`` prints is unwrapped
+    here. A value already in raw form passes through untouched.
+
+    ``.env`` holds a PEM on one line with ``\\n`` escapes, because a real
+    multi-line value would be cut at its first newline by dotenv parsing.
     """
-    raw = settings.VAPID_PRIVATE_KEY or ""
-    return raw.replace("\\n", "\n")
+    raw = (settings.VAPID_PRIVATE_KEY or "").replace("\\n", "\n")
+    if "-----BEGIN" not in raw:
+        return raw.strip()
+
+    key = load_pem_private_key(raw.encode(), password=None)
+    scalar = key.private_numbers().private_value.to_bytes(32, "big")
+    return base64.urlsafe_b64encode(scalar).decode().rstrip("=")
 
 
 def claims() -> dict:
