@@ -960,6 +960,7 @@ class DashboardService(BaseService):
             },
             "history": [
                 {
+                    "id": r.id,
                     "date": _iso(r.date),
                     "present": r.present,
                     "note": r.note,
@@ -996,21 +997,27 @@ class DashboardService(BaseService):
         all_season_fridays = _fridays_between(season_start, _last_friday_passed())
         fridays = []
         for d in all_season_fridays:
+            # ``id`` rides along so the file can offer the two writes a Friday
+            # accepts: delete the row (he was not there after all) or create one
+            # for a session that was taken without him.
+            record = by_date.get(d)
             if session_dates is not None and d not in session_dates:
                 # Not a completed session — show as "pending", not absent
                 fridays.append(
                     {
+                        "id": record.id if record else None,
                         "date": d.isoformat(),
                         "present": None,  # None = session not taken yet
-                        "note": None,
+                        "note": record.note if record else None,
                     }
                 )
             else:
                 fridays.append(
                     {
+                        "id": record.id if record else None,
                         "date": d.isoformat(),
-                        "present": by_date[d].present if d in by_date else False,
-                        "note": by_date[d].note if d in by_date else None,
+                        "present": record.present if record else False,
+                        "note": record.note if record else None,
                     }
                 )
         completed = [f for f in fridays if f["present"] is not None]
@@ -1034,6 +1041,7 @@ class DashboardService(BaseService):
         )
         return [
             {
+                "id": r.id,
                 "action_date": _iso(r.action_date),
                 "teacher_id": r.teacher_id,
                 "status": r.status.value,

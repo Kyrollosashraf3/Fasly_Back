@@ -14,6 +14,7 @@ from app.core.data.common import (
     get_or_404,
     scope_boys,
 )
+from app.core.data.names import ensure_full_name, ensure_name_addable
 from app.models.boy import Boy
 from app.models.enums import RoleEnum
 from app.models.group import Group
@@ -57,15 +58,31 @@ class BoyService(BaseService):
             )
         return boy
 
-    def create(self, data: BoyCreate) -> Boy:
+    def create(self, data: BoyCreate, *, from_sheet: bool = False) -> Boy:
+        """File a new boy.
+
+        A form answer is checked against every name this login can see: three
+        parts, and nobody already on file. A sheet row keeps the rule it always
+        had - one boy per name per class - because a spreadsheet cannot answer
+        a question back mid-import.
+        """
         self._ensure_may_write()
         self.ensure_class(data.class_id)
-        boy_name = data.boy_name.strip()
-        # One boy per name inside a class - applies to the form and to a
-        # spreadsheet re-upload alike (bulk import calls create per row).
-        ensure_name_free(
-            self.db, Boy, "boy_name", boy_name, data.class_id, label="Boy"
-        )
+        boy_name = " ".join(data.boy_name.split())
+
+        if from_sheet:
+            ensure_name_free(
+                self.db, Boy, "boy_name", boy_name, data.class_id, label="Boy"
+            )
+        else:
+            ensure_full_name(boy_name)
+            ensure_name_addable(
+                self.db,
+                self.user,
+                boy_name,
+                confirm_similar=data.confirm_similar,
+            )
+
         boy = Boy(
             boy_name=boy_name,
             gender=data.gender,
@@ -96,7 +113,12 @@ class BoyService(BaseService):
         is checked once up front so a login without it gets a single 403
         instead of one failure per row."""
         self._ensure_may_write()
-        return bulk_create(self.create, items, label="boys", name_attr="boy_name")
+        return bulk_create(
+            lambda item: self.create(item, from_sheet=True),
+            items,
+            label="boys",
+            name_attr="boy_name",
+        )
 
     def update(self, boy_id: int, data: BoyUpdate) -> Boy:
         self._ensure_may_write()

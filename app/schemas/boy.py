@@ -36,6 +36,11 @@ class BoyCreate(BaseModel):
             "groups row, so that servant can already take his attendance"
         ),
     )
+    # A name close to one already on file is refused until the form says the
+    # person really meant a new boy. Never sent by a sheet, only by the form.
+    confirm_similar: bool = Field(
+        False, description="Add him even though a similar name is already on file"
+    )
 
     @field_validator("skills", mode="before")
     @classmethod

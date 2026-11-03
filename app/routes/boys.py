@@ -1,9 +1,10 @@
 """Boys (الأولاد) - directory, spreadsheet template / import / export."""
 
-from fastapi import APIRouter, Depends, File, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
+from app.core.DA.check import NameCheckService
 from app.core.data import BoyService, ClassService, TeacherService
 from app.db.database import get_db
 from app.models.user import User
@@ -35,6 +36,24 @@ def create_boy(
     current_user: User = Depends(get_current_user),
 ):
     return BoyService(db, current_user).create(data)
+
+
+@router.get("/duplicate-names")
+def duplicate_boy_names(
+    threshold: int = Query(default=80, ge=50, le=100),
+    scope: str = Query(default="all", pattern="^(same_class|diff_class|all)$"),
+    class_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Boys whose names look alike - the same child entered twice, once with a
+    different spelling or under another class.
+
+    ``threshold`` is the minimum similarity in percent, ``scope`` chooses which
+    pairs count: one class, two different classes, or both."""
+    return NameCheckService(db, current_user).duplicates(
+        threshold=threshold, scope=scope, class_id=class_id
+    )
 
 
 @router.get("/template")
