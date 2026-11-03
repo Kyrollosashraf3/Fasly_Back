@@ -166,13 +166,8 @@ def dashboard_birthdays(
 @router.get("/boys/{boy_id}")
 def dashboard_boy(
     boy_id: int,
-    class_history: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """One boy: master data, every Friday, season table and follow-up log.
-
-    ``class_history`` adds every follow-up this class's servants wrote since the
-    season start, for the two screens that open a boy's file for a servant.
-    """
-    return DashboardService(db, current_user).boy_profile(boy_id, class_history)
+    """One boy: master data, every Friday, season table and follow-up log."""
+    return DashboardService(db, current_user).boy_profile(boy_id)

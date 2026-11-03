@@ -1128,13 +1128,8 @@ class DashboardService(BaseService):
         }
 
     # ---------------- boy drill-down ----------------
-    def boy_profile(self, boy_id: int, class_history: bool = False) -> dict:
-        """One boy's file.
-
-        ``class_history`` additionally carries the whole class's follow-ups
-        since the season start (``class_followups``). Only the two screens that
-        ask for it get it - see ``_class_followups``.
-        """
+    def boy_profile(self, boy_id: int) -> dict:
+        """One boy's file."""
         boy = get_or_404(self.db, Boy, boy_id, "Boy")
         ensure_boy_access(self.db, self.user, boy)
 
@@ -1202,8 +1197,6 @@ class DashboardService(BaseService):
             "session_dates": sorted(d.isoformat() for d in session_dates),
             "followups": self._boy_followups(boy_id),
         }
-        if class_history:
-            profile["class_followups"] = self._class_followups(boy)
         return profile
 
     @staticmethod
@@ -1260,58 +1253,28 @@ class DashboardService(BaseService):
         }
 
     def _boy_followups(self, boy_id: int) -> list[dict]:
-        """Follow-up log for one boy, newest first."""
+        """Follow-up log for one boy, newest first.
+
+        Every servant's rows are in here, not only the reader's - this is the
+        boy's own history - and ``teacher_name`` says who wrote each line. A boy
+        login gets the date and the kind, never which servant came to his house.
+        """
         recs = (
-            self.db.query(FollowUp)
+            self.db.query(FollowUp, Teacher.teacher_name)
+            .join(Teacher, Teacher.id == FollowUp.teacher_id)
             .filter(FollowUp.boy_id == boy_id)
             .order_by(FollowUp.action_date.desc(), FollowUp.id.desc())
             .all()
         )
+        tell_who = self.user.role != RoleEnum.USER
         return [
             {
                 "id": r.id,
                 "action_date": _iso(r.action_date),
                 "teacher_id": r.teacher_id,
+                "teacher_name": name if tell_who else None,
                 "status": r.status.value,
                 "note": r.note,
             }
-            for r in recs
-        ]
-
-    def _class_followups(self, boy: Boy) -> list[dict]:
-        """Every follow-up a servant of this boy's class wrote since season start.
-
-        Deliberately wider than ``scope_follow_ups`` (which gives a servant only
-        his own rows): the two screens that ask for this list exist so a servant
-        can see that the class already reached a boy, or never did. Two things
-        stay private - a boy login never gets the list at all, and a servant
-        never reads a colleague's note, only the date, the kind and who wrote it.
-        """
-        if self.user.role == RoleEnum.USER:
-            return []
-
-        recs = (
-            self.db.query(FollowUp, Boy.boy_name, Teacher.teacher_name)
-            .join(Boy, Boy.id == FollowUp.boy_id)
-            .join(Teacher, Teacher.id == FollowUp.teacher_id)
-            .filter(Teacher.class_id == boy.class_id)
-            .filter(FollowUp.action_date >= _season_start())
-            .order_by(FollowUp.action_date.desc(), FollowUp.id.desc())
-            .all()
-        )
-        mine = self.user.teacher_id
-        reads_notes = self.user.role != RoleEnum.TEACHER
-        return [
-            {
-                "id": r.id,
-                "boy_id": r.boy_id,
-                "boy_name": name,
-                "action_date": _iso(r.action_date),
-                "teacher_id": r.teacher_id,
-                "teacher_name": teacher_name,
-                "status": r.status.value,
-                "note": r.note if (reads_notes or r.teacher_id == mine) else None,
-                "own": r.teacher_id == mine,
-            }
-            for r, name, teacher_name in recs
+            for r, name in recs
         ]
