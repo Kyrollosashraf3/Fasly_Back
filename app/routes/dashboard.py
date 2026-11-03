@@ -1,5 +1,7 @@
 """Dashboard analytics - one summary, one boy drill-down. Read-only."""
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -23,11 +25,17 @@ def dashboard_summary(
     teacher_trend_n: int = Query(default=8, ge=1, le=52),
     period_days: int = Query(default=30, ge=1, le=365),
     date_mode: str = Query(default="all", pattern="^(all|last_friday|season)$"),
+    streak_from: date | None = Query(default=None),
+    streak_to: date | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Attendance, streaks, absences, servant scores, follow-up coverage and
-    late confessions - all already scoped to the classes this login may see."""
+    late confessions - all already scoped to the classes this login may see.
+
+    ``streak_from`` / ``streak_to`` measure the "المواظبون على الحضور" list over
+    that Friday range instead of the trailing streak, independent of
+    ``date_mode``."""
     return DashboardService(db, current_user).summary(
         class_id=class_id,
         streak_n=streak_n,
@@ -37,6 +45,8 @@ def dashboard_summary(
         teacher_trend_n=teacher_trend_n,
         period_days=period_days,
         date_mode=date_mode,
+        streak_from=streak_from,
+        streak_to=streak_to,
     )
 
 

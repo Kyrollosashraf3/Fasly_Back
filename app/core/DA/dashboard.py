@@ -216,6 +216,23 @@ class DashboardService(BaseService):
             return _season_start(), date.today()
         return None, None
 
+    @staticmethod
+    def _streak_window(streak_from, streak_to) -> tuple | None:
+        """The explicit Friday range the "المواظبون" list is measured over.
+
+        ``None`` keeps the trailing-streak behaviour. A half range is treated as
+        that single Friday, and a reversed pair is a client mistake.
+        """
+        if streak_from is None and streak_to is None:
+            return None
+        lo = streak_from or streak_to
+        hi = streak_to or streak_from
+        if lo > hi:
+            raise HTTPException(
+                status_code=422, detail="streak_from must be on or before streak_to"
+            )
+        return lo, hi
+
     def _boys(self) -> list[Boy]:
         return self._boys_query().all()
 
@@ -272,6 +289,8 @@ class DashboardService(BaseService):
         teacher_trend_n: int = 8,
         period_days: int = 30,
         date_mode: str = "all",
+        streak_from=None,
+        streak_to=None,
     ) -> dict:
         classes = self._scope_classes(class_id)
         labels = self._class_labels()
@@ -294,9 +313,8 @@ class DashboardService(BaseService):
         # picker really drives the whole page: a super admin who selected one
         # class no longer sees counts summed over every class.
         boys = [b for b in self._boys() if b.class_id in class_set]
-        attends = [
-            a for a in self._attends() if a.class_id in class_set and in_range(a.date)
-        ]
+        scoped_attends = [a for a in self._attends() if a.class_id in class_set]
+        attends = [a for a in scoped_attends if in_range(a.date)]
         checks = [
             c for c in self._checks() if c.class_id in class_set and in_range(c.date)
         ]
@@ -310,6 +328,15 @@ class DashboardService(BaseService):
         boys_by_id = {b.id: b for b in boys}
         teachers_by_id = {t.id: t.teacher_name for t in teachers}
         histories = self._histories(attends)
+
+        # The streak list can be measured over its own Friday range, so it keeps
+        # working even when the page filter is narrowed to a single Friday.
+        window = self._streak_window(streak_from, streak_to)
+        streak_rows = scoped_attends if window is not None else attends
+        streak_sessions = self._class_sessions(streak_rows, classes, window)
+        streak_histories = (
+            histories if window is None else self._histories(streak_rows)
+        )
 
         dates = sorted({a.date for a in attends if a.date})
         last_date = dates[-1] if dates else None
@@ -351,8 +378,21 @@ class DashboardService(BaseService):
             "servants": servant_list,
             "top_servants": _top_with_ties(servant_list, top_n),
             "streaks": self._streaks(
-                histories, boys_by_id, classes, last_date, streak_n, attends
+                streak_histories, boys_by_id, classes, streak_n, streak_sessions, window
             ),
+            "streak_window": {
+                "from": _iso(window[0]) if window else None,
+                "to": _iso(window[1]) if window else None,
+                "by_class": {
+                    c: len(sessions) for c, sessions in streak_sessions.items()
+                },
+            },
+            "streak_options": [
+                d.isoformat()
+                for d in sorted(
+                    {a.date for a in scoped_attends if a.date}, reverse=True
+                )
+            ],
             "last_friday": self._last_friday(
                 attends, boys_by_id, boys, classes, last_date
             ),
@@ -394,6 +434,18 @@ class DashboardService(BaseService):
         for h in histories.values():
             h.sort(key=lambda r: r.date)
         return histories
+
+    @staticmethod
+    def _class_sessions(rows: list, classes: list[int], window=None) -> dict:
+        """Completed Fridays per class, optionally narrowed to a Friday range."""
+        out: dict[int, set] = {}
+        for c in classes:
+            dates = _completed_sessions(rows, {c})
+            if window is not None:
+                lo, hi = window
+                dates = {d for d in dates if lo <= d <= hi}
+            out[c] = dates
+        return out
 
     @staticmethod
     def _empty_groups(classes: list[int]) -> dict:
@@ -552,21 +604,28 @@ class DashboardService(BaseService):
         return fallback
 
     def _streaks(
-        self, histories, boys_by_id, classes, last_date, streak_n, all_attends: list
+        self, histories, boys_by_id, classes, streak_n, class_sessions, window=None
     ) -> dict:
-        """Boys present N consecutive fridays up to their class's last session."""
-        # Sessions are completed per class: a Friday another class recorded is
-        # not a session for this class, so it must not break a boy's streak.
-        class_sessions = {c: _completed_sessions(all_attends, {c}) for c in classes}
+        """The «المواظبون على الحضور» list, either a trailing streak or a range.
+
+        Without ``window``: boys present N consecutive fridays up to their
+        class's last session. With one (an explicit ``from`` / ``to`` pair):
+        boys present on EVERY session of that range, so a single absence inside
+        the chosen period drops them.
+
+        ``class_sessions`` is the per-class set of Fridays that counts (see
+        ``_class_sessions``): a Friday another class recorded is not a session
+        for this class, so it must neither count nor break anything.
+        """
         groups = {c: [] for c in classes}
         for boy_id, h in histories.items():
             c = self._boy_class(boys_by_id, boy_id, h[0].class_id)
             if c not in groups:
                 continue
             sessions = class_sessions.get(c, set())
-            anchor = max(sessions) if sessions else None
-            s = _trailing_streak(h, anchor, sessions)
-            if s >= streak_n:
+            s = _trailing_streak(h, max(sessions) if sessions else None, sessions)
+            wanted = len(sessions) if window is not None else streak_n
+            if sessions and s >= wanted:
                 groups[c].append(
                     {
                         "boy_id": boy_id,
