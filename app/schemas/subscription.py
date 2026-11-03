@@ -80,3 +80,8 @@ class BoyTripSummary(BaseModel):
     total_recovered: int = Field(description="مجموع الاستردادات (recover)")
     total_paid: int = Field(description="إجمالي ما دفعه فعلياً (مصروف ناقص استرداد)")
     remaining: int = Field(description="الباقي على الولد من تكلفة الرحلة")
+    registered: bool = Field(
+        False,
+        description="له اسم في الرحلة (حركة charge واحدة على الأقل) - حتى بقيمة 0، "
+        "أي أنه حجز اسمه وسيدفع لاحقًا",
+    )

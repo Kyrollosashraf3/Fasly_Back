@@ -64,37 +64,42 @@ def dashboard_my_performance(
     return DashboardService(db, current_user).my_performance()
 
 
-@router.get("/today-check")
-def dashboard_today_check(
-    class_id: int | None = None,
+@router.get("/today-check/tasks")
+def dashboard_today_check_tasks(
+    class_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """«فحص اليوم»: the boys at today's liturgy, then today's reciters per
-    competition. Every active competition comes back, empty or not."""
-    return DashboardService(db, current_user).today_check(class_id=class_id)
+    return DashboardService(db, current_user).today_check_tasks(class_id=class_id)
+
+
+@router.get("/today-check")
+def dashboard_today_check(
+    class_id: int,
+    task_id: int,
+    status: str = Query(default="all", pattern="^(all|complete|incomplete)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return DashboardService(db, current_user).today_check(
+        class_id=class_id, task_id=task_id, status=status
+    )
 
 
 @router.get("/today-check/export")
 def dashboard_today_check_export(
-    class_id: int | None = None,
+    class_id: int,
+    task_id: int,
+    status: str = Query(default="all", pattern="^(all|complete|incomplete)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """The same lists as one workbook - a sheet per class, a block per list.
-
-    The general amin gets every class in his scope; a class amin and a servant
-    get their own class alone.
-    """
-    # lazy: openpyxl only loads when someone asks for a file
     from app.core.EDA.write_today_check import build_today_check_workbook
 
-    return xlsx_response(
-        build_today_check_workbook(
-            DashboardService(db, current_user).today_check_book(class_id=class_id)
-        ),
-        "today-check.xlsx",
+    sheet = DashboardService(db, current_user).today_check(
+        class_id=class_id, task_id=task_id, status=status
     )
+    return xlsx_response(build_today_check_workbook(sheet), "today-check.xlsx")
 
 
 @router.get("/teachers/export")

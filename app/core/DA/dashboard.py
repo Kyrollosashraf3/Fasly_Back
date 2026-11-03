@@ -564,92 +564,85 @@ class DashboardService(BaseService):
         }
 
     # ---------------- today check ----------------
-    def today_check(self, class_id: int | None = None) -> dict:
-        """Today's roll-call: the liturgy list, then one list per competition.
+    def today_check_tasks(self, class_id: int) -> list[dict]:
+        from app.core.data.common import ensure_staff
 
-        «فحص اليوم» reads this, and the sheet export renders exactly the same
-        payload, so the screen and the file can never disagree. A competition
-        with no recitation today still gets its list - an empty box is the
-        answer the amin came for.
+        ensure_staff(self.user)
+        get_or_404(self.db, SchoolClass, class_id, "Class")
+        tasks = (
+            self.db.query(Task)
+            .filter(Task.class_id == class_id, Task.status == "active")
+            .order_by(Task.task_name)
+            .all()
+        )
+        return [
+            {"task_id": task.id, "task_name": task.task_name, "value": task.value}
+            for task in tasks
+        ]
+
+    def today_check(self, class_id: int, task_id: int, status: str = "all") -> dict:
+        """Every boy in the class, complete only when all three checks pass.
+
+        This read-only page intentionally lets every servant inspect every class;
+        the rest of the dashboard keeps its usual class scope.
         """
         from app.core.data.common import ensure_staff
 
         ensure_staff(self.user)
+        school_class = get_or_404(self.db, SchoolClass, class_id, "Class")
+        task = get_or_404(self.db, Task, task_id, "Task")
+        if task.class_id != class_id:
+            raise HTTPException(status_code=400, detail="Task does not belong to this class.")
 
-        classes = self._scope_classes(class_id)
-        class_set = set(classes)
         today = date.today()
-        labels = self._class_labels()
-        # Naming a recitation or an attendance row means looking the boy up, so
-        # the class filter is applied here once and every list inherits it.
-        boys_by_id = {b.id: b for b in self._boys() if b.class_id in class_set}
-
-        def named(boy_ids) -> list[dict]:
-            """Boy rows, by name, without repeats."""
-            rows = {boys_by_id[i] for i in boy_ids if i in boys_by_id}
-            return [
-                {
-                    "boy_id": b.id,
-                    "boy_name": b.boy_name,
-                    "phone": b.phone,
-                    "class_name": labels.get(b.class_id),
-                }
-                for b in sorted(rows, key=lambda x: x.boy_name or "")
-            ]
-
-        attends = scope_boys(
-            self.db, self.db.query(Attend), Attend, self.user, Attend.boy_id
-        ).all()
-        boys = named(
-            [a.boy_id for a in attends if a.date == today and a.liturgy]
-        )
-
-        recitations = self.db.query(TaskValue).filter(
-            TaskValue.class_id.in_(class_set), TaskValue.action_date == today
-        )
-        by_task: dict[int, list[int]] = {}
-        for v in recitations:
-            by_task.setdefault(v.task_id, []).append(v.boy_id)
-
-        tasks = (
-            self.db.query(Task)
-            .filter(Task.class_id.in_(class_set), Task.status == "active")
-            .order_by(Task.task_name)
+        boys = (
+            self.db.query(Boy)
+            .filter(Boy.class_id == class_id)
+            .order_by(Boy.boy_name)
             .all()
         )
+        attends = (
+            self.db.query(Attend)
+            .filter(Attend.class_id == class_id, Attend.date == today)
+            .all()
+        )
+        attendance_by_boy = {attend.boy_id: attend for attend in attends}
+        recited_boy_ids = {
+            row.boy_id
+            for row in self.db.query(TaskValue)
+            .filter(TaskValue.task_id == task_id, TaskValue.action_date == today)
+            .all()
+        }
 
-        lists = [
-            {
-                "task_id": t.id,
-                "task_name": t.task_name,
-                "value": t.value,
-                "boys": named(by_task.get(t.id, [])),
-            }
-            for t in tasks
-        ]
-        for item in lists:
-            item["count"] = len(item["boys"])
+        rows = []
+        for boy in boys:
+            attend = attendance_by_boy.get(boy.id)
+            present = bool(attend and attend.present)
+            liturgy = bool(attend and attend.liturgy)
+            recited = boy.id in recited_boy_ids
+            rows.append(
+                {
+                    "boy_id": boy.id,
+                    "boy_name": boy.boy_name,
+                    "complete": present and liturgy and recited,
+                    "present": present,
+                    "liturgy": liturgy,
+                    "recited": recited,
+                }
+            )
+
+        if status != "all":
+            wanted = status == "complete"
+            rows = [row for row in rows if row["complete"] is wanted]
 
         return {
             "date": _iso(today),
-            "class_id": classes[0] if len(classes) == 1 else None,
-            "class_name": labels.get(classes[0]) if len(classes) == 1 else None,
-            "liturgy": {"count": len(boys), "boys": boys},
-            "tasks": lists,
+            "class_id": school_class.id,
+            "class_name": school_class.name,
+            "task_id": task.id,
+            "task_name": task.task_name,
+            "boys": rows,
         }
-
-    def today_check_book(self, class_id: int | None = None) -> dict:
-        """One today-check payload per class the login owns.
-
-        The general amin gets a sheet for every class - each class lists its
-        own competitions, so the sheets cannot be merged into one table. A
-        class amin and a servant get their single class, which is exactly what
-        ``_scope_classes`` hands back.
-        """
-        sheets = [
-            self.today_check(class_id=cid) for cid in self._scope_classes(class_id)
-        ]
-        return {"date": _iso(date.today()), "sheets": sheets}
 
     @staticmethod
     def _histories(attends: list) -> dict:

@@ -267,8 +267,11 @@ class SubscriptionService(BaseService):
     ) -> BoyTripSummary:
         total_charged = 0
         total_recovered = 0
+        registered = False
         for s in subs:
             if s.type == SubscriptionTypeEnum.CHARGE:
+                # A charge of 0 is a reservation: he owes the whole cost later.
+                registered = True
                 total_charged += s.value
             else:
                 total_recovered += s.value
@@ -284,6 +287,7 @@ class SubscriptionService(BaseService):
             total_recovered=total_recovered,
             total_paid=total_paid,
             remaining=remaining,
+            registered=registered,
         )
 
     def get_trip_summary(self, trip_id: int) -> list[BoyTripSummary]:
