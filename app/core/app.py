@@ -20,7 +20,7 @@ from app.core.auth import (
 )
 from app.core.auth.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.middleware import RequestLogMiddleware
-from app.core.notifications import notification_loop, push_enabled
+from app.core.notifications import notification_loop
 from app.db.database import create_tables
 from app.routes import (
     attendance_router,
@@ -71,10 +71,10 @@ class FaslyApplication:
         ensure_default_classes()
         ensure_bootstrap_admin()
         ensure_seeded_super_admins()
-        # The daily reminders run in this process: nothing else owns a clock.
-        loop_task = None
-        if push_enabled():
-            loop_task = asyncio.create_task(notification_loop())
+        # The daily reminders and the fortnight cleanup run in this process:
+        # nothing else owns a clock. The clock keeps ticking without a VAPID
+        # pair - only the push reminders inside it need one.
+        loop_task = asyncio.create_task(notification_loop())
         logger.info("Startup complete - ready to serve")
         yield
         if loop_task is not None:

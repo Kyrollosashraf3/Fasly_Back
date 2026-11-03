@@ -1,11 +1,15 @@
 """The questions the notification routes ask: who subscribed, who gets it, what went.
 
 Nothing here talks to a push service - that is ``sender.deliver``. This module
-only decides *who* should receive a message and remembers that it was sent.
+only decides *who* should receive a message, remembers that it was sent, and
+keeps the copy each recipient sees in his own bell.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -14,6 +18,7 @@ from app.core.data.common import MANAGERS, ensure_manager, my_class_id
 from app.core.notifications.sender import MAX_FAILS, deliver
 from app.core.notifications.vapid import push_enabled
 from app.models.enums import RoleEnum
+from app.models.notification_inbox import NotificationInbox
 from app.models.notification_log import NotificationLog
 from app.models.push_device import PushDevice
 from app.models.teacher import Teacher
@@ -30,20 +35,53 @@ RECIPIENT_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN)
 DEFAULT_LINK = "#/"
 
 
-def devices_for(db: Session, class_id: int | None) -> list[PushDevice]:
-    """Live subscriptions of the servants of ``class_id`` (None = every class)."""
+def _target(query, class_id: int | None, teacher_ids: list[int] | None):
+    """Apply an audience to a query already joined on ``User``.
+
+    Named servants win over a class: ``teacher_ids`` is the narrower ask, and
+    the caller has already pinned ``class_id`` to what this login may reach.
+    """
+    if teacher_ids is not None:
+        return query.filter(User.teacher_id.in_(teacher_ids))
+    if class_id is not None:
+        return query.filter(Teacher.class_id == class_id)
+    return query
+
+
+def recipient_users(
+    db: Session,
+    class_id: int | None = None,
+    teacher_ids: list[int] | None = None,
+) -> list[User]:
+    """The logins a message is written for: ``class_id`` or named servants."""
+    query = db.query(User).filter(
+        User.role.in_(RECIPIENT_ROLES), User.teacher_id.isnot(None)
+    )
+    if teacher_ids is not None or class_id is not None:
+        query = query.outerjoin(Teacher, Teacher.id == User.teacher_id)
+    return _target(query, class_id, teacher_ids).all()
+
+
+def devices_for(
+    db: Session,
+    class_id: int | None = None,
+    teacher_ids: list[int] | None = None,
+) -> list[PushDevice]:
+    """Live subscriptions of that audience (nothing narrowed = every class)."""
     query = (
         db.query(PushDevice)
         .join(User, User.id == PushDevice.user_id)
         .outerjoin(Teacher, Teacher.id == User.teacher_id)
         .filter(User.role.in_(RECIPIENT_ROLES), PushDevice.fails < MAX_FAILS)
     )
-    if class_id is not None:
-        query = query.filter(Teacher.class_id == class_id)
-    return query.all()
+    return _target(query, class_id, teacher_ids).all()
 
 
-def staff_count(db: Session, class_id: int | None) -> int:
+def staff_count(
+    db: Session,
+    class_id: int | None = None,
+    teacher_ids: list[int] | None = None,
+) -> int:
     """Servants in that audience, subscribed or not.
 
     The send screen shows this beside the device count so an amin can see who
@@ -52,11 +90,9 @@ def staff_count(db: Session, class_id: int | None) -> int:
     query = db.query(func.count(User.id)).filter(
         User.role.in_(RECIPIENT_ROLES), User.teacher_id.isnot(None)
     )
-    if class_id is not None:
-        query = query.join(Teacher, Teacher.id == User.teacher_id).filter(
-            Teacher.class_id == class_id
-        )
-    return query.scalar() or 0
+    if teacher_ids is not None or class_id is not None:
+        query = query.outerjoin(Teacher, Teacher.id == User.teacher_id)
+    return _target(query, class_id, teacher_ids).scalar() or 0
 
 
 def send_now(
@@ -66,19 +102,27 @@ def send_now(
     body: str,
     link: str,
     class_id: int | None,
+    teacher_ids: list[int] | None = None,
     tag: str | None = None,
 ) -> None:
     """Deliver a queued message and write the counts back into its log row.
 
     Runs after the response, in its own session: the request session is closed
-    by then, and a dozen posts to a push service must not hold it open.
+    by then, and a dozen posts to a push service must not hold it open. The
+    bell rows already exist - a phone that does not answer loses a ring, not
+    the message.
     """
     from app.db.database import SessionLocal
 
     db = SessionLocal()
     try:
         sent, failed = deliver(
-            db, devices_for(db, class_id), title, body, link=link, tag=tag
+            db,
+            devices_for(db, class_id, teacher_ids),
+            title,
+            body,
+            link=link,
+            tag=tag,
         )
         log = db.get(NotificationLog, log_id)
         if log is not None:  # deleted while the send was in flight
@@ -143,11 +187,38 @@ class NotificationService:
             logger.warning("amin user=%s has no class; sending to none", self.user.id)
         return mine
 
-    def devices(self, class_id: int | None) -> list[PushDevice]:
-        return devices_for(self.db, class_id)
+    def audience_teacher_ids(
+        self, requested: list[int] | None, class_id: int | None
+    ) -> list[int] | None:
+        """Named servants, kept inside what this login may already reach.
 
-    def count_staff(self, class_id: int | None) -> int:
-        return staff_count(self.db, class_id)
+        The ids are checked against the servant rows themselves - not against
+        the logins behind them - so naming a servant who has never made an
+        account is a send with a smaller audience, not an error. Only a servant
+        outside this login's reach is refused, and he comes back as an error
+        rather than a message that quietly skips him.
+        """
+        if not requested:
+            return None
+
+        wanted = sorted({int(teacher_id) for teacher_id in requested})
+        query = self.db.query(Teacher.id).filter(Teacher.id.in_(wanted))
+        if class_id is not None:
+            query = query.filter(Teacher.class_id == class_id)
+        allowed = {teacher_id for (teacher_id,) in query.all()}
+        missing = [teacher_id for teacher_id in wanted if teacher_id not in allowed]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="في خادم مختار مش من خدام الفصل اللي عندك صلاحية عليه.",
+            )
+        return wanted
+
+    def devices(self, class_id: int | None, teacher_ids: list[int] | None = None) -> list[PushDevice]:
+        return devices_for(self.db, class_id, teacher_ids)
+
+    def count_staff(self, class_id: int | None, teacher_ids: list[int] | None = None) -> int:
+        return staff_count(self.db, class_id, teacher_ids)
 
     def status(self, requested_class_id: int | None = None) -> dict:
         """For the enable-push banner and the send screen.
@@ -176,30 +247,53 @@ class NotificationService:
 
     # -------------------------------------------------------------------- send
 
-    def queue(self, data: SendCreate) -> tuple[NotificationLog, list[PushDevice]]:
-        """Write the log row and resolve the devices - before anything is sent.
+    def queue(
+        self, data: SendCreate
+    ) -> tuple[NotificationLog, list[PushDevice], list[User]]:
+        """Write the log row, fill every recipient's bell, resolve the devices.
 
         The send itself runs in the background (a dozen HTTP posts to a push
         service must not hold a request open), and it fills ``sent``/``failed``
-        back into this row.
+        back into this row. The bell rows are written here, in the request, so
+        a message is readable in the app even if no phone answers.
         """
         class_id = self.audience_class_id(data.class_id)
-        devices = self.devices(class_id)
+        teacher_ids = self.audience_teacher_ids(data.teacher_ids, class_id)
+        devices = self.devices(class_id, teacher_ids)
+        users = recipient_users(self.db, class_id, teacher_ids)
+
+        if teacher_ids is not None:
+            audience = "servants"
+        else:
+            audience = "class" if class_id is not None else "all"
+
         log = NotificationLog(
             kind="manual",
             title=data.title.strip(),
             body=data.body.strip(),
             link=data.link or DEFAULT_LINK,
             class_id=class_id,
-            audience="class" if class_id is not None else "all",
+            audience=audience,
             sent=0,
             failed=0,
             sender_id=self.user.id,
         )
         self.db.add(log)
+        self.db.flush()
+        for user in users:
+            self.db.add(
+                NotificationInbox(
+                    user_id=user.id,
+                    log_id=log.id,
+                    kind=log.kind,
+                    title=log.title,
+                    body=log.body,
+                    link=log.link,
+                )
+            )
         self.db.commit()
         self.db.refresh(log)
-        return log, devices
+        return log, devices, users
 
     def record(self, log_id: int, sent: int, failed: int) -> None:
         log = self.db.get(NotificationLog, log_id)
@@ -217,3 +311,60 @@ class NotificationService:
                 | (NotificationLog.sender_id == self.user.id)
             )
         return query.limit(limit).all()
+
+    # --------------------------------------------------------------------- bell
+
+    def inbox(self, limit: int = 30, unread_only: bool = False) -> list[NotificationInbox]:
+        """This login's own messages, newest first - what the header bell shows."""
+        query = (
+            self.db.query(NotificationInbox)
+            .filter(NotificationInbox.user_id == self.user.id)
+            .order_by(NotificationInbox.id.desc())
+        )
+        if unread_only:
+            query = query.filter(NotificationInbox.read_at.is_(None))
+        return query.limit(limit).all()
+
+    def unread_count(self) -> int:
+        return (
+            self.db.query(func.count(NotificationInbox.id))
+            .filter(
+                NotificationInbox.user_id == self.user.id,
+                NotificationInbox.read_at.is_(None),
+            )
+            .scalar()
+            or 0
+        )
+
+    def mark_read(self, inbox_id: int) -> None:
+        """One message opened. Someone else's row does not exist here."""
+        row = (
+            self.db.query(NotificationInbox)
+            .filter(
+                NotificationInbox.id == inbox_id,
+                NotificationInbox.user_id == self.user.id,
+            )
+            .first()
+        )
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="الإشعار غير موجود.",
+            )
+        if row.read_at is None:
+            row.read_at = datetime.now(timezone.utc)
+            self.db.commit()
+
+    def mark_all_read(self) -> int:
+        """The bell's "اقرأ الكل": returns how many rows it closed."""
+        now = datetime.now(timezone.utc)
+        count = (
+            self.db.query(NotificationInbox)
+            .filter(
+                NotificationInbox.user_id == self.user.id,
+                NotificationInbox.read_at.is_(None),
+            )
+            .update({NotificationInbox.read_at: now}, synchronize_session=False)
+        )
+        self.db.commit()
+        return count

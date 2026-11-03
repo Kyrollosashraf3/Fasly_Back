@@ -1,9 +1,10 @@
-"""إشعارات: what a browser registers, and what an amin sends.
+"""إشعارات: what a browser registers, what an amin sends, and each login's bell.
 
 Registering is open to any staff login (a servant saves his own phone on the
 browser's upsert, so a shared phone follows whoever logs in); only a manager may
 send or read the log, and the service pins a class amin to his own class however
-the request body is written.
+the request body is written. The bell (``/inbox``) belongs to whoever the
+message was written for, so it is open to any login.
 """
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Response, status
@@ -15,11 +16,13 @@ from app.core.notifications.vapid import push_enabled
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.notification import (
+    InboxRow,
     NotificationRow,
     PushStatus,
     SendCreate,
     SendOut,
     SubscriptionCreate,
+    UnreadCount,
 )
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
@@ -67,10 +70,11 @@ def send_message(
     """Queue a hand-written message; the posts to the push services follow.
 
     202 rather than 200 because the reply is the accepted request, not the
-    delivery: ``sent``/``failed`` land in the log a few seconds later.
+    delivery: ``sent``/``failed`` land in the log a few seconds later, while the
+    recipients' bells already hold the message.
     """
     service = NotificationService(db, current_user)
-    log, devices = service.queue(data)
+    log, devices, users = service.queue(data)
     background.add_task(
         send_now,
         log.id,
@@ -78,6 +82,7 @@ def send_message(
         body=log.body,
         link=log.link,
         class_id=log.class_id,
+        teacher_ids=data.teacher_ids,
         tag=f"manual-{log.id}",
     )
     return SendOut(
@@ -88,6 +93,7 @@ def send_message(
         audience=log.audience,
         class_id=log.class_id,
         devices=len(devices),
+        recipients=len(users),
     )
 
 
@@ -99,3 +105,50 @@ def notification_log(
 ):
     """Recent sends, newest first: the amin's own and his class's scheduled ones."""
     return NotificationService(db, current_user).history(limit=min(limit, 200))
+
+
+# ------------------------------------------------------------------ the bell
+#
+# Open to any login: whoever a message was written for reads his own rows, and
+# anyone else simply has none.
+
+
+@router.get("/inbox", response_model=list[InboxRow])
+def notification_inbox(
+    limit: int = 30,
+    unread_only: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """This login's messages, newest first."""
+    return NotificationService(db, current_user).inbox(
+        limit=min(limit, 100), unread_only=unread_only
+    )
+
+
+@router.get("/inbox/unread", response_model=UnreadCount)
+def notification_unread(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The number on the header bell."""
+    return {"count": NotificationService(db, current_user).unread_count()}
+
+
+@router.patch("/inbox/read-all", response_model=UnreadCount)
+def mark_inbox_read(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Close every unread row this login has; replies with what it closed."""
+    return {"count": NotificationService(db, current_user).mark_all_read()}
+
+
+@router.patch("/inbox/{inbox_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+def mark_one_read(
+    inbox_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One message opened (the bell taps it and then follows its link)."""
+    NotificationService(db, current_user).mark_read(inbox_id)

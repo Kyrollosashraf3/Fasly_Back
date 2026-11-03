@@ -4,6 +4,7 @@ from app.models.attend import Attend
 from app.models.boy import Boy
 from app.models.follow_up import FollowUp
 from app.models.group import Group
+from app.models.notification_inbox import NotificationInbox
 from app.models.notification_log import NotificationLog
 from app.models.push_device import PushDevice
 from app.models.school_class import SchoolClass
@@ -30,4 +31,5 @@ __all__ = [
     "TaskValue",
     "PushDevice",
     "NotificationLog",
+    "NotificationInbox",
 ]

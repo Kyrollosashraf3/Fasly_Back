@@ -30,13 +30,16 @@ class SendCreate(BaseModel):
 
     ``class_id`` is who gets it: ``None`` means every servant of every class -
     which only the church-wide amin may say; a class amin is pinned to his own
-    class by the service whatever the body claims. ``link`` is the page a tap
-    opens (a hash route, e.g. ``#/followup``); leave it out to open the app.
+    class by the service whatever the body claims. ``teacher_ids`` narrows the
+    message to named servants (their ``teachers.id``) - a class amin may only
+    name servants of his own class. ``link`` is the page a tap opens (a hash
+    route, e.g. ``#/followup``); leave it out to open the app.
     """
 
     title: str = Field(..., min_length=3, max_length=120)
     body: str = Field(..., min_length=1, max_length=400)
     class_id: int | None = None
+    teacher_ids: list[int] | None = Field(None, max_length=200)
     link: str | None = Field(None, max_length=200)
 
 
@@ -50,6 +53,8 @@ class SendOut(BaseModel):
     audience: str
     class_id: int | None
     devices: int
+    #: Logins the message landed in the inbox of - phones reachable or not.
+    recipients: int
 
 
 class NotificationRow(ORMResponse):
@@ -63,6 +68,22 @@ class NotificationRow(ORMResponse):
     sent: int
     failed: int
     created_at: datetime
+
+
+class InboxRow(ORMResponse):
+    """One message in one login's own bell."""
+
+    id: int
+    kind: str
+    title: str
+    body: str
+    link: str | None
+    read_at: datetime | None
+    created_at: datetime
+
+
+class UnreadCount(BaseModel):
+    count: int
 
 
 class PushStatus(BaseModel):

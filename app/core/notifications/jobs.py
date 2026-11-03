@@ -12,6 +12,11 @@ so the link is built per class, never as a generic home-page pointer.
 The ``notification_logs.dedupe_key`` column is what makes a job fire once. The
 row is written *before* anything is sent, so a restart, a second worker or a
 loop that ticks twice a minute cannot put the same reminder on a phone twice.
+
+A fourth job, ``_purge``, runs every tick and needs no claim: it drops messages
+older than ``KEEP_DAYS`` so a bell never fills up with last month's reminders. It
+runs whether or not web push is configured, which is why the loop itself does
+too - cleaning up does not need a VAPID pair.
 """
 
 from __future__ import annotations
@@ -28,11 +33,12 @@ from sqlalchemy.orm import Session
 
 from app.config import get_logger, settings
 from app.core.notifications.sender import MAX_FAILS, deliver
-from app.core.notifications.service import RECIPIENT_ROLES
+from app.core.notifications.service import RECIPIENT_ROLES, recipient_users
 from app.core.notifications.vapid import push_enabled
 from app.db.database import SessionLocal
 from app.models.boy import Boy
 from app.models.group import Group
+from app.models.notification_inbox import NotificationInbox
 from app.models.notification_log import NotificationLog
 from app.models.push_device import PushDevice
 from app.models.teacher import Teacher
@@ -48,6 +54,10 @@ TICK_SECONDS = 60
 #: server that was down for twenty minutes should not lose the day's nudge - but
 #: after this it arrives in the middle of something else, so it is dropped.
 LATE_WINDOW = timedelta(minutes=90)
+
+#: How long a message stays readable - in the bell and in the amin's log - before
+#: the clock throws it away. Two weeks.
+KEEP_DAYS = 14
 
 WEDNESDAY = 2  # date.weekday(): Monday is 0.
 
@@ -89,6 +99,38 @@ def _devices(grouped: list[tuple[PushDevice, int | None]]) -> list[PushDevice]:
     return [device for device, _ in grouped]
 
 
+def _audience_users(db: Session) -> dict[int | None, list[User]]:
+    """Recipient logins grouped by their servant's class, devices or none.
+
+    The bell must hold a reminder even for a servant who never switched web
+    push on, so this asks for logins rather than subscriptions. Same ``None``
+    key as ``_audience``: a church-wide servant has no class.
+    """
+    rows = (
+        db.query(User, Teacher.class_id)
+        .join(Teacher, Teacher.id == User.teacher_id)
+        .filter(User.role.in_(RECIPIENT_ROLES), User.teacher_id.isnot(None))
+        .all()
+    )
+    grouped: dict[int | None, list[User]] = {}
+    for user, class_id in rows:
+        grouped.setdefault(class_id, []).append(user)
+    return grouped
+
+
+def _servants_with_group(db: Session, servant_ids: list[int]) -> set[int]:
+    """Which of these servants have a group, i.e. boys assigned to them."""
+    if not servant_ids:
+        return set()
+    return {
+        teacher_id
+        for (teacher_id,) in db.query(Group.teacher_id)
+        .filter(Group.teacher_id.in_(servant_ids))
+        .distinct()
+        .all()
+    }
+
+
 def _with_group(db: Session, grouped: list[tuple[PushDevice, int | None]]) -> list[PushDevice]:
     """Devices of servants who have a group, i.e. boys assigned to them.
 
@@ -96,16 +138,9 @@ def _with_group(db: Session, grouped: list[tuple[PushDevice, int | None]]) -> li
     servant with boys in his follow-up group has a segment to prepare; one
     without is a servant who attends and helps elsewhere.
     """
-    servant_ids = [teacher_id for _, teacher_id in grouped if teacher_id is not None]
-    if not servant_ids:
-        return []
-    has_group = {
-        teacher_id
-        for (teacher_id,) in db.query(Group.teacher_id)
-        .filter(Group.teacher_id.in_(servant_ids))
-        .distinct()
-        .all()
-    }
+    has_group = _servants_with_group(
+        db, [teacher_id for _, teacher_id in grouped if teacher_id is not None]
+    )
     return [device for device, teacher_id in grouped if teacher_id in has_group]
 
 
@@ -151,8 +186,28 @@ def _claim(
     return log
 
 
-def _fire(db: Session, log: NotificationLog, devices: list[PushDevice]) -> None:
-    """Deliver what was claimed and write the counts back into the same row."""
+def _fire(
+    db: Session,
+    log: NotificationLog,
+    devices: list[PushDevice],
+    users: list[User] | None = None,
+) -> None:
+    """Put the message in each bell, deliver it to the phones, record the counts.
+
+    The bell rows come first and do not depend on a phone answering: a servant
+    who never switched push on still finds the reminder in the app.
+    """
+    for user in users or []:
+        db.add(
+            NotificationInbox(
+                user_id=user.id,
+                log_id=log.id,
+                kind=log.kind,
+                title=log.title,
+                body=log.body,
+                link=log.link,
+            )
+        )
     if not devices:
         log.sent, log.failed = 0, 0
         db.commit()
@@ -179,6 +234,7 @@ def _follow_up_reminder(db: Session, now: datetime) -> None:
     """Daily: «فصلي بيفكرك تفتقد مجموعتك» - each class, at its own 3pm."""
     if not _due(now, settings.FOLLOW_UP_REMINDER_HOUR):
         return
+    users_by_class = _audience_users(db)
     for class_id, grouped in _audience(db).items():
         link = FOLLOW_UP_LINK.format(class_id) if class_id is not None else "#/followup"
         log = _claim(
@@ -192,7 +248,7 @@ def _follow_up_reminder(db: Session, now: datetime) -> None:
             part=str(class_id),
         )
         if log is not None:
-            _fire(db, log, _devices(grouped))
+            _fire(db, log, _devices(grouped), users_by_class.get(class_id, []))
 
 
 def _birthdays(db: Session, today: date) -> dict[int, list[str]]:
@@ -241,6 +297,7 @@ def _birthday_reminder(db: Session, now: datetime) -> None:
     if not hits:
         return
     audience = _audience(db)
+    users_by_class = _audience_users(db)
     today = now.date()
     for class_id, parts in hits.items():
         grouped = audience.get(class_id)
@@ -257,30 +314,35 @@ def _birthday_reminder(db: Session, now: datetime) -> None:
             part=str(class_id),
         )
         if log is not None:
-            _fire(db, log, _devices(grouped))
+            _fire(db, log, _devices(grouped), users_by_class.get(class_id, []))
 
 
 def _wednesday_reminder(db: Session, now: datetime) -> None:
     """Wednesday: prepare your segment - or, if none is on you, come to the lesson."""
     if now.weekday() != WEDNESDAY or not _due(now, settings.WEDNESDAY_REMINDER_HOUR):
         return
+    users_by_class = _audience_users(db)
     for class_id, grouped in _audience(db).items():
         link = FOLLOW_UP_LINK.format(class_id) if class_id is not None else "#/followup"
         prepared = {device.id for device in _with_group(db, grouped)}
+        class_users = users_by_class.get(class_id, [])
+        on_segment = _servants_with_group(db, [u.teacher_id for u in class_users])
         segments = [
             (
                 "قوم حضر فقرتك",
                 "الأمين مستنيك يوم الأربعاء - جهّز فقرة مجموعتك.",
                 [d for d, _ in grouped if d.id in prepared],
+                [u for u in class_users if u.teacher_id in on_segment],
             ),
             (
                 "حضر الدرس",
                 "مش عليك فقرة يوم الأربعاء - حضورك هو المطلوب. مستنينك.",
                 [d for d, _ in grouped if d.id not in prepared],
+                [u for u in class_users if u.teacher_id not in on_segment],
             ),
         ]
-        for body_first, body, devices in segments:
-            if not devices:
+        for body_first, body, devices, users in segments:
+            if not devices and not users:
                 continue
             log = _claim(
                 db,
@@ -293,27 +355,52 @@ def _wednesday_reminder(db: Session, now: datetime) -> None:
                 part=f"{class_id}:{body_first}",
             )
             if log is not None:
-                _fire(db, log, devices)
+                _fire(db, log, devices, users)
 
 
 # ---------------------------------------------------------------- the loop
 
 
+def _purge(db: Session, now: datetime) -> None:
+    """Throw away messages older than ``KEEP_DAYS`` - two weeks, then gone.
+
+    Both halves go: the bell rows so a servant's list never grows, and the
+    amin's log so the send history stays the last fortnight's. Deleting by
+    ``created_at`` is its own idempotency, so this needs no claim row and can
+    run on every tick.
+    """
+    cutoff = now - timedelta(days=KEEP_DAYS)
+    inbox = (
+        db.query(NotificationInbox)
+        .filter(NotificationInbox.created_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    logs = (
+        db.query(NotificationLog)
+        .filter(NotificationLog.created_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    if inbox or logs:
+        db.commit()
+        logger.info("notifications older than %d days cleared: %d bell, %d log", KEEP_DAYS, inbox, logs)
+
+
 def run_due_jobs() -> None:
-    """Fire whichever reminder is due right now; returns as soon as it tried.
+    """Clean up, then fire whichever reminder is due; returns as soon as it tried.
 
     Called from the async loop through a thread, because every push post blocks
     on the network. Safe to call as often as you like: the day's claim either
-    happens here or has already happened.
+    happens here or has already happened, and the purge only ever deletes rows
+    that are already too old.
     """
-    if not push_enabled():
-        return
     now = datetime.now(_tz())
     db = SessionLocal()
     try:
-        _follow_up_reminder(db, now)
-        _birthday_reminder(db, now)
-        _wednesday_reminder(db, now)
+        _purge(db, now)
+        if push_enabled():
+            _follow_up_reminder(db, now)
+            _birthday_reminder(db, now)
+            _wednesday_reminder(db, now)
     except Exception:
         db.rollback()
         logger.exception("scheduled notifications failed")
@@ -323,16 +410,18 @@ def run_due_jobs() -> None:
 
 async def notification_loop() -> None:
     """The lifespan's only background task: look at the clock, once a minute."""
-    if not push_enabled():
-        logger.warning("push is not configured; scheduled reminders stay off")
-        return
-    logger.info(
-        "push reminders running (%s): follow-up %s:00, birthday %s:00, wednesday %s:00",
-        settings.PUSH_TIMEZONE,
-        settings.FOLLOW_UP_REMINDER_HOUR,
-        settings.BIRTHDAY_REMINDER_HOUR,
-        settings.WEDNESDAY_REMINDER_HOUR,
-    )
+    if push_enabled():
+        logger.info(
+            "push reminders running (%s): follow-up %s:00, birthday %s:00, wednesday %s:00",
+            settings.PUSH_TIMEZONE,
+            settings.FOLLOW_UP_REMINDER_HOUR,
+            settings.BIRTHDAY_REMINDER_HOUR,
+            settings.WEDNESDAY_REMINDER_HOUR,
+        )
+    else:
+        logger.warning(
+            "push is not configured; reminders stay off but old messages still clear"
+        )
     while True:
         await asyncio.to_thread(run_due_jobs)
         await asyncio.sleep(TICK_SECONDS)
