@@ -7,7 +7,12 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Query
 
 from app.core.data.base import BaseService
-from app.core.data.common import apply_update, commit, my_class_id
+from app.core.data.common import (
+    apply_update,
+    commit,
+    is_unrestricted,
+    owner_class_id,
+)
 from app.models.enums import RoleEnum
 from app.models.school_class import SchoolClass
 from app.models.trip import Trip
@@ -19,6 +24,7 @@ class TripService(BaseService):
 
     الكتابة:
       - الخادم / أمين الفصل يضيف رحلة لفصله فقط (يُفرض ``class_id``).
+      - أمين المرحلة يضيف رحلة لأي فصل من فصوله.
       - أمين الكنيسة (سوبر أدمن) يختار أي班 عبر ``class_id``.
       - تسجيل الدخول الخاص بولد (user) مرفوض完全ًا.
     """
@@ -63,7 +69,7 @@ class TripService(BaseService):
 
         # الخادم أو أمين الفصل: تُفرض الرحلة على فصله فقط
         if self.user.role in (RoleEnum.TEACHER, RoleEnum.ADMIN):
-            my_class = my_class_id(self.db, self.user)
+            my_class = owner_class_id(self.db, self.user)
             if my_class is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -72,7 +78,10 @@ class TripService(BaseService):
             effective_class_id = my_class
         else:
             # أمين الكنيسة: يحتفظ بالقيمة التي أرسلها (أي班)
+            # أمين المرحلة: نفس القيمة، ما دامت جوه فصوله
             effective_class_id = data.class_id
+            if not is_unrestricted(self.user):
+                self.ensure_class(effective_class_id)
 
         self._ensure_class(effective_class_id)
         self._ensure_no_duplicate(
@@ -107,8 +116,10 @@ class TripService(BaseService):
                     detail="غير مسموح لك بنقل رحلة لفصل آخر.",
                 )
         elif data.class_id is not None:
-            # أمين الكنيسة قد يغيّر الفصل لأي班 موجود
+            # أمين الكنيسة قد يغيّر الفصل لأي班 موجود، أمين المرحلة لفصوله فقط
             self._ensure_class(data.class_id)
+            if not is_unrestricted(self.user):
+                self.ensure_class(data.class_id)
 
         # إذا تغيّر الاسم أو تاريخ التسجيل أو الفصل، تأكد من عدم تكرار الرحلة
         if (new_name, new_date, new_class_id) != (

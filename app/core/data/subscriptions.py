@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Query, joinedload
 
 from app.core.data.base import BaseService
-from app.core.data.common import apply_update, commit, my_class_id
+from app.core.data.common import apply_update, commit, my_class_ids
 from app.models.boy import Boy
 from app.models.enums import RoleEnum, SubscriptionTypeEnum
 from app.models.subscription import Subscription
@@ -27,6 +27,7 @@ class SubscriptionService(BaseService):
     الصلاحيات:
       - USER (ولد):penas اشتراكاته هو فقط (boy_id == user.boy_id).
       - TEACHER / ADMIN: اشتراكات أولاد فصله فقط.
+      - GENERAL_ADMIN: اشتراكات أولاد فصوله.
       - SUPER_ADMIN: كل الولد في كل الفصول.
     """
 
@@ -37,9 +38,9 @@ class SubscriptionService(BaseService):
         # A boy login only ever reads his own payments, even inside his class.
         if self.user.role == RoleEnum.USER:
             return q.filter(Subscription.boy_id == self.user.boy_id)
-        mine = my_class_id(self.db, self.user)
+        mine = my_class_ids(self.db, self.user)
         if mine is not None:
-            q = q.filter(Boy.class_id == mine)
+            q = q.filter(Boy.class_id.in_(mine))
         return q
 
     @staticmethod
@@ -93,16 +94,15 @@ class SubscriptionService(BaseService):
             )
 
         # ----------------------------- الصلاحيات: فقط سوبر أديمن، أديمن، خادم
-        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.TEACHER):
+        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="لا يمكنك إضافة اشتراكات. هذه العملية مقتصرة على الأمناء والخادم.",
             )
 
         # السوبر أديمن غير مقيد بفصل؛ الأديمن والخادم مقيدون بفصلهم فقط
-        if self.user.role in (RoleEnum.ADMIN, RoleEnum.TEACHER):
-            my_class = my_class_id(self.db, self.user)
-            if boy.class_id != my_class:
+        if self.user.role in (RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
+            if boy.class_id not in my_class_ids(self.db, self.user):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="يمكنك إضافة اشتراكات لأولاد فصلك فقط.",
@@ -170,16 +170,15 @@ class SubscriptionService(BaseService):
 
         boy = self.db.get(Boy, sub.boy_id)
         # ----------------------------- الصلاحيات: فقط سوبر أديمن، أديمن، خادم
-        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.TEACHER):
+        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="لا يمكنك تعديل اشتراكات. هذه العملية مقتصرة على الأمناء والخادم.",
             )
 
         # السوبر أديمن غير مقيد بفصل؛ الأديمن والخادم مقيدون بفصلهم فقط
-        if self.user.role in (RoleEnum.ADMIN, RoleEnum.TEACHER):
-            my_class = my_class_id(self.db, self.user)
-            if boy.class_id != my_class:
+        if self.user.role in (RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
+            if boy.class_id not in my_class_ids(self.db, self.user):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="يمكنك تعديل اشتراكات أولاد فصلك فقط.",
@@ -195,17 +194,16 @@ class SubscriptionService(BaseService):
         sub = self.get(sub_id)  # مقسّم على الفصول تلقائيًا
 
         # ----------------------------- الصلاحيات: فقط سوبر أديمن، أديمن، خادم
-        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.TEACHER):
+        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="لا يمكنك حذف اشتراكات. هذه العملية مقتصرة على الأمناء والخادم.",
             )
 
         # السوبر أديمن غير مقيد بفصل؛ الأديمن والخادم مقيدون بفصلهم فقط
-        if self.user.role in (RoleEnum.ADMIN, RoleEnum.TEACHER):
+        if self.user.role in (RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             boy = self.db.get(Boy, sub.boy_id)
-            my_class = my_class_id(self.db, self.user)
-            if boy.class_id != my_class:
+            if boy.class_id not in my_class_ids(self.db, self.user):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="يمكنك حذف اشتراكات أولاد فصلك فقط.",
@@ -224,8 +222,8 @@ class SubscriptionService(BaseService):
                 detail="الرحلة غير موجودة.",
             )
 
-        mine = my_class_id(self.db, self.user)
-        if mine is not None and trip.class_id != mine:
+        mine = my_class_ids(self.db, self.user)
+        if mine is not None and trip.class_id not in mine:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="يمكنك عرض totals فقط لرحلة فصلك.",
@@ -299,8 +297,8 @@ class SubscriptionService(BaseService):
                 detail="الرحلة غير موجودة.",
             )
 
-        mine = my_class_id(self.db, self.user)
-        if mine is not None and trip.class_id != mine:
+        mine = my_class_ids(self.db, self.user)
+        if mine is not None and trip.class_id not in mine:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="يمكنك عرض ملخص فقط لرحلة فصلك.",
@@ -343,8 +341,8 @@ class SubscriptionService(BaseService):
                 detail="الولد غير موجود.",
             )
 
-        mine = my_class_id(self.db, self.user)
-        if mine is not None and trip.class_id != mine:
+        mine = my_class_ids(self.db, self.user)
+        if mine is not None and trip.class_id not in mine:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="يمكنك عرض ملخص فقط لرحلة فصلك.",
@@ -356,8 +354,8 @@ class SubscriptionService(BaseService):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="لا يمكنك عرض ملخص إلا لنفسك.",
             )
-        elif self.user.role in (RoleEnum.TEACHER, RoleEnum.ADMIN):
-            if boy.class_id != mine:
+        elif self.user.role in (RoleEnum.TEACHER, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN):
+            if boy.class_id not in mine:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="يمكنك عرض ملخص فقط لأولاد فصلك.",

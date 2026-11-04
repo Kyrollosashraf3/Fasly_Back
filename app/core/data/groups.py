@@ -15,7 +15,7 @@ from app.core.data.common import (
     ensure_boy_access,
     ensure_manager,
     get_or_404,
-    my_class_id,
+    my_class_ids,
     normalise_name,
     scope_boys,
     scope_teachers,
@@ -29,8 +29,8 @@ from app.models.teacher import Teacher
 
 
 class GroupsService(BaseService):
-    """read : super_admin all | admin his class | teacher his own group
-    write: super_admin all | admin his class
+    """read : super_admin all | any amin his classes | teacher his own group
+    write: super_admin all | any amin his classes
     """
 
     # --------------------------------------------------------------- queries
@@ -54,9 +54,9 @@ class GroupsService(BaseService):
                 .join(Teacher, Group.teacher_id == Teacher.id)
                 .filter(Group.teacher_id == self.user.teacher_id)
             )
-        mine = self._class_id()
+        mine = self._class_ids()
         query = self.db.query(Group).join(Teacher, Group.teacher_id == Teacher.id)
-        return query if mine is None else query.filter(Teacher.class_id == mine)
+        return query if mine is None else query.filter(Teacher.class_id.in_(mine))
 
     # ------------------------------------------------------------------ read
     def list(
@@ -213,8 +213,8 @@ class GroupsService(BaseService):
         return {"created": created, "failed": failed}
 
     # -------------------------------------------------------------- internals
-    def _class_id(self) -> int | None:
-        return my_class_id(self.db, self.user)
+    def _class_ids(self) -> list[int] | None:
+        return my_class_ids(self.db, self.user)
 
     def _group_boy_ids(self) -> list[int]:
         return [

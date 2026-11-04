@@ -7,7 +7,12 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Query
 
 from app.core.data.base import BaseService
-from app.core.data.common import apply_update, commit, my_class_id
+from app.core.data.common import (
+    apply_update,
+    commit,
+    is_unrestricted,
+    owner_class_id,
+)
 from app.models.enums import RoleEnum
 from app.models.school_class import SchoolClass
 from app.models.task import Task
@@ -19,10 +24,12 @@ class TaskService(BaseService):
 
     القراءة:
       - الخادم / أمين الفصل: مسابقات فصله.
+      - أمين المرحلة: مسابقات فصوله.
       - أمين الكنيسة (سوبر أدمن): كل الفصول، ويرشّح فصل بعينه بـ ``class_id``.
 
     الكتابة (create / edit / delete):
       - أمين الفصل عليه في فصله فقط (يُفرض ``class_id``).
+      - أمين المرحلة: أي فصل من فصوله.
       - الأدمن العام يختار أي فصل.
       - الخادم والولد مرفوضان: الخادم يسجل التسميع، ما يفتحش مسابقة.
     """
@@ -63,7 +70,7 @@ class TaskService(BaseService):
 
         # أمين الفصل: تُفرض المسابقة على فصله وحده
         if self.user.role == RoleEnum.ADMIN:
-            my_class = my_class_id(self.db, self.user)
+            my_class = owner_class_id(self.db, self.user)
             if my_class is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -72,7 +79,10 @@ class TaskService(BaseService):
             effective_class_id = my_class
         else:
             # الأدمن العام: يحتفظ بالفصل الذي أرسله
+            # أمين المرحلة: نفس الفصل، بشرط ما يكونش خارج فصوله
             effective_class_id = data.class_id
+            if not is_unrestricted(self.user):
+                self.ensure_class(effective_class_id)
 
         self._ensure_class(effective_class_id)
         self._ensure_no_duplicate(data.task_name.strip(), effective_class_id)
@@ -103,6 +113,9 @@ class TaskService(BaseService):
                 )
         elif data.class_id is not None:
             self._ensure_class(data.class_id)
+            # أمين المرحلة ما ينقلش مسابقة لفصل خارج فصوله
+            if not is_unrestricted(self.user):
+                self.ensure_class(data.class_id)
 
         # لو الاسم أو الفصل اتغيّر، اتأكد إن مفيش مسابقة تانية بنفس الاسم في نفس الفصل
         if (new_name, new_class_id) != (task.task_name, task.class_id):

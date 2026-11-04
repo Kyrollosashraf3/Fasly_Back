@@ -50,6 +50,7 @@ from app.schemas.teacher_check import (
     TeacherCheckUpdate,
 )
 from app.schemas.user import (
+    ManagedClassesUpdate,
     SignupCheckRequest,
     SignupCheckResponse,
     SignupRequest,
@@ -95,6 +96,7 @@ __all__ = [
     "BoyTripSummary",
     "BoyTripTotal",
     "UserCreate",
+    "ManagedClassesUpdate",
     "UserImportRow",
     "UserUpdate",
     "UserResponse",

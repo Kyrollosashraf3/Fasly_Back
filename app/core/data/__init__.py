@@ -27,9 +27,11 @@ from app.core.data.common import (
     ensure_roles,
     ensure_teacher_access,
     get_or_404,
-    my_class_id,
+    is_unrestricted,
+    my_class_ids,
     normalise_name,
     normalise_phone,
+    owner_class_id,
 )
 from app.core.data.follow_ups import FollowUpService
 from app.core.data.groups import GroupsService
@@ -77,7 +79,9 @@ __all__ = [
     "ensure_roles",
     "ensure_teacher_access",
     "get_or_404",
-    "my_class_id",
+    "is_unrestricted",
+    "my_class_ids",
     "normalise_name",
     "normalise_phone",
+    "owner_class_id",
 ]

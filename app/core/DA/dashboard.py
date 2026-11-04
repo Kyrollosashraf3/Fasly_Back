@@ -23,7 +23,7 @@ from app.core.data.common import (
     ensure_roles,
     get_or_404,
     is_past_friday,
-    my_class_id,
+    my_class_ids,
     scope_boys,
     scope_checks,
     scope_follow_ups,
@@ -194,13 +194,14 @@ class DashboardService(BaseService):
     def _classes(self):
         """The class catalogue this login may see.
 
-        A class amin is pinned to his own class; a super admin sees every class.
+        A class amin is pinned to his own class, a stage amin to the classes
+        assigned to him, and a super admin sees every class.
         The filter is on ``SchoolClass.id`` (its own PK) - there is no
         ``classes.class_id`` column.
         """
         query = self.db.query(SchoolClass)
-        class_id = my_class_id(self.db, self.user)
-        return query if class_id is None else query.filter(SchoolClass.id == class_id)
+        class_ids = my_class_ids(self.db, self.user)
+        return query if class_ids is None else query.filter(SchoolClass.id.in_(class_ids))
 
     def _class_labels(self) -> dict[int, str]:
         return {row.id: row.name for row in self._classes()}

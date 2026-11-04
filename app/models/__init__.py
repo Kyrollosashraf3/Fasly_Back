@@ -3,6 +3,7 @@
 from app.models.attend import Attend
 from app.models.boy import Boy
 from app.models.follow_up import FollowUp
+from app.models.general_admin_class import GeneralAdminClass
 from app.models.group import Group
 from app.models.notification_inbox import NotificationInbox
 from app.models.notification_log import NotificationLog
@@ -22,6 +23,7 @@ __all__ = [
     "Teacher",
     "Boy",
     "Group",
+    "GeneralAdminClass",
     "Attend",
     "FollowUp",
     "TeacherCheck",

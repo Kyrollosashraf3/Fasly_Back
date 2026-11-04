@@ -27,7 +27,7 @@ from fastapi import HTTPException
 from app.core.DA.dashboard import _season_start
 from app.core.data.base import BaseService
 from app.core.data.common import (
-    my_class_id,
+    my_class_ids,
     scope_boys,
     scope_checks,
     scope_follow_ups,
@@ -80,10 +80,10 @@ class FollowUpPerformanceService(BaseService):
 
     # ----------------------------------------------------------------- scope
     def _classes(self):
-        """The class catalogue this login may see (a class amin: his own)."""
+        """The class catalogue this login may see (an amin: his own classes)."""
         query = self.db.query(SchoolClass)
-        class_id = my_class_id(self.db, self.user)
-        return query if class_id is None else query.filter(SchoolClass.id == class_id)
+        class_ids = my_class_ids(self.db, self.user)
+        return query if class_ids is None else query.filter(SchoolClass.id.in_(class_ids))
 
     def _scope_classes(self, class_id: int | None) -> list[int]:
         if class_id is not None:

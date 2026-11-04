@@ -39,6 +39,7 @@ from app.core.data import (
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.user import (
+    ManagedClassesUpdate,
     SignupCheckRequest,
     SignupCheckResponse,
     SignupRequest,
@@ -117,6 +118,24 @@ def list_users(
     return UserService(db, current_user).list_users()
 
 
+@router.post(
+    "/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
+def create_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Register a login: the number only - the owner picks his password then.
+
+    ``/auth/register`` stays retired; the screen talks to ``/auth/users`` like
+    every other directory. The service decides who may create what (a class
+    amin only accounts of his classes, a stage-amin or super-admin role only
+    the church-wide amin) and raises its own 403.
+    """
+    return UserService(db, current_user).create_user(user_in)
+
+
 
 
 
@@ -130,6 +149,16 @@ def register_user(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Not found.",
     )
+
+@router.put("/users/{user_id}/classes", response_model=UserResponse)
+def set_user_classes(
+    user_id: int,
+    payload: ManagedClassesUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """The classes a stage amin is answerable for - the whole list, every time."""
+    return UserService(db, current_user).set_managed_classes(user_id, payload.class_ids)
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)

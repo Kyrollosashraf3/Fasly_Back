@@ -89,3 +89,25 @@ teacher: يشوف نفسه من الخدام فقط   -و يشوف كل ولاد
 E:\AI_projects\Fasly\back_fasly\app\models
 
 ------------
+
+
+
+ALTER TYPE roleenum ADD VALUE IF NOT EXISTS 'general_admin';
+
+SELECT
+    t.typname AS enum_name,
+    e.enumlabel AS enum_value
+FROM pg_type t
+JOIN pg_enum e ON t.oid = e.enumtypid
+ORDER BY t.typname, e.enumsortorder;
+
+
+====================
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_role_owner;
+ALTER TABLE users ADD CONSTRAINT ck_users_role_owner CHECK (
+  (role IN ('teacher', 'admin') AND teacher_id IS NOT NULL AND boy_id IS NULL)
+  OR (role = 'user'             AND boy_id     IS NOT NULL AND teacher_id IS NULL)
+  OR (role = 'general_admin'    AND teacher_id IS NOT NULL AND boy_id IS NULL)
+  OR (role = 'super_admin'      AND boy_id IS NULL)
+);

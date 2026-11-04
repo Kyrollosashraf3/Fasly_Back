@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.core.data.base import WeeklySheetService
 from app.core.data.common import (
+    STAFF,
     commit,
     ensure_boy_access,
     ensure_roles,
@@ -11,7 +12,6 @@ from app.core.data.common import (
 )
 from app.models.attend import Attend
 from app.models.boy import Boy
-from app.models.enums import RoleEnum
 from app.schemas.attend import AttendBulkCreate, AttendCreate, AttendUpdate
 
 
@@ -39,7 +39,7 @@ class AttendanceService(WeeklySheetService):
         ensure_boy_access(self.db, self.user, boy)
 
     def can_write(self, boy: Boy) -> None:
-        ensure_roles(self.user, RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER)
+        ensure_roles(self.user, *STAFF)
         ensure_boy_access(self.db, self.user, boy)
 
     # route-facing signatures, kept explicit for the type hints

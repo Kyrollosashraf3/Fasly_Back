@@ -14,12 +14,12 @@ limiter = Limiter(key_func=get_remote_address)
 
 # --- Login limits -----------------------------------------------------
 # Per-IP: max attempts on the login endpoint from one client address.
-LOGIN_IP_LIMIT = "5 per minute"
+LOGIN_IP_LIMIT = "20 per minute"
 # Per-account: max attempts targeting a single phone number, regardless of
 # source IP. This is the "account lockout" layer that stops a distributed
 # brute-force against one account, while the per-IP layer already throttles a
 # single host.
-LOGIN_ACCOUNT_LIMIT = "10 per hour"
+LOGIN_ACCOUNT_LIMIT = "2000 per hour"
 
 # --- Signup limits ---------------------------------------------------
 # The public signup endpoints only exist to check / set a password on an

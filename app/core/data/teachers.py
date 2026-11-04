@@ -69,7 +69,17 @@ class TeacherService(BaseService):
         from app.models.user import User
 
         self.ensure_manager()
-        self.ensure_class(data.class_id)
+        if data.class_id is None:
+            # «بدون فصل» = خادم لسه مالوش فصل: اللي هيبقى أمين مرحلة (أدوار
+            # عامة) أو أمين الكنيسة. ده قرار الأدمن العام وحده - باقي الأمينات
+            # مقيدين بفصلهم فلازم يختاروا واحد من فصولهم.
+            if self.user.role != RoleEnum.SUPER_ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="اختار فصل للخادم - الإضافة من غير فصل مسموحة للأدمن العام فقط.",
+                )
+        else:
+            self.ensure_class(data.class_id)
         teacher_name = data.teacher_name.strip()
         self._ensure_name_free(teacher_name, data.class_id)
 

@@ -25,9 +25,10 @@ from app.core.data.common import (
 )
 from app.models.boy import Boy
 from app.models.enums import RoleEnum
+from app.models.general_admin_class import GeneralAdminClass
+from app.models.school_class import SchoolClass
 from app.models.teacher import Teacher
 from app.models.user import User
-from app.models.teacher import Teacher
 from app.schemas.user import (
     UserCreate,
     UserImportRow,
@@ -74,6 +75,16 @@ class UserService(BaseService):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the super admin can create a super admin account.",
             )
+        if data.role == RoleEnum.GENERAL_ADMIN and self.user.role != RoleEnum.SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the super admin can create a stage amin account.",
+            )
+        if data.role == RoleEnum.GENERAL_ADMIN and not data.teacher_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A stage amin must link a servant - his classes hang off that row.",
+            )
         self._ensure_owner_in_scope(data.teacher_id, data.boy_id)
         ensure_unique(self.db, User, "phone", data.phone, label="Account")
         self._ensure_owner_free(data.teacher_id, data.boy_id)
@@ -87,7 +98,50 @@ class UserService(BaseService):
             boy_id=data.boy_id,
         )
         self.db.add(user)
+        if data.role == RoleEnum.GENERAL_ADMIN:
+            self.assign_classes(user, data.class_ids)
         commit(self.db, f"User create phone={data.phone} role={data.role.value}")
+        return user
+
+    def assign_classes(self, user: User, class_ids: list[int]) -> None:
+        """Replace the classes this stage amin's servant row answers for.
+
+        Only the church-wide amin may hand out a group of classes - otherwise a
+        stage amin could widen his own scope. The rows are written through the
+        session, not committed here, so an account and its classes land together.
+        """
+        if self.user.role != RoleEnum.SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the super admin can choose a stage amin's classes.",
+            )
+        if user.teacher_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Link the stage amin to a servant before choosing his classes.",
+            )
+        wanted = list(dict.fromkeys(int(class_id) for class_id in class_ids))
+        for class_id in wanted:
+            get_or_404(self.db, SchoolClass, class_id, "Class")
+        teacher = self.db.get(Teacher, user.teacher_id)
+        # Reconciled, not replaced: writing the whole list again would insert a
+        # class the servant already owns and hit the unique (teacher, class) index.
+        owned = {link.class_id for link in teacher.managed_classes}
+        for link in [row for row in teacher.managed_classes if row.class_id not in wanted]:
+            teacher.managed_classes.remove(link)
+        for class_id in [row for row in wanted if row not in owned]:
+            teacher.managed_classes.append(GeneralAdminClass(class_id=class_id))
+
+    def set_managed_classes(self, user_id: int, class_ids: list[int]) -> User:
+        """``PUT /auth/users/{id}/classes`` - the stage amin's whole class list."""
+        user = self.get_user(user_id)
+        if user.role != RoleEnum.GENERAL_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Account {user_id} is not a stage amin.",
+            )
+        self.assign_classes(user, class_ids)
+        commit(self.db, f"Stage amin id={user_id} classes={len(class_ids)}")
         return user
 
     def update_user(self, user_id: int, data: UserUpdate) -> User:
@@ -111,8 +165,16 @@ class UserService(BaseService):
             user.phone = fields["phone"]
         if "role" in fields:
             user.role = fields["role"]
-        if "teacher_id" in fields:
+            if user.role != RoleEnum.GENERAL_ADMIN and user.teacher is not None:
+                # Nobody owns a group of classes outside the stage-amin role.
+                user.teacher.managed_classes = []
+        if "teacher_id" in fields and fields["teacher_id"] != user.teacher_id:
+            old_teacher = user.teacher
             user.teacher_id = fields["teacher_id"]
+            if old_teacher is not None:
+                # The group follows the servant, so relinking leaves the row he
+                # gave up with no scope waiting behind it.
+                old_teacher.managed_classes = []
         if "boy_id" in fields:
             user.boy_id = fields["boy_id"]
         if password:
@@ -177,6 +239,17 @@ class UserService(BaseService):
         boy_id = fields.get("boy_id", user.boy_id)
 
         if role == RoleEnum.SUPER_ADMIN and self.user.role != RoleEnum.SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the super admin can grant that role.",
+            )
+        if (
+            role == RoleEnum.GENERAL_ADMIN
+            and role != user.role
+            and self.user.role != RoleEnum.SUPER_ADMIN
+        ):
+            # A stage amin must not be granted - or widened - by a class amin,
+            # and he must not hand the role to anybody himself.
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the super admin can grant that role.",

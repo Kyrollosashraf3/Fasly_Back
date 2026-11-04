@@ -14,7 +14,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import get_logger
-from app.core.data.common import MANAGERS, ensure_manager, my_class_id
+from app.core.data.common import (
+    MANAGERS,
+    ensure_manager,
+    ensure_my_class,
+    is_unrestricted,
+    my_class_ids,
+    owner_class_id,
+)
 from app.core.notifications.sender import MAX_FAILS, deliver
 from app.core.notifications.vapid import push_enabled
 from app.models.enums import RoleEnum
@@ -27,9 +34,10 @@ from app.schemas.notification import SendCreate, SubscriptionCreate
 
 logger = get_logger(__name__)
 
-#: Anyone whose phone should ring: a servant or a class amin. The church-wide
-#: amin is left out on purpose - he writes the messages, he is not notified.
-RECIPIENT_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN)
+#: Anyone whose phone should ring: a servant, a class amin or a stage amin. The
+#: church-wide amin is left out on purpose - he writes the messages, he is not
+#: notified.
+RECIPIENT_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN)
 
 #: Where a tap lands when a message carries no link of its own.
 DEFAULT_LINK = "#/"
@@ -172,20 +180,56 @@ class NotificationService:
 
     # ---------------------------------------------------------------- audience
 
-    def audience_class_id(self, requested: int | None) -> int | None:
-        """The class this send may target - pinned to his own for a class amin.
+    def audience_class_id(
+        self, requested: int | None, *, named_servants: bool = False
+    ) -> int | None:
+        """The class this send may target - the body of a request can never
+        widen who receives it.
 
-        A class amin asking for ``None`` (every class) gets his class anyway:
-        the body of his request cannot widen his reach.
+        A class amin asking for ``None`` (every class) gets his class anyway. A
+        stage amin keeps his choice but must stay inside his own group: one
+        message is logged against one class, so he sends class by class. He is
+        only allowed to ask for all of them when he names the servants who should
+        hear it - then the named list, not the class, is the audience.
         """
         if self.user.role == RoleEnum.SUPER_ADMIN:
             return requested
 
         ensure_manager(self.user)
-        mine = my_class_id(self.db, self.user)
+        if self.user.role == RoleEnum.GENERAL_ADMIN:
+            if requested is None:
+                if not named_servants:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="اختار الفصل اللي هتبعت له - رسالة واحدة لكل فصل.",
+                    )
+                return None
+            ensure_my_class(self.db, self.user, requested)
+            return requested
+
+        mine = owner_class_id(self.db, self.user)
         if mine is None:
             logger.warning("amin user=%s has no class; sending to none", self.user.id)
         return mine
+
+    def audience_class_ids(self, requested: int | None) -> list[int] | None:
+        """The classes a status question may cover (``None`` = church-wide).
+
+        The counts on the send screen are read-only, so a stage amin may add up
+        his whole group instead of picking one class - a send still needs the pick.
+        """
+        if self.user.role == RoleEnum.SUPER_ADMIN:
+            return None if requested is None else [requested]
+
+        ensure_manager(self.user)
+        if self.user.role == RoleEnum.GENERAL_ADMIN:
+            if requested is not None:
+                ensure_my_class(self.db, self.user, requested)
+                return [requested]
+            return list(self.user.managed_class_ids)
+
+        single = owner_class_id(self.db, self.user)
+        return [] if single is None else [single]
 
     def audience_teacher_ids(
         self, requested: list[int] | None, class_id: int | None
@@ -207,6 +251,14 @@ class NotificationService:
             query = query.filter(Teacher.class_id == class_id)
         allowed = {teacher_id for (teacher_id,) in query.all()}
         missing = [teacher_id for teacher_id in wanted if teacher_id not in allowed]
+        if not is_unrestricted(self.user):
+            # Naming servants needs its own check: a stage amin may only name
+            # servants of the classes he answers for.
+            reachable = my_class_ids(self.db, self.user) or []
+            outside = self.db.query(Teacher.id).filter(
+                Teacher.id.in_(wanted), Teacher.class_id.notin_(reachable)
+            ).all()
+            missing.extend(teacher_id for (teacher_id,) in outside)
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -240,9 +292,13 @@ class NotificationService:
             "staff": 0,
         }
         if self.user.role in MANAGERS:
-            mine = self.audience_class_id(requested_class_id)
-            out["devices"] = len(self.devices(mine))
-            out["staff"] = self.count_staff(mine)
+            targets = self.audience_class_ids(requested_class_id)
+            if targets is None:
+                out["devices"] = len(self.devices(None))
+                out["staff"] = self.count_staff(None)
+            else:
+                out["devices"] = sum(len(self.devices(class_id)) for class_id in targets)
+                out["staff"] = sum(self.count_staff(class_id) for class_id in targets)
         return out
 
     # -------------------------------------------------------------------- send
@@ -257,7 +313,9 @@ class NotificationService:
         back into this row. The bell rows are written here, in the request, so
         a message is readable in the app even if no phone answers.
         """
-        class_id = self.audience_class_id(data.class_id)
+        class_id = self.audience_class_id(
+            data.class_id, named_servants=bool(data.teacher_ids)
+        )
         teacher_ids = self.audience_teacher_ids(data.teacher_ids, class_id)
         devices = self.devices(class_id, teacher_ids)
         users = recipient_users(self.db, class_id, teacher_ids)
@@ -305,9 +363,9 @@ class NotificationService:
     def history(self, limit: int = 50) -> list[NotificationLog]:
         query = self.db.query(NotificationLog).order_by(NotificationLog.id.desc())
         if self.user.role != RoleEnum.SUPER_ADMIN:
-            mine = my_class_id(self.db, self.user)
+            mine = my_class_ids(self.db, self.user) or []
             query = query.filter(
-                (NotificationLog.class_id == mine)
+                NotificationLog.class_id.in_(mine)
                 | (NotificationLog.sender_id == self.user.id)
             )
         return query.limit(limit).all()

@@ -7,6 +7,7 @@ from app.schemas.base import ORMResponse
 
 PHONE_PATTERN = r"^01[0-9]{9}$"
 
+
 _TEACHER_ROLES = (RoleEnum.TEACHER, RoleEnum.ADMIN)
 
 # Roles the Excel import may grant. super_admin is included on purpose:
@@ -30,6 +31,13 @@ def check_owner(role: RoleEnum, teacher_id: int | None, boy_id: int | None) -> N
             raise ValueError(f"role '{role.value}' requires boy_id")
         if teacher_id is not None:
             raise ValueError(f"role '{role.value}' must not set teacher_id")
+    elif role == RoleEnum.GENERAL_ADMIN:
+        # A stage amin IS a servant: the classes he answers for are rows of his
+        # teacher record, so the link is what makes the role meaningful.
+        if teacher_id is None:
+            raise ValueError("role 'general_admin' requires teacher_id")
+        if boy_id is not None:
+            raise ValueError("role 'general_admin' must not set boy_id")
     else:  # SUPER_ADMIN may carry a teacher (his name) but never a boy
         if boy_id is not None:
             raise ValueError("role 'super_admin' must not set boy_id")
@@ -67,6 +75,10 @@ class UserCreate(BaseModel):
     boy_id: int | None = Field(
         None, description="Set for role=user - the boy this login belongs to"
     )
+    class_ids: list[int] = Field(
+        default_factory=list,
+        description="Set for role=general_admin - the classes he is answerable for",
+    )
 
     @field_validator("phone", mode="before")
     @classmethod
@@ -77,6 +89,12 @@ class UserCreate(BaseModel):
     def _check_owner(self) -> "UserCreate":
         check_owner(self.role, self.teacher_id, self.boy_id)
         return self
+
+
+class ManagedClassesUpdate(BaseModel):
+    """The whole class list of a stage amin - sent again on every change."""
+
+    class_ids: list[int] = Field(default_factory=list)
 
 
 class UserUpdate(BaseModel):
@@ -210,6 +228,9 @@ class UserResponse(ORMResponse):
     display_name: str | None = None
     # True while password_hash is still NULL (signup not finished)
     pending_signup: bool = False
+    # the classes a stage amin answers for (empty for every other role) -
+    # resolved from User.managed_class_ids, so /auth/me carries his scope
+    managed_class_ids: list[int] = []
 
 
 class Token(BaseModel):

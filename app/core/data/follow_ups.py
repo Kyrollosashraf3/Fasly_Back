@@ -8,6 +8,7 @@ from sqlalchemy.orm import Query
 
 from app.core.data.base import BaseService
 from app.core.data.common import (
+    STAFF,
     apply_update,
     commit,
     ensure_boy_access,
@@ -66,7 +67,7 @@ class FollowUpService(BaseService):
 
     # ----------------------------------------------------------------- write
     def create(self, data: FollowUpCreate) -> FollowUp:
-        ensure_roles(self.user, RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER)
+        ensure_roles(self.user, *STAFF)
         teacher = self._resolve_servant(data.teacher_id)
         boy = self._resolve_boy(data.boy_id)
         if self.user.role == RoleEnum.TEACHER and teacher.id != self.user.teacher_id:
@@ -118,7 +119,7 @@ class FollowUpService(BaseService):
         return boy
 
     def _ensure_may_edit(self, record: FollowUp) -> None:
-        ensure_roles(self.user, RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER)
+        ensure_roles(self.user, *STAFF)
         if self.user.role == RoleEnum.TEACHER and record.teacher_id != self.user.teacher_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

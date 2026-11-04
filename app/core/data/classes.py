@@ -6,14 +6,15 @@ from sqlalchemy.orm import Query
 
 from app.core.data.base import BaseService
 from app.core.data.common import (
+    CLASS_KEEPERS,
     apply_update,
     commit,
+    ensure_roles,
     get_or_404,
-    my_class_id,
+    my_class_ids,
     normalise_name,
 )
 from app.models.boy import Boy
-from app.models.enums import RoleEnum
 from app.models.school_class import SchoolClass
 from app.models.teacher import Teacher
 from app.schemas.school_class import SchoolClassCreate, SchoolClassUpdate
@@ -21,7 +22,8 @@ from app.schemas.school_class import SchoolClassCreate, SchoolClassUpdate
 
 class ClassService(BaseService):
     """Reads are open to every login (a grade label leaks nothing); only the
-    class amin or the super admin may create / rename / retire a class.
+    class amin or the super admin may create / rename / retire a class - a
+    stage amin works the classes he was given.
     """
 
 
@@ -39,7 +41,7 @@ class ClassService(BaseService):
         return get_or_404(self.db, SchoolClass, class_id, "Class")
 
     def create(self, data: SchoolClassCreate) -> SchoolClass:
-        self.ensure_manager()
+        ensure_roles(self.user, *CLASS_KEEPERS)
         school_class = SchoolClass(
             name=data.name.strip(), academic_year=data.academic_year
         )
@@ -49,14 +51,14 @@ class ClassService(BaseService):
 
     def update(self, class_id: int, data: SchoolClassUpdate) -> SchoolClass:
         school_class = self.get(class_id)
-        self.ensure_manager()
+        ensure_roles(self.user, *CLASS_KEEPERS)
         apply_update(school_class, data, strip=("name",))
         commit(self.db, f"Class update id={class_id}")
         return school_class
 
     def delete(self, class_id: int) -> None:
         school_class = self.get(class_id)
-        self.ensure_manager()
+        ensure_roles(self.user, *CLASS_KEEPERS)
         # A class still holding servants or boys is refused by the RESTRICT
         # foreign keys; this message says why before the driver does.
         occupied = (
@@ -78,12 +80,12 @@ class ClassService(BaseService):
         column can become a ``class_id``.
 
         Only the classes this login may *write into* are offered (super admin:
-        every class, amin: his own), so an import can never point at a class
+        every class, an amin: his own), so an import can never point at a class
         the caller is not allowed to fill.
         """
-        mine = my_class_id(self.db, self.user)
+        mine = my_class_ids(self.db, self.user)
         return {
             normalise_name(row.name): row.id
             for row in self.list()
-            if mine is None or row.id == mine
+            if mine is None or row.id in mine
         }

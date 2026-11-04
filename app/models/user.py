@@ -20,7 +20,7 @@ class User(Base):
     """    Login accounts *only*: phone + password + role.
 
     The phone number is the only handle: an administrator registers the
-    number (``POST /auth/register`` or the Excel import) and the owner picks
+    number (``POST /auth/users`` or the Excel import) and the owner picks
     his password himself from the signup screen. ``password_hash`` is NULL
     until then.
 
@@ -29,6 +29,9 @@ class User(Base):
 
         role=teacher | role=admin -> teacher_id   (class comes from teacher)
         role=user                 -> boy_id       (class comes from boy)
+        role=general_admin          -> teacher_id   + that servant's classes
+                                     (REQUIRED - the group lives in
+                                     ``general_admin_classes.teacher_id``)
         role=super_admin          -> teacher_id optional, boy_id never
                                      (sees every class; teacher gives a name)
     """
@@ -38,6 +41,7 @@ class User(Base):
         CheckConstraint(
             "(role IN ('teacher', 'admin') AND teacher_id IS NOT NULL AND boy_id IS NULL)"
             " OR (role = 'user' AND boy_id IS NOT NULL AND teacher_id IS NULL)"
+            " OR (role = 'general_admin' AND teacher_id IS NOT NULL AND boy_id IS NULL)"
             " OR (role = 'super_admin' AND boy_id IS NULL)",
             name="ck_users_role_owner",
         ),
@@ -88,6 +92,17 @@ class User(Base):
     follow_ups = relationship("FollowUp", back_populates="recorder")
     trips = relationship("Trip", back_populates="recorder")
     subscriptions = relationship("Subscription", back_populates="creator")
+
+    @property
+    def managed_class_ids(self) -> list[int]:
+        """The classes a stage amin answers for - empty for every other role.
+
+        The rows hang off the linked servant, not off this login, so an
+        unlinked account simply has none.
+        """
+        if self.teacher is None:
+            return []
+        return sorted(link.class_id for link in self.teacher.managed_classes)
 
     @property
     def display_name(self) -> str | None:

@@ -22,7 +22,12 @@ class TeacherCreate(BaseModel):
     address: str | None = None
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
-    class_id: int = Field(..., description="His class - FK classes.id")
+    class_id: int | None = Field(
+        None,
+        description="His class - FK classes.id. NULL is allowed only for the "
+        "church-wide amin: a servant who will hold a general role "
+        "(stage amin / super admin) has no single class yet.",
+    )
     father_name: FatherEnum | None = None
     # Free text too - when «أخرى» is picked, the typed skill lives in here.
     skills: list[str] | None = None

@@ -86,6 +86,9 @@ class Teacher(Base):
     follow_ups = relationship("FollowUp", back_populates="teacher")
     teacher_checks = relationship("TeacherCheck", back_populates="teacher")
     task_values = relationship("TaskValue", back_populates="teacher")
+    managed_classes = relationship(
+        "GeneralAdminClass", back_populates="teacher", cascade="all, delete-orphan"
+    )
 
     @property
     def age(self) -> int | None:

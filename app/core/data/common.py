@@ -5,22 +5,24 @@ service just calls the check it needs at the top of a method.
 
 The whole model in one sentence
 -------------------------------
-**A login is attached to exactly one class.** ``users`` stores no class - a
+**A login belongs to a set of classes.** ``users`` stores no class - a
 servant carries it on ``teachers`` and a boy on ``boys`` - so "may this login
-see that row?" is almost always "is that row's class mine?".
+see that row?" is almost always "is that row's class one of mine?". A stage
+amin (``general_admin``) is the one login whose set is written down for him, in
+``general_admin_classes`` - rows of the servant he is linked to.
 
-============  ==============  =============  ==================
-operation     super_admin     admin          teacher
-============  ==============  =============  ==================
-classes       all             own class      read the list
-boys          all             own class      own class, **write**
-servants      all             own class      himself only
-attendance    all             own class      own class
-follow_ups    all             own class      his own rows
-teacher_checks all            own class      his own rows
-groups        all             own class      his own group
-accounts      all             own class      himself only
-============  ==============  =============  ==================
+============  ==============  =============  ================  ==================
+operation     super_admin     general_admin  admin             teacher
+============  ==============  =============  ================  ==================
+classes       all             his own group  own class         read the list
+boys          all             his own group  own class         own class, **write**
+servants      all             his own group  own class         himself only
+attendance    all             his own group  own class         own class
+follow_ups    all             his own group  own class         his own rows
+teacher_checks all            his own group  own class         his own rows
+groups        all             his own group  own class         his own group
+accounts      all             his own group  own class         himself only
+============  ==============  =============  ================  ==================
 
 A ``user`` (boy) login is the exception: it only ever sees its own rows.
 
@@ -51,33 +53,38 @@ from app.models.user import User
 logger = get_logger(__name__)
 
 #: Roles allowed to write the directories (classes, servants, accounts, groups)
-#: and to run the servant review.
-MANAGERS = (RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN)
+#: and to run the servant review. Each one is limited to his own class set.
+MANAGERS = (RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.SUPER_ADMIN)
 
 #: Every login except a boy's - i.e. everyone attached to a class.
-STAFF = (RoleEnum.TEACHER, RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN)
+STAFF = (RoleEnum.TEACHER, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.SUPER_ADMIN)
 
 #: Roles allowed to review servants (a boy has no business on that page).
-REVIEWERS = (RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN, RoleEnum.TEACHER)
+REVIEWERS = (RoleEnum.TEACHER, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.SUPER_ADMIN)
+
+#: Roles that may create / rename / retire a class. A stage amin is deliberately
+#: left out: he is answerable for classes that already exist, he does not
+#: invent them.
+CLASS_KEEPERS = (RoleEnum.ADMIN, RoleEnum.SUPER_ADMIN)
 
 
 # ============================================================== who am I
 
 
 def is_manager(user: User) -> bool:
-    """Class amin or church-wide amin."""
+    """Class amin, stage amin or church-wide amin."""
     return user.role in MANAGERS
 
 
-def my_class_id(db: Session, user: User) -> int | None:
-    """The one class this login belongs to; ``None`` means unrestricted.
+def owner_class_id(db: Session, user: User) -> int | None:
+    """The class sitting behind this login's owner row, if it has one.
 
-    Only the super admin is unrestricted. The value is resolved through the
-    owner link (``users.teacher_id`` or ``users.boy_id``) and cached by the
-    SQLAlchemy identity map, so asking twice costs nothing.
+    ``users.teacher_id`` -> ``teachers.class_id``, ``users.boy_id`` ->
+    ``boys.class_id``. It answers "whose class is this row?", never "which
+    classes may he see": a stage amin is not pinned to his servant row's class
+    and the church-wide amin has no owner row at all - ask
+    :func:`my_class_ids` for the scope.
     """
-    if user.role == RoleEnum.SUPER_ADMIN:
-        return None
     if user.teacher_id is not None:
         teacher = db.get(Teacher, user.teacher_id)
         return teacher.class_id if teacher is not None else None
@@ -85,6 +92,27 @@ def my_class_id(db: Session, user: User) -> int | None:
         boy = db.get(Boy, user.boy_id)
         return boy.class_id if boy is not None else None
     return None
+
+
+def my_class_ids(db: Session, user: User) -> list[int] | None:
+    """Every class this login belongs to; ``None`` means unrestricted.
+
+    Only the church-wide amin is unrestricted. A stage amin is **not**: his set is
+    read from his servant row's ``general_admin_classes``, and an empty set - or no
+    servant linked at all - means he sees nothing until a class is assigned, so an
+    unassigned stage amin can never be mistaken for the church-wide one.
+    """
+    if user.role == RoleEnum.SUPER_ADMIN:
+        return None
+    if user.role == RoleEnum.GENERAL_ADMIN:
+        return list(user.managed_class_ids)
+    single = owner_class_id(db, user)
+    return [] if single is None else [single]
+
+
+def is_unrestricted(user: User) -> bool:
+    """True only for the church-wide login - the one scope with no classes."""
+    return user.role == RoleEnum.SUPER_ADMIN
 
 
 # ================================================================= guards
@@ -101,9 +129,9 @@ def ensure_roles(user: User, *roles: RoleEnum) -> None:
 
 
 def ensure_manager(user: User) -> None:
-    """403 unless the login is a class amin or the church-wide amin."""
+    """403 unless the login is any kind of amin."""
     if user.role not in MANAGERS:
-        deny("Only the class amin or the super admin can do that.")
+        deny("Only an amin can do that.")
 
 
 def ensure_staff(user: User) -> None:
@@ -113,11 +141,11 @@ def ensure_staff(user: User) -> None:
 
 
 def ensure_my_class(db: Session, user: User, class_id: int | None) -> None:
-    """403 unless ``class_id`` is the login's own class (super admin passes)."""
-    mine = my_class_id(db, user)
+    """403 unless ``class_id`` is one of the login's classes (super admin passes)."""
+    mine = my_class_ids(db, user)
     if mine is None:  # super admin
         return
-    if class_id is None or class_id != mine:
+    if class_id is None or class_id not in mine:
         deny("You do not have access to that class.")
 
 
@@ -152,9 +180,9 @@ def ensure_teacher_access(db: Session, user: User, teacher: Teacher) -> None:
 
 
 def scope_classes(db: Session, query: Query, model, user: User) -> Query:
-    """Keep only rows of the login's own class (super admin keeps everything)."""
-    class_id = my_class_id(db, user)
-    return query if class_id is None else query.filter(model.class_id == class_id)
+    """Keep only rows of the login's own classes (super admin keeps everything)."""
+    class_ids = my_class_ids(db, user)
+    return query if class_ids is None else query.filter(model.class_id.in_(class_ids))
 
 
 def scope_boys(db: Session, query: Query, model, user: User, boy_column) -> Query:
@@ -170,20 +198,20 @@ def scope_boys(db: Session, query: Query, model, user: User, boy_column) -> Quer
 
 
 def scope_teachers(db: Session, query: Query, user: User) -> Query:
-    """Servants this login may see: a servant only himself, staff his class."""
+    """Servants this login may see: a servant only himself, staff his classes."""
     ensure_staff(user)
     if user.role == RoleEnum.SUPER_ADMIN:
         return query
     if user.role == RoleEnum.TEACHER:
         return query.filter(Teacher.id == user.teacher_id)
-    return query.filter(Teacher.class_id == my_class_id(db, user))
+    return query.filter(Teacher.class_id.in_(my_class_ids(db, user) or []))
 
 
 def scope_follow_ups(db: Session, query: Query, user: User) -> Query:
     """Follow-up rows this login may see.
 
     A boy sees the calls made about him, a servant only the ones he wrote,
-    an amin every row of his class.
+    an amin every row of his classes.
     """
     if user.role == RoleEnum.SUPER_ADMIN:
         return query
@@ -191,36 +219,40 @@ def scope_follow_ups(db: Session, query: Query, user: User) -> Query:
         return query.filter(FollowUp.teacher_id == user.teacher_id)
     if user.role == RoleEnum.USER:
         return query.filter(FollowUp.boy_id == user.boy_id)
-    return query.filter(FollowUp.class_id == my_class_id(db, user))
+    return query.filter(FollowUp.class_id.in_(my_class_ids(db, user) or []))
 
 
 def scope_checks(db: Session, query: Query, user: User) -> Query:
-    """Servant review rows: a servant his own reviews, staff their class."""
+    """Servant review rows: a servant his own reviews, staff their classes."""
     ensure_roles(user, *REVIEWERS)
     if user.role == RoleEnum.SUPER_ADMIN:
         return query
     if user.role == RoleEnum.TEACHER:
         return query.filter(TeacherCheck.teacher_id == user.teacher_id)
-    return query.filter(TeacherCheck.class_id == my_class_id(db, user))
+    return query.filter(TeacherCheck.class_id.in_(my_class_ids(db, user) or []))
 
 
 def scope_users(db: Session, query: Query, user: User) -> Query:
     """Accounts this login may see.
 
     super admin: every login.  servant / boy: only their own.
-    class amin: the accounts of the servants and boys of his class.
+    an amin: the accounts of the servants and boys of his classes.
     """
     if user.role == RoleEnum.SUPER_ADMIN:
         return query
     if user.role in (RoleEnum.TEACHER, RoleEnum.USER):
         return query.filter(User.id == user.id)
-    class_id = my_class_id(db, user)
+    class_ids = my_class_ids(db, user) or []
     teacher_ids = [
-        row[0] for row in db.query(Teacher.id).filter(Teacher.class_id == class_id)
+        row[0] for row in db.query(Teacher.id).filter(Teacher.class_id.in_(class_ids))
     ]
-    boy_ids = [row[0] for row in db.query(Boy.id).filter(Boy.class_id == class_id)]
+    boy_ids = [
+        row[0] for row in db.query(Boy.id).filter(Boy.class_id.in_(class_ids))
+    ]
+    # His own login always answers: a stage amin without a servant row would
+    # otherwise be locked out of his account (even his own password).
     return query.filter(
-        or_(User.teacher_id.in_(teacher_ids), User.boy_id.in_(boy_ids))
+        or_(User.id == user.id, User.teacher_id.in_(teacher_ids), User.boy_id.in_(boy_ids))
     )
 
 

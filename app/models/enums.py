@@ -7,12 +7,18 @@ class RoleEnum(str, Enum):
     USER        -> a boy in the service: his own data only.
     TEACHER     -> a servant: his own follow-ups and performance only - and he can add new boy or edit boys of his class - take attend for class.
     ADMIN       -> a class amin: the servants and boys of his class.
+    GENERAL_ADMIN
+                  -> a stage amin: the servants and boys of a group of classes
+                     (the group is written on his servant row in
+                     ``general_admin_classes``, so the classes follow him even
+                     if his login's phone changes).
     SUPER_ADMIN -> church-wide amin: every class, servants and boys.
     """
 
     USER = "user"
     TEACHER = "teacher"
     ADMIN = "admin"
+    GENERAL_ADMIN = "general_admin"
     SUPER_ADMIN = "super_admin"
 
 ROLE_ENUM_NAME = "role_enum"
