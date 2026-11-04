@@ -85,7 +85,13 @@ class FollowUpPerformanceService(BaseService):
         class_ids = my_class_ids(self.db, self.user)
         return query if class_ids is None else query.filter(SchoolClass.id.in_(class_ids))
 
-    def _scope_classes(self, class_id: int | None) -> list[int]:
+    def _scope_classes(
+        self, class_id: int | None = None, class_ids: list[int] | None = None
+    ) -> list[int]:
+        if class_ids:
+            for cid in class_ids:
+                self.ensure_class(cid)
+            return list(dict.fromkeys(class_ids))
         if class_id is not None:
             self.ensure_class(class_id)
             return [class_id]
@@ -227,6 +233,7 @@ class FollowUpPerformanceService(BaseService):
     def performance(
         self,
         class_id: int | None = None,
+        class_ids: list[int] | None = None,
         period: str = "month",
         teacher_id: int | None = None,
         boy_id: int | None = None,
@@ -234,7 +241,7 @@ class FollowUpPerformanceService(BaseService):
         if period not in PERIODS:
             period = "month"
 
-        classes = self._scope_classes(class_id)
+        classes = self._scope_classes(class_id, class_ids)
         class_set = set(classes)
         labels = self._class_labels()
         period_from, period_to = self._period_range(period)

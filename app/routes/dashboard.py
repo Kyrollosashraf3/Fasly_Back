@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
@@ -16,9 +16,23 @@ from app.routes.sheets import xlsx_response
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
+def _parse_class_ids(raw: str | None) -> list[int] | None:
+    """`class_ids=1,2,3` — the frontend sends one stage's classes as a list."""
+    if not raw or not raw.strip():
+        return None
+    try:
+        ids = [int(part) for part in raw.split(",") if part.strip()]
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="class_ids must be comma-separated integers."
+        )
+    return ids or None
+
+
 @router.get("/summary")
 def dashboard_summary(
     class_id: int | None = None,
+    class_ids: str | None = Query(default=None),
     streak_n: int = Query(default=4, ge=1, le=52),
     absent_n: int = Query(default=4, ge=0, le=52),
     top_n: int = Query(default=5, ge=1, le=50),
@@ -39,6 +53,7 @@ def dashboard_summary(
     ``date_mode``."""
     return DashboardService(db, current_user).summary(
         class_id=class_id,
+        class_ids=_parse_class_ids(class_ids),
         streak_n=streak_n,
         absent_n=absent_n,
         top_n=top_n,
@@ -109,6 +124,7 @@ def dashboard_today_check_export(
 @router.get("/teachers/export")
 def dashboard_teachers_export(
     class_id: int | None = None,
+    class_ids: str | None = Query(default=None),
     date_mode: str = Query(default="all", pattern="^(all|last_friday|season)$"),
     metric: str = Query(
         default="all",
@@ -123,7 +139,7 @@ def dashboard_teachers_export(
     from app.core.EDA.write_servants import build_servants_workbook
 
     summary = DashboardService(db, current_user).summary(
-        class_id=class_id, date_mode=date_mode
+        class_id=class_id, class_ids=_parse_class_ids(class_ids), date_mode=date_mode
     )
     return xlsx_response(
         build_servants_workbook(
@@ -136,6 +152,7 @@ def dashboard_teachers_export(
 @router.get("/follow-up")
 def dashboard_follow_up(
     class_id: int | None = None,
+    class_ids: str | None = Query(default=None),
     period: str = Query(default="month", pattern="^(week|month|season|all)$"),
     teacher_id: int | None = None,
     boy_id: int | None = None,
@@ -146,7 +163,11 @@ def dashboard_follow_up(
     breakdown (who logged and who did not) and a ranked boy list - all scoped
     to the login and the chosen period."""
     return FollowUpPerformanceService(db, current_user).performance(
-        class_id=class_id, period=period, teacher_id=teacher_id, boy_id=boy_id
+        class_id=class_id,
+        class_ids=_parse_class_ids(class_ids),
+        period=period,
+        teacher_id=teacher_id,
+        boy_id=boy_id,
     )
 
 

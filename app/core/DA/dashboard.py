@@ -185,7 +185,13 @@ class DashboardService(BaseService):
     """
 
     # ----------------------------------------------------------------- scope
-    def _scope_classes(self, class_id: int | None) -> list[int]:
+    def _scope_classes(
+        self, class_id: int | None = None, class_ids: list[int] | None = None
+    ) -> list[int]:
+        if class_ids:
+            for cid in class_ids:
+                self.ensure_class(cid)
+            return list(dict.fromkeys(class_ids))
         if class_id is not None:
             self.ensure_class(class_id)
             return [class_id]
@@ -287,6 +293,7 @@ class DashboardService(BaseService):
     def summary(
         self,
         class_id: int | None = None,
+        class_ids: list[int] | None = None,
         streak_n: int = 4,
         absent_n: int = 4,
         top_n: int = 5,
@@ -297,7 +304,7 @@ class DashboardService(BaseService):
         streak_from=None,
         streak_to=None,
     ) -> dict:
-        classes = self._scope_classes(class_id)
+        classes = self._scope_classes(class_id, class_ids)
         labels = self._class_labels()
         class_set = set(classes)
 
