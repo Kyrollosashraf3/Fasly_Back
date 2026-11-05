@@ -377,6 +377,7 @@ class DashboardService(BaseService):
                 "boys": len(boys),
                 "fridays": len(dates),
                 "teachers": len(teachers),
+                "follow_ups": len(follow_ups),
             },
             "boys_trend": _per_date(
                 attends,
@@ -495,12 +496,14 @@ class DashboardService(BaseService):
             # servants' performance table reads for him.
             self._own_scorecard(checks, follow_ups, season_from)
             if teacher_id
-            else self._window_stats(boys, attends, checks, follow_ups, season_from)
+            # An amin's card is the boys performance page's own arithmetic -
+            # per-class completed Fridays, session-aware absence - so the two
+            # screens cannot disagree about the same church year.
+            else self._amin_scorecard(boys, attends, follow_ups, classes, season_from)
         )
 
-        # The sets behind the coverage ratios are bookkeeping, not payload.
+        # The set behind the week coverage ratio is bookkeeping, not payload.
         week.pop("reached")
-        season.pop("reached")
 
         if teacher_id:
             kind = "group"
@@ -615,6 +618,54 @@ class DashboardService(BaseService):
             "teachers_meeting": _pct(ticks["teachers_meeting"], weeks),
             "follow": _pct(ticks["follow"], weeks),
             "follow_ups": sum(1 for f in follow_ups if inside(f.action_date)),
+        }
+
+    def _amin_scorecard(
+        self,
+        boys: list,
+        attends: list,
+        follow_ups: list,
+        classes: list[int],
+        season_from: date,
+    ) -> dict:
+        """The general amin's season scorecard.
+
+        Uses the exact arithmetic of the boys performance page:
+        per-class completed Fridays, average attendance and liturgy ratios out of
+        total registered boys (not summing counts over fridays), and follow-up
+        coverage metrics.
+        """
+        today = date.today()
+        season_attends = [
+            a for a in attends if a.date is not None and season_from <= a.date <= today
+        ]
+        stats = self._attendance_stats(season_attends, classes, boys)
+
+        season_follow = [
+            f
+            for f in follow_ups
+            if f.action_date is not None and season_from <= f.action_date <= today
+        ]
+        reached = {f.boy_id for f in season_follow}
+        followed_boys = sum(1 for b in boys if b.id in reached)
+        pending_boys = max(0, len(boys) - followed_boys)
+
+        return {
+            "sessions": stats["fridays"],
+            "checks": stats["fridays"],
+            "total": stats["total"],
+            "present": stats["present"],
+            "absent": stats["absent"],
+            "attendance": stats["percent"],
+            "liturgy": stats["liturgy_percent"],
+            "avg_present": stats["avg_present"],
+            "avg_liturgy": stats["avg_liturgy"],
+            "boys": len(boys),
+            "follow_ups": len(season_follow),
+            "followed_boys": followed_boys,
+            "pending_boys": pending_boys,
+            "follow": _pct(followed_boys, len(boys)),
+            "by_class": stats["by_class"],
         }
 
     # ---------------- today check ----------------
@@ -825,6 +876,11 @@ class DashboardService(BaseService):
 
         Missing record on a completed session = absent. Sessions with no records
         are ignored.
+
+        The headline ratios read as an average Friday, not a sum of the year:
+        the boys who were present on a typical recorded Friday out of the boys
+        registered in the classes that have records. «٣٠٠ من ٥٠٠ ولد» عبر ٤ جمع
+        says more honestly than «١٢٠٠ من ٤٠٠٠ سجل».
         """
         boys_by_class: dict[int, list] = {}
         for b in boys:
@@ -839,6 +895,10 @@ class DashboardService(BaseService):
         liturgy_total = 0
         total_total = 0
         absent_total = 0
+        # Average present per recorded Friday, and the boys it is measured on.
+        avg_present = 0.0
+        avg_liturgy = 0.0
+        counted_boys = 0
         by_class = {}
         for c in classes:
             class_boys = boys_by_class.get(c, [])
@@ -869,18 +929,29 @@ class DashboardService(BaseService):
                 "liturgy": l,
                 "liturgy_percent": _pct(l, total),
                 "sessions": n_sessions,
+                "boys": len(class_boys),
+                "avg_present": round(p / n_sessions) if n_sessions else 0,
+                "avg_liturgy": round(l / n_sessions) if n_sessions else 0,
             }
             present_total += p
             liturgy_total += l
             total_total += total
             absent_total += absent
+            if n_sessions:
+                avg_present += p / n_sessions
+                avg_liturgy += l / n_sessions
+                counted_boys += len(class_boys)
         return {
             "present": present_total,
             "absent": absent_total,
             "total": total_total,
-            "percent": _pct(present_total, total_total),
+            "percent": _pct(avg_present, counted_boys),
             "liturgy_present": liturgy_total,
-            "liturgy_percent": _pct(liturgy_total, total_total),
+            "liturgy_percent": _pct(avg_liturgy, counted_boys),
+            "boys": counted_boys,
+            "avg_present": round(avg_present),
+            "avg_liturgy": round(avg_liturgy),
+            "fridays": len({a.date for a in attends if a.date}),
             "by_class": by_class,
         }
 
