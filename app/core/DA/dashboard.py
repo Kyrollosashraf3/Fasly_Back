@@ -455,9 +455,10 @@ class DashboardService(BaseService):
         come back from one read - the last 7 days and the church year so far -
         so the screen never asks twice.
 
-        Denominators are the honest ones: an attendance ratio is boys times the
-        Fridays that actually have records, a review ratio is the reviews that
-        were filled in, and coverage is the boys reached at least once.
+        Denominators are the honest ones: a servant's season ratios come from
+        his own review sheet - ticks over the Fridays that have one - while an
+        amin's attendance ratio is boys times the Fridays that actually have
+        records, and coverage is the boys reached at least once.
         """
         classes = self._scope_classes(None)
         class_set = set(classes)
@@ -488,7 +489,14 @@ class DashboardService(BaseService):
         week_from = date.today() - timedelta(days=7)
 
         week = self._window_stats(boys, attends, checks, follow_ups, week_from)
-        season = self._window_stats(boys, attends, checks, follow_ups, season_from)
+        season = (
+            # A servant's season card is his own Friday sheet, not his boys'
+            # attendance rows: the home screen then reads exactly what the
+            # servants' performance table reads for him.
+            self._own_scorecard(checks, follow_ups, season_from)
+            if teacher_id
+            else self._window_stats(boys, attends, checks, follow_ups, season_from)
+        )
 
         # The sets behind the coverage ratios are bookkeeping, not payload.
         week.pop("reached")
@@ -570,6 +578,43 @@ class DashboardService(BaseService):
             "followed_boys": followed,
             "pending_boys": len(boys) - followed,
             "reached": reached,
+        }
+
+    @staticmethod
+    def _own_scorecard(checks: list, follow_ups: list, date_from: date) -> dict:
+        """One servant's season, counted the way the servants' table counts it.
+
+        The Friday review sheet is the only source: the denominator is the
+        Fridays that have a row, and each ratio is that column's ticks over
+        them - the same ``_servant_scores`` arithmetic the amin sees.
+        """
+        today = date.today()
+
+        def inside(value) -> bool:
+            return value is not None and date_from <= value <= today
+
+        filled = [c for c in checks if inside(c.date)]
+        weeks = len(filled)
+        ticks = {
+            flag: sum(1 for c in filled if getattr(c, flag))
+            for flag in DashboardService.SERVANT_FLAGS
+        }
+        return {
+            "sessions": weeks,
+            "checks": weeks,
+            "total": weeks,
+            "present": ticks["attend"],
+            "absent": weeks - ticks["attend"],
+            "liturgy_present": ticks["liturgy"],
+            "prepare_present": ticks["prepare"],
+            "meeting_present": ticks["teachers_meeting"],
+            "follow_present": ticks["follow"],
+            "attendance": _pct(ticks["attend"], weeks),
+            "liturgy": _pct(ticks["liturgy"], weeks),
+            "prepare": _pct(ticks["prepare"], weeks),
+            "teachers_meeting": _pct(ticks["teachers_meeting"], weeks),
+            "follow": _pct(ticks["follow"], weeks),
+            "follow_ups": sum(1 for f in follow_ups if inside(f.action_date)),
         }
 
     # ---------------- today check ----------------
