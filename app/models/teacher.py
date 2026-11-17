@@ -90,6 +90,7 @@ class Teacher(Base):
         "User", back_populates="teacher", uselist=False, cascade="all, delete-orphan"
     )
     groups = relationship("Group", back_populates="teacher", cascade="all, delete-orphan")
+    trip_attendances = relationship("TripAttendance", back_populates="teacher")
     follow_ups = relationship("FollowUp", back_populates="teacher")
     teacher_checks = relationship("TeacherCheck", back_populates="teacher")
     task_values = relationship("TaskValue", back_populates="teacher")

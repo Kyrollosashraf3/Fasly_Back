@@ -25,8 +25,8 @@ class TripService(BaseService):
     الكتابة:
       - الخادم / أمين الفصل يضيف رحلة لفصله فقط (يُفرض ``class_id``).
       - أمين المرحلة يضيف رحلة لأي فصل من فصوله.
-      - أمين الكنيسة (سوبر أدمن) يختار أي班 عبر ``class_id``.
-      - تسجيل الدخول الخاص بولد (user) مرفوض完全ًا.
+      - أمين الكنيسة يختار أي فصل عبر ``class_id``.
+      - تسجيل الدخول الخاص بولد (user) مرفوض تمامًا.
     """
 
     def query(self) -> Query:
@@ -77,7 +77,7 @@ class TripService(BaseService):
                 )
             effective_class_id = my_class
         else:
-            # أمين الكنيسة: يحتفظ بالقيمة التي أرسلها (أي班)
+            # أمين الكنيسة: يحتفظ بالقيمة التي أرسلها (أي فصل)
             # أمين المرحلة: نفس القيمة، ما دامت جوه فصوله
             effective_class_id = data.class_id
             if not is_unrestricted(self.user):
@@ -117,7 +117,7 @@ class TripService(BaseService):
                     detail="غير مسموح لك بنقل رحلة لفصل آخر.",
                 )
         elif data.class_id is not None:
-            # أمين الكنيسة قد يغيّر الفصل لأي班 موجود، أمين المرحلة لفصوله فقط
+            # أمين الكنيسة قد يغيّر الفصل لأي فصل موجود، أمين المرحلة لفصوله فقط
             self._ensure_class(data.class_id)
             if not is_unrestricted(self.user):
                 self.ensure_class(data.class_id)

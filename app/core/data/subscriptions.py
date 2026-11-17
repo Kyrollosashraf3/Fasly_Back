@@ -364,7 +364,7 @@ class SubscriptionService(BaseService):
                 detail="يمكنك عرض ملخص فقط لرحلة فصلك.",
             )
 
-        # USER:只能看自己
+        # USER: يرى ملخصه هو فقط
         if self.user.role == RoleEnum.USER and boy.id != self.user.boy_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

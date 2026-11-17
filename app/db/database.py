@@ -47,6 +47,7 @@ TENANT_TABLES = (
     "tasks",
     "task_values",
     "trips",
+    "trip_attendances",
     "subscriptions",
     "notification_logs",
     "notification_inbox",

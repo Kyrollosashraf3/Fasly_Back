@@ -16,6 +16,7 @@ from app.models.task_value import TaskValue
 from app.models.teacher import Teacher
 from app.models.teacher_check import TeacherCheck
 from app.models.trip import Trip
+from app.models.trip_attendance import TripAttendance
 from app.models.user import User
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "FollowUp",
     "TeacherCheck",
     "Trip",
+    "TripAttendance",
     "Subscription",
     "Task",
     "TaskValue",

@@ -48,6 +48,7 @@ from app.core.data.task_values import TaskValueService
 from app.core.data.tasks import TaskService
 from app.core.data.teacher_checks import TeacherCheckService
 from app.core.data.teachers import TeacherService
+from app.core.data.trip_attendance import TripAttendanceService
 from app.core.data.trips import TripService
 from app.core.data.users import (
     UserService,
@@ -75,6 +76,7 @@ __all__ = [
     "TeacherCheckService",
     "TeacherService",
     "TripService",
+    "TripAttendanceService",
     "UserService",
     # signup (pre-login, no service)
     "complete_signup",

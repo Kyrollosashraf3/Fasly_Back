@@ -162,9 +162,9 @@ ALTER TABLE users ADD CONSTRAINT ck_users_role_owner CHECK (
     │   └── logger.py            get_logger(__name__)
     ├── db/
     │   └── database.py          Engine / SessionLocal / Base / create_tables()
-    ├── models/                  17 جدول + enums.py  (كل الجداول هنا)
+    ├── models/                  18 جدول + enums.py  (كل الجداول هنا)
     ├── schemas/                 Pydantic: Create / Update / Response لكل مجال
-    ├── routes/                  16 router (prefix لكل مجال)
+    ├── routes/                  17 router (prefix لكل مجال)
     └── core/
         ├── app.py               FaslyApplication.create_app()
         ├── middleware.py        RequestLogMiddleware
@@ -173,8 +173,8 @@ ALTER TABLE users ADD CONSTRAINT ck_users_role_owner CHECK (
         ├── data/                common.py + base.py + خدمة لكل جدول
         │                        (churches · classes · teachers · boys · groups ·
         │                         attendance · follow_ups · locations · map ·
-        │                         teacher_checks · trips · subscriptions · tasks ·
-        │                         task_values · users · names)
+        │                         teacher_checks · trips · trip_attendance ·
+        │                         subscriptions · tasks · task_values · users · names)
         ├── DA/                  dashboard.py · follow_up_performance.py · check.py
         ├── EDA/                 read_excel.py · templates.py · importer.py ·
         │                        write_groups.py · write_servants.py · write_today_check.py
@@ -272,7 +272,7 @@ church.txt هو نفس الخطوات دي بـ SQL خام جاهز للـ pgAdm
 get_db(): dependency بيعطي جلسة واحدة لكل طلب ويقفلها في النهاية.
 
 
-6) الموديلز  -  app/models/  (17 جدول)
+6) الموديلز  -  app/models/  (18 جدول)
 --------------------------------------
 كل جدول فيه church_id ما عدا churches. class_id في جداول الحضور/المتابعة/
 التسميع/الرحلات هو «لقطة تاريخية» (snapshot) لفصل الولد/الخادم يوم التسجيل،
@@ -332,6 +332,12 @@ get_db(): dependency بيعطي جلسة واحدة لكل طلب ويقفلها
 
     trip                    رحلة: name, cost, class_id, created_at, status.
 
+    trip_attendance         كشف حضور الرحلة: صف واحد لكل (trip_id, boy_id) فيه
+                            attend_flag (حضر يوم الرحلة؟) و teacher_id (الخادم
+                            المسئول عنه في الرحلة). مفيش class_id - الفصل من
+                            trip.class_id. فريدية (trip_id, boy_id)، church_id
+                            وFKs على churches/trips/teachers/boys.
+
     subscription            حركة مالية لولد في رحلة: boy_id, trip_id,
                             type (charge/recover), value, note, date, created_by.
 
@@ -372,6 +378,9 @@ get_db(): dependency بيعطي جلسة واحدة لكل طلب ويقفلها
     school_class.py: normalise_class_name بيرفض أي اسم برة الكتالوج.
     church.py · attend · follow_up · group · subscription · task · task_value ·
     teacher · teacher_check · trip: لكل واحد Create/Update/Response.
+    trip_attendance.py: TripAttendanceItem/BulkCreate (حفظ كشف الحضور)،
+    Assign/Unassign (توزيع مجموعة أولاد على خادم)، Update/Response،
+    وTripSheetRow/TripSheetResponse لكشف الرحلة كامل.
 
 
 8) طبقة الخدمات  -  app/core/data/
@@ -405,6 +414,11 @@ common.py:
     TaskService / TaskValueService / TripService / SubscriptionService
                      المسابقات والتسميعات والرحلات والاشتراكات (بالعربية في الكود،
                      بنفس نمط الصلاحية: owner > أمين مرحلة > أمين فصل > خادم > ولد).
+    TripAttendanceService  كشف الرحلة: sheet(trip_id) يرجّع كل أولاد فصل الرحلة
+                     + علامة الحضور + الخادم المسئول؛ save_attendance bulk upsert؛
+                     assign(teacher_id, boy_ids) يوزّع مجموعة على خادم واحد؛
+                     unassign / update / delete. الكنيسة أولاً ثم فصل الرحلة،
+                     والولد يقرأ صفه فقط وممنوع من الكتابة.
     UserService      الحسابات: التسجيل برقم تليفون، class_ids لأمين المرحلة،
                      منع رفع role أو_abona لغير الـ owner، منع نقل حساب بين كنائس
                      لغير الـ owner. signup_check / complete_signup على مستوى الموديول
@@ -483,7 +497,7 @@ common.py:
       /locations/boys/{boy_id} (الخادم/الأمين)، .../current، /locations/map.
 
 
-13) الـ Routes  -  app/routes/  (73 مسار)
+13) الـ Routes  -  app/routes/  (79 مسار)
 -----------------------------------------
     prefix                المحتوى المختصر
     --------------------  -------------------------------------------------------
@@ -500,6 +514,9 @@ common.py:
     /locations            البيت + الخريطة (قسم 12)
     /teacher-checks       مراجعة الخدام (فردي + bulk)
     /trips                الرحلات
+    /trip-attendance      sheet/{trip_id} · attendance (حفظ الكشف) ·
+                          assign / unassign (توزيع الأولاد على خادم) ·
+                          list · get · patch · delete
     /subscriptions        الاشتراكات + ملخصات الرحلة والولد
     /tasks                المسابقات
     /task-values          التسميعات + حفظ المستحقات bulk
@@ -570,6 +587,9 @@ common.py:
     * حذف كنيسة فيه بيانات بيرجع 409 (ON DELETE RESTRICT) - ده سلوك مقصود.
     * smoke tests على SQLite محتاجة تستبدل ARRAY بـ JSON في boys.skills و
       teachers.skills (الـ ARRAY نوع PostgreSQL).
+    * trip_attendances مفيهاش class_id: الفصل هو trip.class_id (snapshot).
+      هوية الصف (trip_id, boy_id) فريدة، فالحفظ دايمًا upsert مش insert أعمى؛
+      unassign بيشيل الـ teacher_id بس ويخلي علامة الحضور.
 
     لغة الكود: تعليقات بالعربية في مجالات المسابقات والاشتراكات، وبالإنجليزية في
     الباقي. فضّل نفس نمط الملف اللي بتعدّل عليه.
@@ -581,11 +601,12 @@ common.py:
 
     $env:DATABASE_URL='sqlite:///./_smoke.db'
     python -c "import app.core.app as a; a=a.create_app(); print(len(a.openapi()['paths']))"
-        -> 73 path
+        -> 79 path
 
     $env:PYTHONIOENCODING='utf-8'; $env:DATABASE_URL='sqlite:///./_smoke.db'
-    python <temp>/smoke_tenancy.py     -> ALL TENANCY SMOKE CHECKS PASSED
-    python <temp>/smoke_location.py    -> geo OK
+    python <temp>/smoke_tenancy.py          -> ALL TENANCY SMOKE CHECKS PASSED
+    python <temp>/smoke_location.py         -> geo OK
+    python <temp>/smoke_trip_attendance.py  -> ALL TRIP ATTENDANCE SMOKE CHECKS PASSED
 
     على PostgreSQL الحقيقي:
     $env:DATABASE_URL='postgresql://postgres:postgres@localhost:5432/fasly_db'

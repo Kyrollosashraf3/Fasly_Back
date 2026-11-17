@@ -47,6 +47,7 @@ class Trip(Base):
     class_ = relationship("SchoolClass", back_populates="trips")
     recorder = relationship("User", back_populates="trips")
     subscriptions = relationship("Subscription", back_populates="trip")
+    trip_attendances = relationship("TripAttendance", back_populates="trip")
 
     def __repr__(self) -> str:
         return (

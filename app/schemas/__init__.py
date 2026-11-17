@@ -55,6 +55,16 @@ from app.schemas.subscription import (
     SubscriptionUpdate,
 )
 from app.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
+from app.schemas.trip_attendance import (
+    TripAttendanceAssign,
+    TripAttendanceBulkCreate,
+    TripAttendanceItem,
+    TripAttendanceResponse,
+    TripAttendanceUnassign,
+    TripAttendanceUpdate,
+    TripSheetResponse,
+    TripSheetRow,
+)
 from app.schemas.teacher_check import (
     TeacherCheckBulkCreate,
     TeacherCheckCreate,
@@ -121,6 +131,14 @@ __all__ = [
     "SubscriptionResponse",
     "BoyTripSummary",
     "BoyTripTotal",
+    "TripAttendanceItem",
+    "TripAttendanceBulkCreate",
+    "TripAttendanceAssign",
+    "TripAttendanceUnassign",
+    "TripAttendanceUpdate",
+    "TripAttendanceResponse",
+    "TripSheetRow",
+    "TripSheetResponse",
     "UserCreate",
     "ManagedClassesUpdate",
     "UserImportRow",
