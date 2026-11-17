@@ -73,7 +73,7 @@ class TeacherService(BaseService):
             # «بدون فصل» = خادم لسه مالوش فصل: اللي هيبقى أمين مرحلة (أدوار
             # عامة) أو أمين الكنيسة. ده قرار الأدمن العام وحده - باقي الأمينات
             # مقيدين بفصلهم فلازم يختاروا واحد من فصولهم.
-            if self.user.role != RoleEnum.SUPER_ADMIN:
+            if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ABONA):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="اختار فصل للخادم - الإضافة من غير فصل مسموحة للأدمن العام فقط.",
@@ -98,8 +98,10 @@ class TeacherService(BaseService):
             label="Servant",
         )
 
+        church_id = self.church_for(class_id=data.class_id)
         teacher = Teacher(
             teacher_name=teacher_name,
+            church_id=church_id,
             birth_date=data.birth_date,
             phone=norm_phone,
             phone_2=norm_phone2,
@@ -127,6 +129,7 @@ class TeacherService(BaseService):
                 phone=target_phone,
                 password_hash=None,
                 role=RoleEnum.TEACHER,
+                church_id=church_id,
                 teacher_id=teacher.id,
                 boy_id=None,
             )

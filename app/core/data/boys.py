@@ -85,6 +85,7 @@ class BoyService(BaseService):
 
         boy = Boy(
             boy_name=boy_name,
+            church_id=self.church_for(class_id=data.class_id),
             gender=data.gender,
             birth_date=data.birth_date,
             phone=data.phone,
@@ -182,4 +183,10 @@ class BoyService(BaseService):
                 ),
             )
         self._drop_group(boy.id)
-        self.db.add(Group(teacher_id=teacher.id, boy_id=boy.id))
+        self.db.add(
+            Group(
+                teacher_id=teacher.id,
+                boy_id=boy.id,
+                church_id=self.church_for(class_id=boy.class_id, person=boy),
+            )
+        )

@@ -26,6 +26,7 @@ from app.schemas.attend import (
 )
 from app.schemas.base import ORMResponse
 from app.schemas.boy import BoyCreate, BoyResponse, BoyUpdate
+from app.schemas.church import ChurchCreate, ChurchResponse, ChurchUpdate
 from app.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
 from app.schemas.group import GroupAssign, GroupResponse, GroupUnassign
 from app.schemas.location import (
@@ -80,6 +81,9 @@ __all__ = [
     "SchoolClassCreate",
     "SchoolClassUpdate",
     "SchoolClassResponse",
+    "ChurchCreate",
+    "ChurchUpdate",
+    "ChurchResponse",
     "BoyCreate",
     "BoyUpdate",
     "BoyResponse",

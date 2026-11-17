@@ -37,7 +37,11 @@ class TaskValueService(BaseService):
         """Rows this login may see, scoped on the class snapshotted at saving."""
         q = self.db.query(TaskValue)
         if self.user.role == RoleEnum.USER:
-            return q.filter(TaskValue.boy_id == self.user.boy_id)
+            from app.core.data.common import scope_church
+
+            return scope_church(q, TaskValue, self.user).filter(
+                TaskValue.boy_id == self.user.boy_id
+            )
         return self.classes_query(TaskValue)
 
     @staticmethod
@@ -123,6 +127,7 @@ class TaskValueService(BaseService):
             )
 
         record = TaskValue(
+            church_id=self.church_for(class_id=boy.class_id, person=boy),
             class_id=boy.class_id,  # snapshot taken now
             task_id=task.id,
             boy_id=boy.id,

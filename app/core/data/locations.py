@@ -84,6 +84,7 @@ class BoyLocationService(BaseService):
             follow_up = FollowUp(
                 teacher_id=teacher_id,
                 boy_id=boy.id,
+                church_id=self.church_for(class_id=boy.class_id, person=boy),
                 class_id=boy.class_id,  # historical snapshot, as everywhere else
                 action_date=date.today(),
                 status=data.status,

@@ -27,18 +27,28 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # Default tenant (created on startup if missing). Every seeded admin and
+    # every legacy row is assigned to this church; the platform owner can add
+    # more churches later from the /churches endpoints or in pgAdmin.
+    DEFAULT_CHURCH_NAME: str = "الكنيسة الافتراضية"
+    DEFAULT_CHURCH_REGION: str | None = None
+    DEFAULT_CHURCH_ADDRESS: str | None = None
+    DEFAULT_CHURCH_PHONE: str | None = None
+    DEFAULT_CHURCH_PHONE_2: str | None = None
+
     # Bootstrap first Admin (created on startup if no Admin exists)
     ADMIN_PHONE: str | None = None
     ADMIN_PASSWORD: str | None = None
 
-    # Extra church-wide admins, seeded on startup from a JSON array (idempotent):
+    # Extra church admins (أبونا), seeded on startup from a JSON array
+    # (idempotent). Each entry becomes a servant and an ``abona`` login scoped
+    # to one church. ``church_id`` (or ``church`` by name) picks the tenant;
+    # missing values fall back to the default church above.
     #   [
-    #     {"name": "كيرلس اشرف فخري", "phone": "01281875199"},
-    #     ...
+    #     {"name": "كيرلس اشرف فخري", "phone": "01281875199",
+    #      "church": "كنيسة الشهيد مار جرجس"},
+    #     {"name": "مينا فوزي", "phone": "01000000000", "church_id": 2}
     #   ]
-    # Each entry becomes a servant with no class (his scope is every class)
-    # and a super_admin login linked to that servant, so the account shows a
-    # name.
     SEED_SUPER_ADMINS_JSON: str | None = None
 
     # Web Push (إشعارات على تليفونات الخدام)

@@ -19,6 +19,12 @@ class Group(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     teacher_id = Column(
         Integer,
         ForeignKey("teachers.id", ondelete="CASCADE"),
@@ -38,6 +44,7 @@ class Group(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     teacher = relationship("Teacher", back_populates="groups")
     boy = relationship("Boy", back_populates="groups")
 

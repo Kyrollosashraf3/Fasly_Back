@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_logger, settings
 from app.core.notifications.sender import MAX_FAILS, deliver
-from app.core.notifications.service import RECIPIENT_ROLES, recipient_users
+from app.core.notifications.service import RECIPIENT_ROLES
 from app.core.notifications.vapid import push_enabled
 from app.db.database import SessionLocal
 from app.models.boy import Boy
@@ -76,22 +76,26 @@ def _tz() -> ZoneInfo:
 # ------------------------------------------------------------------ audience
 
 
-def _audience(db: Session) -> dict[int | None, list[tuple[PushDevice, int | None]]]:
-    """Live subscriptions grouped by the class of the servant behind them.
+def _audience(
+    db: Session,
+) -> dict[tuple[int, int | None], list[tuple[PushDevice, int | None]]]:
+    """Live subscriptions grouped by (church, class) of the servant behind them.
 
-    ``None`` as the key means a login whose servant row has no class - a
-    church-wide servant, who is nudged with the class-free wording.
+    A log and its dedupe key belong to one church, so grouping by class alone
+    is not enough: two tenants may each have a class that needs the same
+    reminder. ``None`` as the class key is a servant with no class - the amin,
+    nudged with the class-free wording.
     """
     rows = (
-        db.query(PushDevice, Teacher.class_id, Teacher.id)
+        db.query(PushDevice, PushDevice.church_id, Teacher.class_id, Teacher.id)
         .join(User, User.id == PushDevice.user_id)
         .outerjoin(Teacher, Teacher.id == User.teacher_id)
         .filter(User.role.in_(RECIPIENT_ROLES), PushDevice.fails < MAX_FAILS)
         .all()
     )
-    grouped: dict[int | None, list[tuple[PushDevice, int | None]]] = {}
-    for device, class_id, _teacher_id in rows:
-        grouped.setdefault(class_id, []).append((device, _teacher_id))
+    grouped: dict[tuple[int, int | None], list[tuple[PushDevice, int | None]]] = {}
+    for device, church_id, class_id, _teacher_id in rows:
+        grouped.setdefault((church_id, class_id), []).append((device, _teacher_id))
     return grouped
 
 
@@ -99,12 +103,12 @@ def _devices(grouped: list[tuple[PushDevice, int | None]]) -> list[PushDevice]:
     return [device for device, _ in grouped]
 
 
-def _audience_users(db: Session) -> dict[int | None, list[User]]:
-    """Recipient logins grouped by their servant's class, devices or none.
+def _audience_users(db: Session) -> dict[tuple[int, int | None], list[User]]:
+    """Recipient logins grouped by (church, class), devices or none.
 
     The bell must hold a reminder even for a servant who never switched web
-    push on, so this asks for logins rather than subscriptions. Same ``None``
-    key as ``_audience``: a church-wide servant has no class.
+    push on, so this asks for logins rather than subscriptions. Same keys as
+    ``_audience``: ``(church_id, None)`` is a servant with no class.
     """
     rows = (
         db.query(User, Teacher.class_id)
@@ -112,9 +116,9 @@ def _audience_users(db: Session) -> dict[int | None, list[User]]:
         .filter(User.role.in_(RECIPIENT_ROLES), User.teacher_id.isnot(None))
         .all()
     )
-    grouped: dict[int | None, list[User]] = {}
+    grouped: dict[tuple[int, int | None], list[User]] = {}
     for user, class_id in rows:
-        grouped.setdefault(class_id, []).append(user)
+        grouped.setdefault((user.church_id, class_id), []).append(user)
     return grouped
 
 
@@ -150,6 +154,7 @@ def _with_group(db: Session, grouped: list[tuple[PushDevice, int | None]]) -> li
 def _claim(
     db: Session,
     *,
+    church_id: int,
     kind: str,
     day: date,
     title: str,
@@ -160,14 +165,16 @@ def _claim(
 ) -> NotificationLog | None:
     """Write today's row for this job; ``None`` means someone already fired it.
 
-    The unique ``dedupe_key`` is the whole mechanism: inserting is the claim, so
-    two workers racing over the same minute both try, and exactly one proceeds.
+    The unique ``(church_id, dedupe_key)`` is the whole mechanism: inserting is
+    the claim, so two workers racing over the same minute both try, and exactly
+    one proceeds - while two churches each still fire their own reminder.
     """
-    key = f"{kind}:{day.isoformat()}"
+    key = f"{church_id}:{kind}:{day.isoformat()}"
     if part:
         key = f"{key}:{part}"
     log = NotificationLog(
         kind=kind,
+        church_id=church_id,
         dedupe_key=key,
         title=title,
         body=body,
@@ -200,6 +207,7 @@ def _fire(
     for user in users or []:
         db.add(
             NotificationInbox(
+                church_id=log.church_id,
                 user_id=user.id,
                 log_id=log.id,
                 kind=log.kind,
@@ -235,10 +243,11 @@ def _follow_up_reminder(db: Session, now: datetime) -> None:
     if not _due(now, settings.FOLLOW_UP_REMINDER_HOUR):
         return
     users_by_class = _audience_users(db)
-    for class_id, grouped in _audience(db).items():
+    for (church_id, class_id), grouped in _audience(db).items():
         link = FOLLOW_UP_LINK.format(class_id) if class_id is not None else "#/followup"
         log = _claim(
             db,
+            church_id=church_id,
             kind="followup",
             day=now.date(),
             title="فصلي بيفكرك",
@@ -248,7 +257,10 @@ def _follow_up_reminder(db: Session, now: datetime) -> None:
             part=str(class_id),
         )
         if log is not None:
-            _fire(db, log, _devices(grouped), users_by_class.get(class_id, []))
+            _fire(
+                db, log, _devices(grouped),
+                users_by_class.get((church_id, class_id), []),
+            )
 
 
 def _birthdays(db: Session, today: date) -> dict[int, list[str]]:
@@ -264,28 +276,28 @@ def _birthdays(db: Session, today: date) -> dict[int, list[str]]:
     if (2, 29) not in wanted and (2, 28) in wanted and not calendar.isleap(today.year):
         wanted[(2, 29)] = wanted[(2, 28)]
 
-    found: dict[int, list[tuple[str, str]]] = {}
+    found: dict[tuple[int, int], list[tuple[str, str]]] = {}
     rows = (
-        db.query(Boy.boy_name, Boy.birth_date, Boy.class_id)
+        db.query(Boy.church_id, Boy.boy_name, Boy.birth_date, Boy.class_id)
         .filter(func.extract("month", Boy.birth_date).in_({m for m, _ in wanted}))
         .all()
     )
-    for name, birth, class_id in rows:
+    for church_id, name, birth, class_id in rows:
         if birth is None:
             continue
         label = wanted.get((birth.month, birth.day))
         if label is None:
             continue
-        found.setdefault(class_id, []).append((label, name))
+        found.setdefault((church_id, class_id), []).append((label, name))
 
-    out: dict[int, list[str]] = {}
-    for class_id, hits in found.items():
+    out: dict[tuple[int, int], list[str]] = {}
+    for (church_id, class_id), hits in found.items():
         parts = []
         for mark in ("النهاردة", "بكرة"):
             names = [name for hit_mark, name in hits if hit_mark == mark]
             if names:
                 parts.append(f"{mark} {'، '.join(names)}")
-        out[class_id] = parts
+        out[(church_id, class_id)] = parts
     return out
 
 
@@ -299,12 +311,13 @@ def _birthday_reminder(db: Session, now: datetime) -> None:
     audience = _audience(db)
     users_by_class = _audience_users(db)
     today = now.date()
-    for class_id, parts in hits.items():
-        grouped = audience.get(class_id)
+    for (church_id, class_id), parts in hits.items():
+        grouped = audience.get((church_id, class_id))
         if not grouped:
             continue
         log = _claim(
             db,
+            church_id=church_id,
             kind="birthday",
             day=today,
             title="فصلي بيفكرك - عيد ميلاد",
@@ -314,7 +327,10 @@ def _birthday_reminder(db: Session, now: datetime) -> None:
             part=str(class_id),
         )
         if log is not None:
-            _fire(db, log, _devices(grouped), users_by_class.get(class_id, []))
+            _fire(
+                db, log, _devices(grouped),
+                users_by_class.get((church_id, class_id), []),
+            )
 
 
 def _wednesday_reminder(db: Session, now: datetime) -> None:
@@ -322,10 +338,10 @@ def _wednesday_reminder(db: Session, now: datetime) -> None:
     if now.weekday() != WEDNESDAY or not _due(now, settings.WEDNESDAY_REMINDER_HOUR):
         return
     users_by_class = _audience_users(db)
-    for class_id, grouped in _audience(db).items():
+    for (church_id, class_id), grouped in _audience(db).items():
         link = FOLLOW_UP_LINK.format(class_id) if class_id is not None else "#/followup"
         prepared = {device.id for device in _with_group(db, grouped)}
-        class_users = users_by_class.get(class_id, [])
+        class_users = users_by_class.get((church_id, class_id), [])
         on_segment = _servants_with_group(db, [u.teacher_id for u in class_users])
         segments = [
             (
@@ -346,6 +362,7 @@ def _wednesday_reminder(db: Session, now: datetime) -> None:
                 continue
             log = _claim(
                 db,
+                church_id=church_id,
                 kind="wednesday",
                 day=now.date(),
                 title=f"فصلي بيفكرك - {body_first}",

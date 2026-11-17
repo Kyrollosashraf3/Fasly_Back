@@ -36,6 +36,12 @@ class FollowUp(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     teacher_id = Column(
         Integer,
         ForeignKey("teachers.id", ondelete="RESTRICT"),
@@ -77,6 +83,7 @@ class FollowUp(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     teacher = relationship("Teacher", back_populates="follow_ups")
     boy = relationship("Boy", back_populates="follow_ups")
     class_ = relationship("SchoolClass", back_populates="follow_ups")

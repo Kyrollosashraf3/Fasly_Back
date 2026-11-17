@@ -38,6 +38,11 @@ def check_owner(role: RoleEnum, teacher_id: int | None, boy_id: int | None) -> N
             raise ValueError("role 'general_admin' requires teacher_id")
         if boy_id is not None:
             raise ValueError("role 'general_admin' must not set boy_id")
+    elif role == RoleEnum.ABONA:
+        # The church amin may carry a servant (for his display name) but never
+        # a boy; his church is required and checked by the service.
+        if boy_id is not None:
+            raise ValueError("role 'abona' must not set boy_id")
     else:  # SUPER_ADMIN may carry a teacher (his name) but never a boy
         if boy_id is not None:
             raise ValueError("role 'super_admin' must not set boy_id")
@@ -69,6 +74,11 @@ class UserCreate(BaseModel):
     )
     password: str | None = Field(None, min_length=8, max_length=128)
     role: RoleEnum
+    church_id: int | None = Field(
+        None,
+        description="Tenant of the login. Required for every role except super_admin; "
+        "only the platform owner may omit it.",
+    )
     teacher_id: int | None = Field(
         None, description="Set for role=teacher/admin - the servant this login belongs to"
     )
@@ -111,6 +121,9 @@ class UserUpdate(BaseModel):
     phone: str | None = Field(None, max_length=20, pattern=PHONE_PATTERN)
     password: str | None = Field(None, min_length=8, max_length=128)
     role: RoleEnum | None = None
+    church_id: int | None = Field(
+        None, description="Move the account to another church (platform owner only)."
+    )
     teacher_id: int | None = None
     boy_id: int | None = None
 
@@ -153,7 +166,8 @@ class UserImportRow(BaseModel):
 
     @model_validator(mode="after")
     def _check_row(self) -> "UserImportRow":
-        if self.role == RoleEnum.SUPER_ADMIN:
+        # The platform owner and a church amin are not tied to one class.
+        if self.role in (RoleEnum.SUPER_ADMIN, RoleEnum.ABONA):
             return self
         if not self.class_name:
             raise ValueError("class_name is required")
@@ -208,6 +222,7 @@ class UserInDB(ORMResponse):
     phone: str
     password_hash: str | None = None
     role: RoleEnum
+    church_id: int | None = None
     teacher_id: int | None = None
     boy_id: int | None = None
     created_at: datetime
@@ -220,6 +235,7 @@ class UserResponse(ORMResponse):
     id: int
     phone: str
     role: RoleEnum
+    church_id: int | None = None
     teacher_id: int | None = None
     boy_id: int | None = None
     created_at: datetime

@@ -1,0 +1,424 @@
+### app/__init__.py
+DOC: app package - backend package for the attendance API.
+DEF: 
+
+### app/config/__init__.py
+DOC: config package - application settings.
+DEF: 
+
+### app/config/logger.py
+DOC: Logger module. Provides centralized logging configuration.
+DEF: get_logger[Get a configured logger instance. Args: name: The name of the logger (typically __name__) Returns: Configured logger instance]
+
+### app/config/settings.py
+DOC: Configuration management using pydantic-settings.
+DEF: Settings[Application settings loaded from environment variables.] | get_settings[]
+
+### app/core/__init__.py
+DOC: core package - business logic per domain (see core/data/*).
+DEF: 
+
+### app/core/app.py
+DOC: Application factory: builds and wires the whole FastAPI app. Lifespan, middleware and routers are all registered here so ``app.main`` stays a thin entry point. The React UI lives separately in ``front_fasly`` and talks to this API over HTTP.
+DEF: FaslyApplication[OOP wrapper that creates and configures the FastAPI application.] | create_app[]
+
+### app/core/auth/__init__.py
+DOC: Authentication: password hashing, the Bearer token and the request-scoped identity that every route depends on.
+DEF: 
+
+### app/core/auth/bootstrap.py
+DOC: Seeds the first super admin, the default classes and the curated list of church admins (أبونا) on startup.
+DEF: current_academic_year[``2026/2027`` from September, ``2025/2026`` before it.] | ensure_default_classes[Seed the six default classes once, so a fresh database is usable. Only runs while the ``classes`` table is empty: an administrator who renam] | ensure_bootstrap_admin[Create the first super admin if it does not exist. Controlled by ADMIN_PHONE / ADMIN_PASSWORD in the environment. The account is the platfor] | _seed_church_id[Church of a seed entry: explicit id, else name, else the default.] | ensure_seeded_super_admins[Create the church admins listed in ``SEED_SUPER_ADMINS_JSON``. The historical name is kept for compatibility with the startup caller. Each e]
+
+### app/core/auth/deps.py
+DOC: Who is calling - resolved once per request and handed to every service.
+DEF: get_current_user[The ORM row behind the Bearer token. Services receive the live ``User`` so ``role``, ``teacher_id`` and ``boy_id`` are always the truth in t] | require_admin[Class amin or church-wide amin. Used by the few routes whose *whole* payload must be restricted before a service ever sees it.]
+
+### app/core/auth/rate_limit.py
+DOC: Rate limiting foundation built on top of slowapi.
+DEF: login_account_key[Rate-limit key for the account layer: the submitted phone number. Keyed purely on the phone so the limit follows the account regardless of w] | rate_limit_exceeded_handler[Return a clean JSON response when a client exceeds a rate limit.]
+
+### app/core/auth/security.py
+DOC: 
+DEF: get_password_hash[Hash a plain-text password with a per-password salt.] | verify_password[Verify a plain-text password against a bcrypt hash.] | create_access_token[Create a signed JWT carrying the user id as `sub`.] | decode_access_token[Decode and validate a JWT, returning its payload.]
+
+### app/core/DA/__init__.py
+DOC: DA package - Data Analysis / dashboard aggregations.
+DEF: 
+
+### app/core/DA/check.py
+DOC: check.py - data-quality checks over the boys directory. The same boy gets entered twice in two ways: his name is written differently ("مينا هاني" / "مينا هاني سعيد", "كرمينا" / "كيرمينا") or he is filed under two classes. Both are found here by comparing every name against every other name and keeping the pairs that look alike at or above a threshold the caller picks. The comparison itself is ``ap
+DEF: NameCheckService[Duplicate and near-duplicate boy names. Read-only.]
+
+### app/core/DA/dashboard.py
+DOC: dashboard.py - Aggregated analytics for the Dashboard module. Each source table is read once (scoped to what the login may see) and aggregated in Python - data size is small (hundreds of boys/checks). Two endpoints serve the whole dashboard: one summary and one boy drill-down. Score (servant performance) = sum of trues per teacher-check: attend + prepare + liturgy + follow + teachers_meeting (max 
+DEF: _pct[] | _iso[] | _season_start[First Friday of the church service year. Fixed around 18 Sep; if that day isn't a Friday take the next one. If this year's hasn't come yet, ] | _last_friday_passed[Most recent Friday on or before today.] | _fridays_between[Every Friday from start to end (inclusive).] | _completed_sessions[Set of Friday dates where at least one attendance row exists. A session is considered "completed" when at least one boy's attendance was rec] | _trailing_streak[Consecutive presences counting BACKWARD from the last completed session. A boy is counted as absent on a completed session where he has no r] | _per_date[One row per recorded day for the last N days (ascending). ``counters`` maps a field name to the predicate that counts it that day, so the bo] | _top_with_ties[First N of a score-sorted list, plus everyone tied with the Nth.] | DashboardService[Dashboard analytics. Read-only: the same scope the CRUD routes use. Everything below the ``---`` is pure arithmetic over rows already loaded]
+
+### app/core/DA/follow_up_performance.py
+DOC: follow_up_performance.py - Aggregated analytics for the "أداء الافتقاد" (Follow-up Performance) module. Follow-up is the servant's weekly contact with the boys of his group. This module answers four questions for a chosen period (last week / last month / the church service year): * what share of the boys were reached at all (نسبة الافتقاد)? * which boys were followed and which are still pending? *
+DEF: _pct[] | _iso[] | _unique_follow_ups[Drop duplicate ORM rows (same ``id``) before aggregating.] | FollowUpPerformanceService[Follow-up analytics. Read-only: the same scope the CRUD routes use. A class amin reads his own class, a super admin every class, and a serva]
+
+### app/core/data/__init__.py
+DOC: Service layer: every route calls into here, never straight into the ORM. One module per table. A service only ever asks questions, and every question has exactly one home: who is allowed to see this row -> the ``scope_*`` / ``ensure_*`` functions in ``app.core.data.common`` how is a row found and saved -> ``app.core.data.base`` what does this table mean -> the service module itself Nothing in a ro
+DEF: 
+
+### app/core/data/attendance.py
+DOC: Friday attendance sheet - one row per (boy, date).
+DEF: AttendanceService[``class_id`` on every row is a snapshot of the boy's class on ``date``, so promoting boys later never rewrites history. read : super_admin a]
+
+### app/core/data/base.py
+DOC: The two service bases every service in ``app.core.data`` is built from. BaseService the session, the login, and nothing else WeeklySheetService the shared CRUD of the two Friday sheets A service module handles one table and nothing more: it calls the check it needs from ``app.core.data.common``, copies the payload onto the row and commits. Permission rules never live in a route and never live in a
+DEF: BaseService[The DB session and the login this request acts as.] | WeeklySheetService[CRUD shared by the two Friday sheets: attendance and servant review. Both hold **one row per (person, date)** and stamp ``class_id`` as a sn]
+
+### app/core/data/boys.py
+DOC: Boys master data - the main directory the whole app revolves around.
+DEF: BoyService[read : super_admin all | admin his class | teacher his class | boy himself write: super_admin all | admin his class | teacher his class]
+
+### app/core/data/churches.py
+DOC: Churches (الكنائس) - the tenant anchor of the whole platform. Only the platform owner (``super_admin``) creates, suspends or removes a church. Every other login may read its own church record - the one row it is pinned to - and nothing else.
+DEF: ChurchService[Read : owner all churches | everyone else only their own church. Write: platform owner only.]
+
+### app/core/data/classes.py
+DOC: Class catalogue (الفصول) - the anchor every permission scope resolves to.
+DEF: ClassService[Reads are open to every login (a grade label leaks nothing); only the class amin or the super admin may create / rename / retire a class - a]
+
+### app/core/data/common.py
+DOC: Every permission question and every shared helper the app asks. Authorization lives here and only here: a route never decides anything, and a service just calls the check it needs at the top of a method. The whole model in two sentences ------------------------------- **A login belongs to one church and to a set of classes inside it.** Every data row carries ``church_id``; the first question is al
+DEF: is_manager[Class amin, stage amin, church amin or the platform owner.] | my_church_ids[Churches this login may touch; ``None`` means every church. Only the platform owner has no church. Every other role is pinned to ``users.chu] | default_church_id[Id of the bootstrap church named in settings, creating it if missing. Used when the platform owner writes a row without naming a church, so ] | target_church_id[Resolve the church a newly-written row belongs to. A tenant user is *always* pinned to his own church: a supplied church that differs is a 4] | ensure_my_church[403 unless ``church_id`` is a church this login may touch.] | scope_church[Keep only rows of the login's church (super admin keeps everything).] | owner_class_id[The class sitting behind this login's owner row, if it has one. ``users.teacher_id`` -> ``teachers.class_id``, ``users.boy_id`` -> ``boys.cl] | my_class_ids[Every class this login belongs to; ``None`` means every class everywhere. Only the platform owner is unrestricted across churches. The churc] | is_unrestricted[True only for the platform owner - the one scope with no class limit.] | deny[] | ensure_roles[403 unless the login holds one of ``roles``.] | ensure_manager[403 unless the login is any kind of amin.] | ensure_staff[403 for a boy's login - servant-only pages start here.] | ensure_my_class[403 unless ``class_id`` is one of the login's classes (owner passes). The church is checked first: a class from another tenant is refused ev] | ensure_boy_access[403 unless the login may read this boy (a boy: only himself).] | ensure_teacher_access[403 unless the login may read this servant (a servant: only himself).] | scope_classes[Keep only rows of the login's church **and** own classes. Church first: every model passed here (class, attend, task, trip, ...) has a ``chu] | scope_boys[Keep only rows attached to a boy this login may see. ``boy_column`` is the id column holding the boy (``Boy.id``, ``Attend.boy_id``, ``Follo] | scope_teachers[Servants this login may see: a servant only himself, staff his classes.] | scope_follow_ups[Follow-up rows this login may see. A boy sees the calls made about him, a servant only the ones he wrote, an amin every row of his classes.] | scope_checks[Servant review rows: a servant his own reviews, staff their classes.] | scope_users[Accounts this login may see. super admin: every login. servant / boy: only their own. an amin: the accounts of the servants and boys of his ] | get_or_404[Load a row by id, or 404.] | commit[Commit, translating driver errors into HTTP statuses. ``IntegrityError`` -> 409 (duplicate / FK / check constraint), anything else -> 500. T] | ensure_unique[409 when another row already carries ``value`` in ``field``.] | ensure_name_free[409 when another row already carries this name in the same class. A person's name only has to be unique *inside* a class, and the comparison] | ensure_phone_free[409 when any of the provided phones is already in use on another row. Phones are normalised before comparison against ``User`` (the login ta] | apply_update[Copy a PATCH payload onto the row - only the fields actually sent. ``skip`` protects the row's identity (the person and the date of a weekly] | bulk_create[Create one by one, collecting failures instead of aborting the batch. ``create_fn`` commits each row on its own, so a rejected item never po] | normalise_name[Case/whitespace-insensitive form of a person's name. Used to match a name typed into a spreadsheet cell against the rows already in the data] | normalise_phone[Reduce every way a phone is written to the one shape stored in the DB. A spreadsheet cell or a form can hand us any of:: 1281875199 # bare 1] | is_past_friday[True when ``value`` is a Friday that has already happened. The school meets on Friday, so only those days count as attendance.]
+
+### app/core/data/follow_ups.py
+DOC: Follow-up: one row per contact a servant logs with one boy.
+DEF: FollowUpService[``class_id`` is the boy's class on ``action_date`` - a snapshot, kept so history survives a promotion. read : super_admin all | admin his cl]
+
+### app/core/data/groups.py
+DOC: Follow-up groups: which boys each servant is responsible for. ``groups`` is the only servant <-> boy link in the schema, and it holds no ``class_id`` - the class is reachable through either side.
+DEF: GroupsService[read : super_admin all | any amin his classes | teacher his own group write: super_admin all | any amin his classes] | _boy_row[The boy fields the group screen shows.] | _attendance_stats[present / absent / percent per boy, in one grouped query.] | _last_followups[The most recent follow-up per boy, newest row first.]
+
+### app/core/data/locations.py
+DOC: Save the GPS point of a boy's house onto ``boys`` itself. Two doors into the same columns: * a servant / amin standing in front of the house saves a point for that boy; * a boy logged into his own account saves his point with ``/boys/me``. If the caller also sends ``status`` (the existing ``FollowEnum``), a follow-up row is written in the same transaction - the follow-up type has always lived on `
+DEF: BoyLocationService[write: any staff member for a boy in scope | a boy for himself read : the same scopes as ``BoyService`` (a boy only sees his own point)]
+
+### app/core/data/map.py
+DOC: The home-visit map: houses, contact shortcuts, and a walk route. The server owns the permissions and the maths; the map library in the frontend only draws ``polyline`` and puts markers on ``houses``. Everything needed to open the follow-up panel after tapping (+) is in ``prefill``. A house's pin is simply ``boys.latitude`` / ``boys.longitude`` - no second location table.
+DEF: _digits[Turn ``0101...`` / ``+20 101...`` into ``20101...`` for deep links.] | VisitMapService[read : the same boy scopes as the rest of the app (a boy: his own house)]
+
+### app/core/data/names.py
+DOC: Arabic name comparison - the one place that answers "is this the same boy?". A child gets filed twice in two ways: his name is written differently ("مينا هاني" / "مينا هاني سعيد", "كرمينا" / "كيرمينا") or he lands under a second class. Both are caught by comparing names after stripping everything a name does not need, which is what this module does. Two callers, one rule set: app.core.DA.check rep
+DEF: normalise[The comparison form of a name: no marks, one spelling per letter.] | signature[Normalised name with its words sorted, so word order never matters.] | words[Normalised name as the words were written: the first one is the given name.] | overlap[Nesting: how much of the shorter name the longer one repeats. A directory written by hand drops a grandfather's name as often as it adds one] | similarity[How alike two names are (0..1), and which comparison found it. ``spelling`` is the letter-by-letter comparison, which catches a mistyped nam] | class_labels[Class id to grade label. A label leaks nothing, so this reads the whole table - ``SchoolClass`` carries no ``class_id`` of its own.] | matches_for[The boys this login can already open whose name is ``name`` or looks like it. ``exact`` holds the same name written the same way, ``similar`] | _hit[] | ensure_full_name[400 unless the name carries the three parts a boy is filed by.] | ensure_name_addable[409 unless this name is a new boy's. 100% alike is refused wherever it sits - one child cannot be filed twice, and the two rows would fight ]
+
+### app/core/data/subscriptions.py
+DOC: اشتراكات الأولاد في الرحلات: مصروف واسترداد لكل ولد في كل رحلة.
+DEF: SubscriptionService[إدارة اشتراكات الأولاد في الرحلات. الصلاحيات: - USER (ولد):penas اشتراكاته هو فقط (boy_id == user.boy_id). - TEACHER / ADMIN: اشتراكات أولاد]
+
+### app/core/data/task_values.py
+DOC: تسميعات الأولاد في المسابقات: مين سمّع، ومين سمّعله، وهل استلم الطايو.
+DEF: TaskValueService[سطر واحد لكل تسميع: ``(task_id, boy_id)`` لا يتكرر. القراءة: - الولد (``user``): تسميعاته هو فقط. - الخادم / أمين الفصل: تسميعات أولاد فصله.]
+
+### app/core/data/tasks.py
+DOC: المسابقات (tasks): كل فصل مسابقاته ومكافأة كل واحدة بالطايو.
+DEF: TaskService[مسابقات الفصل: القراءة، والإضافة/التعديل/الحذف لأمناء الفصل. القراءة: - الخادم / أمين الفصل: مسابقات فصله. - أمين المرحلة: مسابقات فصوله. - ]
+
+### app/core/data/teacher_checks.py
+DOC: Friday review the amin runs over the servants of his class.
+DEF: TeacherCheckService[``class_id`` on every row is a snapshot of the servant's class on ``date``. read : super_admin all | admin his class | teacher himself (a bo]
+
+### app/core/data/teachers.py
+DOC: Servants (الخدام) master data - not login accounts.
+DEF: TeacherService[The servant directory. A login for a servant is created separately in ``UserService`` and points back here through ``users.teacher_id``. rea]
+
+### app/core/data/trips.py
+DOC: Trips (الرحلات) - اشتراكات الفصول في الرحلات.
+DEF: TripService[القراءة مقسمة على الفصول. الكتابة: - الخادم / أمين الفصل يضيف رحلة لفصله فقط (يُفرض ``class_id``). - أمين المرحلة يضيف رحلة لأي فصل من فصوله]
+
+### app/core/data/users.py
+DOC: Login accounts - phone + password + role, nothing else. A number is registered by an administrator (or imported from a sheet) with ``password_hash = NULL``; the owner then picks his password from ``/auth/signup``. That single rule is what ``pending_signup`` means everywhere in the app.
+DEF: get_user_by_phone[] | UserService[read : super_admin all | admin accounts of his class | teacher/user own write: super_admin all | admin accounts of his class] | signup_check[Does this number belong to an account, and does it still need a password?] | complete_signup[Set the password of a phone-registered account - the one step an administrator cannot do for him. 404 unknown number, 409 the password is al]
+
+### app/core/EDA/__init__.py
+DOC: EDA package - Excel/Data helpers (import sheets into collections).
+DEF: 
+
+### app/core/EDA/importer.py
+DOC: importer.py - Shared .xlsx upload flow for collection import endpoints. Validates the file, parses rows via an EDA reader, bulk-inserts via the service (per-row failures don't stop the rest), and shapes the summary response. Keeps the boys/teachers import routes to a few lines each.
+DEF: read_upload[Validate the upload envelope and return its bytes. Only spreadsheet files are accepted (.csv included) and an empty body is rejected before ] | run_import[Run a full workbook import. `service` must expose add_list(items).]
+
+### app/core/EDA/read_excel.py
+DOC: read_excel.py - Read Excel sheets into Create models. Expected sheet: first row = header with the collection's column names. boys : boy_name | gender | birth_date | phone | phone_2 | zone | address | latitude | longitude | father_name | national_id | skills | class_name | teacher_name | last_visit_date | note | issue_flag teachers : teacher_name | phone | phone_2 | zone | address | latitude | long
+DEF: _str[] | _parse_float[Coordinate cell -> float (None when blank).] | _norm[] | _parse_gender[] | _parse_father[] | _parse_skills[One cell may hold several skills: 'رسم, تمثيل' -> ['رسم', 'تمثيل'].] | _resolve_class[Turn a ``class_name`` cell into a ``class_id``. ``classes`` comes from ``ClassService.label_lookup()`` - already limited to the classes this] | _parse_date[] | _parse_flag[] | teacher_lookup[``(class_id, normalized servant name) -> teacher id``. Keyed by class because servant names only have to be unique *inside* a class, and bec] | _row_to_boy[] | _row_to_teacher[] | _is_blank[] | read_workbook[Parse a workbook (or a CSV) into models. Returns (items, errors). Raises ValueError if the file/header is invalid.] | _xlsx_rows[] | _csv_rows[First row = header, comma / semicolon / tab separated, UTF-8.] | _parse_table[Shared row loop: header check, blank-row skip, per-row error capture.] | read_boys_workbook[Parse an .xlsx file (as bytes) into boys.] | read_teachers_workbook[Parse an .xlsx file (as bytes) into servants.] | _row_to_group[] | read_groups_workbook[Parse a group-assignment sheet: teacher_name | boy_name | class_name.] | _parse_role[] | _row_to_user[``phone | class_name | name | role`` -> a resolved import row. ``class_name`` is turned into ``class_id`` here (same lookup as every other s] | read_users_workbook[Parse an accounts sheet (.xlsx or .csv) into import rows.]
+
+### app/core/EDA/templates.py
+DOC: templates.py - Build .xlsx files: import templates and table exports. A workbook has two sheets: * the **first** sheet holds the data — its header row uses the exact English keys the readers expect (``boy_name``, ``class_name``, ...), * the second sheet (``شرح``) is Arabic documentation and is never read. ``class_name`` cells are filled from the classes this login may write into, so a downloaded t
+DEF: _write_sheet[] | _write_docs_sheet[] | _workbook[] | build_boys_template[Sample boys sheet ready to upload (class cells already filled). ``teachers_by_class`` pre-fills the servant column so a downloaded template ] | build_teachers_template[] | build_groups_template[The current groups in the exact columns the importer reads. Downloading this sheet, moving a boy to another servant's row and uploading it b] | _user_template_rows[] | build_users_template[Sample accounts sheet (``phone | class_name | name | role``).] | build_users_template_csv[Same template as a CSV, with a BOM so Excel opens the Arabic right.] | build_boys_export[Round-trip export: same columns the importer accepts.] | build_teachers_export[] | _skills_cell[A skills column on its way to Excel: enum list -> 'رسم, تمثيل'.]
+
+### app/core/EDA/write_groups.py
+DOC: write_groups.py - Build the groups Excel export. Layout: for each servant a title row, then his boys table, then a blank row — next servant below, and so on (Arabic headers).
+DEF: build_groups_workbook[Render servant groups into an .xlsx file (as bytes).]
+
+### app/core/EDA/write_servants.py
+DOC: write_servants.py - Build the "تفاصيل الخدام" Excel export. One simple sheet: exactly the rows the dashboard table shows, in the order the user picked (metric + asc/desc), with the same Arabic column headers.
+DEF: build_servants_workbook[Render the servant detail rows into an .xlsx file (as bytes).]
+
+### app/core/EDA/write_today_check.py
+DOC: 
+DEF: _arabic_date[] | _sheet_name[] | build_today_check_workbook[]
+
+### app/core/geo.py
+DOC: Tiny, dependency-free geography helpers used by the visit map. No external geocoding/routing service: the points are already known, so the route is a nearest-neighbour walk over the haversine distance. The frontend only draws the returned polyline.
+DEF: haversine_m[Straight-line distance in metres between two ``(lat, lng)`` points.] | walk_minutes[Rounded-up walking time for a leg, in minutes.] | nearest_neighbour[Order ``(boy_id, lat, lng)`` stops: closest to the current point first. Greedy on purpose - easy to read, deterministic, and good enough for]
+
+### app/core/middleware.py
+DOC: HTTP request logging: one console line per request.
+DEF: RequestLogMiddleware[Log method, path, status, duration and the acting user of every request. ``app.core.auth.deps.get_current_user`` writes ``user_info`` onto `]
+
+### app/core/notifications/__init__.py
+DOC: Web push: sending notifications to the servants' phones from this server. vapid.py the key pair and whether push is switched on at all sender.py the one call that talks to a push service service.py what the routes ask: subscribe, target, log jobs.py the clock - daily and weekly reminders A push message leaves the app: the browser keeps the subscription with its own push service, so a notification 
+DEF: 
+
+### app/core/notifications/jobs.py
+DOC: The clock: the reminders that go out on their own, with nobody asking. Three jobs, each firing at most once a day: follow-up every day at 3pm - a servant's class nudging him to visit his group birthday every morning - a boy's birthday is today or tomorrow wednesday every wednesday - prepare your segment, or come to the lesson A tap opens the app on the exact page, already filtered to that servant'
+DEF: _tz[The church's timezone - the hours below are meant in it, not in UTC.] | _audience[Live subscriptions grouped by (church, class) of the servant behind them. A log and its dedupe key belong to one church, so grouping by clas] | _devices[] | _audience_users[Recipient logins grouped by (church, class), devices or none. The bell must hold a reminder even for a servant who never switched web push o] | _servants_with_group[Which of these servants have a group, i.e. boys assigned to them.] | _with_group[Devices of servants who have a group, i.e. boys assigned to them. The app has no "فقرة" table, so this is the closest honest reading: a serv] | _claim[Write today's row for this job; ``None`` means someone already fired it. The unique ``(church_id, dedupe_key)`` is the whole mechanism: inse] | _fire[Put the message in each bell, deliver it to the phones, record the counts. The bell rows come first and do not depend on a phone answering: ] | _due[Is ``hour`` today, and are we still inside the late window for it?] | _follow_up_reminder[Daily: «فصلي بيفكرك تفتقد مجموعتك» - each class, at its own 3pm.] | _birthdays[Boys whose birthday is today or tomorrow, by class, name first. ``birth_date`` is a real date and the match is on month and day, so the look] | _birthday_reminder[Daily: a boy's birthday is today or tomorrow - his class's servants hear it.] | _wednesday_reminder[Wednesday: prepare your segment - or, if none is on you, come to the lesson.] | _purge[Throw away messages older than ``KEEP_DAYS`` - two weeks, then gone. Both halves go: the bell rows so a servant's list never grows, and the ] | run_due_jobs[Clean up, then fire whichever reminder is due; returns as soon as it tried. Called from the async loop through a thread, because every push ] | notification_loop[The lifespan's only background task: look at the clock, once a minute.]
+
+### app/core/notifications/sender.py
+DOC: Handing a message to each browser's push service - and nothing else. The server never touches a phone: it posts the encrypted payload to the subscription address the push service gave the browser, and that service is responsible for waking the device. So a failure here is always about a subscription, not about a servant.
+DEF: deliver[Send one message to many subscriptions; returns ``(sent, failed)``. ``link`` is the page a tap opens. ``link_for(device)`` overrides it per ] | _count_failure[]
+
+### app/core/notifications/service.py
+DOC: The questions the notification routes ask: who subscribed, who gets it, what went. Nothing here talks to a push service - that is ``sender.deliver``. This module only decides *who* should receive a message, remembers that it was sent, and keeps the copy each recipient sees in his own bell.
+DEF: _target[Apply an audience to a query already joined on ``User``. Named servants win over a class: ``teacher_ids`` is the narrower ask, and the calle] | recipient_users[The logins a message is written for: one church, then class / servants.] | devices_for[Live subscriptions of that church's audience (nothing narrowed = all its classes).] | staff_count[Servants in that church's audience, subscribed or not. The send screen shows this beside the device count so an amin can see who has still n] | send_now[Deliver a queued message and write the counts back into its log row. Runs after the response, in its own session: the request session is clo] | NotificationService[]
+
+### app/core/notifications/vapid.py
+DOC: The VAPID pair: how a push service knows the server is allowed to send. Generated once with ``python scripts/make_vapid_keys.py`` and kept in ``.env``. Only the public half ever reaches a browser.
+DEF: push_enabled[Push is off until both halves of the pair are configured.] | vapid_public_key[] | vapid_private_key[The private half in the only form pywebpush can read. ``py_vapid`` parses a key string as the raw 32-byte scalar - or as DER - and never as ] | claims[The VAPID ``sub`` claim: a contact the push service can reach if we abuse it.]
+
+### app/db/__init__.py
+DOC: db package - database connection layer (PostgreSQL / SQLAlchemy).
+DEF: 
+
+### app/db/database.py
+DOC: Database layer: engine, session factory and the shared declarative Base. There is no migration tool in this project - the ORM models are the schema. ``create_tables()`` builds anything that does not exist yet on startup; a column added to a model on a database that already exists is applied here with ``ALTER TABLE ... ADD COLUMN`` plus a backfill (see ``church.txt`` for the same steps as plain SQL
+DEF: get_db[Yield one DB session per request (FastAPI dependency).] | _has_column[] | _has_constraint[] | _add_missing_columns[Add columns that exist on ORM models but are missing from an already created table (no migration tool is used in this project).] | _ensure_default_church[Create the configured default tenant if it is not there yet.] | _add_tenant_columns[Add ``church_id`` (nullable at first) to every existing tenant table.] | _backfill_tenant_columns[Point every legacy row at the default church. ``users.church_id`` stays NULL for the platform owner (``super_admin``), who by design belongs] | _add_tenant_constraints[Add the tenant FKs and indexes if they are not there already. A fresh database gets them from ``create_all``; an existing one needs them add] | _set_tenant_columns_not_null[Make ``church_id`` required everywhere except ``users`` (owner is NULL).] | _rebuild_notification_dedupe[Scope the scheduled-message dedupe key to a church. Two churches may each fire their own ``followup:YYYY-MM-DD`` on the same day, so the uni] | _add_role_labels[Add role labels the ORM knows but an existing ``role_enum`` does not. Postgres refuses to *use* a freshly added enum label in the same trans] | _patch_role_owner_constraint[Rebuild ``ck_users_role_owner`` for the church amin and tenant rules.] | _rebuild_legacy_general_admin_classes[Drop the stage amin's class table when it still keys the login.] | create_tables[Create every table the ORM declares and roll the tenant schema forward. Importing ``app.models`` first guarantees every model is registered ]
+
+### app/main.py
+DOC: Application entry point. Only exposes the ASGI app; all wiring lives in ``app.core.app``. Run: uvicorn app.main:app --reload --port 9001 Docs: /docs /redoc /openapi.json
+DEF: 
+
+### app/models/__init__.py
+DOC: models package - SQLAlchemy ORM models mapped to the PostgreSQL tables.
+DEF: 
+
+### app/models/attend.py
+DOC: 
+DEF: Attend[Friday attendance of one boy: ``present=True`` = حاضر, ``False`` = غائب. ``class_id`` is a *historical snapshot* of the boy's class on ``dat]
+
+### app/models/boy.py
+DOC: 
+DEF: Boy[Core boy record. ``class_id`` is his *current* class. ``age`` is never stored - it is derived from ``birth_date`` when needed. ``last_visit_]
+
+### app/models/church.py
+DOC: 
+DEF: Church[One tenant of the platform - a church with its own classes and people. ``region`` is the area/region the church serves (المنطقة), ``is_activ]
+
+### app/models/enums.py
+DOC: 
+DEF: RoleEnum[What an account is allowed to see. USER -> a boy in the service: his own data only. TEACHER -> a servant: his own follow-ups and performance] | GenderEnum[Gender of a boy.] | FollowEnum[Result of a servant's weekly follow-up contact with a boy.] | FatherEnum[ابونا الاعتراف الخاص بالولد (optional).] | SubscriptionTypeEnum[نوع الحركة المالية للولد في الرحلة.] | SkillEnum[مهارات الولد - predefined skills + 'أخرى'.]
+
+### app/models/follow_up.py
+DOC: 
+DEF: FollowUp[Weekly follow-up contact logged by a servant for one boy. ``class_id`` is a *historical snapshot* taken on ``action_date`` - it is never upd]
+
+### app/models/general_admin_class.py
+DOC: 
+DEF: GeneralAdminClass[Which classes a stage amin (``role=general_admin``) is responsible for. Keyed by ``teacher_id``, so the group belongs to the servant rather ]
+
+### app/models/group.py
+DOC: 
+DEF: Group[Servant follow-up group membership: one row per (teacher, boy). No ``class_id`` here - the class is reachable through both sides (teacher ->]
+
+### app/models/notification_inbox.py
+DOC: 
+DEF: NotificationInbox[One row per recipient, so the app's bell can answer "what is new for me?". ``notification_logs`` is one row per *send* - it cannot say wheth]
+
+### app/models/notification_log.py
+DOC: 
+DEF: NotificationLog[Every send, hand-written or scheduled. ``kind`` says which: ``manual`` (an amin typed it), ``followup`` (the daily 3pm reminder), ``birthday]
+
+### app/models/push_device.py
+DOC: 
+DEF: PushDevice[One browser push subscription belonging to one login. ``endpoint`` is the address the push service hands the browser; it is rotated now and ]
+
+### app/models/school_class.py
+DOC: 
+DEF: SchoolClass[A class group for one academic year (e.g. "أولي ابتدائي", 2026/2027). This is the single source of truth for "الفصل". Current references liv]
+
+### app/models/subscription.py
+DOC: 
+DEF: Subscription[حركة مالية لولد في رحلة: مصروف (charge) أو استرداد (recover). ``class_id`` يُؤخذ لحظة التسجيل من فصل الولد ولا يتغير عند النقل بين الفصول، ح]
+
+### app/models/task.py
+DOC: 
+DEF: Task[مسابقة واحدة داخل فصل: اسمها ومكافأتها بالطايو. ``value`` عدد الطايو التي يستحقها الولد لما يسمع المسابقة (مثلاً حفظ اصحاح 4 من انجيل مرقس =]
+
+### app/models/task_value.py
+DOC: 
+DEF: TaskValue[تسميع ولد واحد لمسابقة واحدة: مين سمّعله، وإمتى، وهل استلم الطايو. ``(task_id, boy_id)`` هو هوية السجل - المسابقة تُسمع مرة واحدة، فالتسميع ]
+
+### app/models/teacher.py
+DOC: 
+DEF: Teacher[Servant (أساتذة/خدام) master data. Not a login account: the account lives in ``users`` and points back here via ``users.teacher_id``. ``duty]
+
+### app/models/teacher_check.py
+DOC: 
+DEF: TeacherCheck[Weekly check the amin runs over the servants of his class. ``class_id`` is a *historical snapshot* of the servant's class on ``date``. Every]
+
+### app/models/trip.py
+DOC: 
+DEF: Trip[رحلة واحدة يسجل فيها فصل اشتراكات الأولاد. ``class_id`` يلمح الفصل الذي تتبع له الرحلة في لحظة التسجيل ولا يتغير عند نقل الصفوف بين الفصول ل]
+
+### app/models/user.py
+DOC: 
+DEF: User[Login accounts *only*: phone + password + role. The phone number is the only handle: an administrator registers the number (``POST /auth/use]
+
+### app/routes/__init__.py
+DOC: Every router the app mounts - one module per domain.
+DEF: 
+
+### app/routes/attendance.py
+DOC: Friday attendance sheet.
+DEF: list_attendance[] | create_attendance[] | create_attendance_bulk[Save the whole class sheet in one transaction.] | get_attendance[] | update_attendance[] | delete_attendance[]
+
+### app/routes/auth.py
+DOC: Authentication and login accounts. Three groups live in one router because they share one story: /auth/login, /auth/signup/* pre-login - no user, so no service /auth/me the caller's own profile /auth/register, /auth/users accounts - administrators only
+DEF: login_access_token[OAuth2 password flow - ``username`` carries the phone number.] | check_signup[Phone-number lookup used by the signup screen before a password is typed.] | finish_signup[Set the password of a phone-registered account and log straight in.] | read_users_me[] | list_users[] | create_user[Register a login: the number only - the owner picks his password then. ``/auth/register`` stays retired; the screen talks to ``/auth/users``] | register_user[] | set_user_classes[The classes a stage amin is answerable for - the whole list, every time.] | update_user[An administrator may change anything; a servant or a boy may reset only his own password (the service draws that line).] | delete_user[]
+
+### app/routes/base.py
+DOC: Service meta endpoints - who the API is and whether it is alive.
+DEF: root[The API's front door: where things are.] | health[Unauthenticated liveness probe.]
+
+### app/routes/boys.py
+DOC: Boys (الأولاد) - directory, spreadsheet template / import / export.
+DEF: list_boys[] | create_boy[] | duplicate_boy_names[Boys whose names look alike - the same child entered twice, once with a different spelling or under another class. ``threshold`` is the mini] | boys_template[A ready-to-upload sample sheet with the class dropdown already filled.] | boys_export[Round-trip export: exactly the columns ``/boys/import`` accepts.] | import_boys[Bulk create / refresh boys from a sheet (``class_name`` + ``boy_name``).] | get_boy[] | update_boy[] | delete_boy[]
+
+### app/routes/churches.py
+DOC: Churches (الكنائس) - platform tenants. A tenant user only ever sees his own church; creating and suspending tenants is reserved for the platform owner (enforced in ``ChurchService``).
+DEF: list_churches[] | create_church[] | get_church[] | update_church[] | delete_church[]
+
+### app/routes/classes.py
+DOC: Classes (الفصول) - the catalogue every scope resolves to.
+DEF: list_classes[] | create_class[] | get_class[] | update_class[] | delete_class[]
+
+### app/routes/dashboard.py
+DOC: Dashboard analytics - one summary, one boy drill-down. Read-only.
+DEF: _parse_class_ids[`class_ids=1,2,3` — the frontend sends one stage's classes as a list.] | dashboard_summary[Attendance, streaks, absences, servant scores, follow-up coverage and late confessions - all already scoped to the classes this login may se] | dashboard_my_performance[The home screen's own numbers. A servant is measured on his group and his reviews, a class amin on his whole class, the general amin on ever] | dashboard_today_check_tasks[] | dashboard_today_check[] | dashboard_today_check_export[] | dashboard_teachers_export[The "تفاصيل الخدام" table as a simple sheet - same rows, same order.] | dashboard_follow_up[Follow-up performance: coverage %, reached vs pending boys, a servant breakdown (who logged and who did not) and a ranked boy list - all sco] | dashboard_birthdays[Upcoming birthdays for boys and/or servants (a servant only sees boys). `month` overrides the quick `window` when set.] | dashboard_boy[One boy: master data, every Friday, season table and follow-up log.]
+
+### app/routes/follow_ups.py
+DOC: Follow-up log - one row per contact a servant logs with one boy.
+DEF: list_follow_ups[] | create_follow_up[] | get_follow_up[] | update_follow_up[] | delete_follow_up[]
+
+### app/routes/groups.py
+DOC: Follow-up groups: which boys each servant is responsible for.
+DEF: list_groups[Roster plus each boy's attendance % and last follow-up - the sheet the UI renders needs those two columns.] | assign_group[Put boys under a servant (a boy belongs to exactly one group).] | unassign_group[] | groups_template[Current groups as a sheet the user can edit and upload back. One row per boy: teacher_name | boy_name | class_name - exactly the columns ``/] | import_groups[Sheet columns: teacher_name | boy_name | class_name.] | export_groups[The roster sheet as a workbook.] | _class_label[Name of the class the workbook is about; "all classes" when mixed.]
+
+### app/routes/locations.py
+DOC: House locations and the home-visit map (خريطة افتقاد المنازل).
+DEF: visit_map[All houses in scope + a nearest-first route from the caller's position.] | record_my_location[The boy himself saves his own house location (future login flow).] | record_boy_location[Anyone allowed to see this boy saves a point while standing at his house.] | current_boy_location[The pin currently drawn for this boy, or ``null`` if never recorded.]
+
+### app/routes/notifications.py
+DOC: إشعارات: what a browser registers, what an amin sends, and each login's bell. Registering is open to any staff login (a servant saves his own phone on the browser's upsert, so a shared phone follows whoever logs in); only a manager may send or read the log, and the service pins a class amin to his own class however the request body is written. The bell (``/inbox``) belongs to whoever the message w
+DEF: vapid_key[The public half of the VAPID pair, which a browser needs to subscribe. 503 when the server has no pair configured: the app then hides the en] | save_subscription[Register this browser for the calling login (idempotent).] | push_status[Switches for this browser, and - for an amin - how many phones answer.] | send_message[Queue a hand-written message; the posts to the push services follow. 202 rather than 200 because the reply is the accepted request, not the ] | notification_log[Recent sends, newest first: the amin's own and his class's scheduled ones.] | notification_inbox[This login's messages, newest first.] | notification_unread[The number on the header bell.] | mark_inbox_read[Close every unread row this login has; replies with what it closed.] | mark_one_read[One message opened (the bell taps it and then follows its link).]
+
+### app/routes/sheets.py
+DOC: Spreadsheet plumbing shared by the routes: the two download responses and the class-label helpers every template needs. Everything here is about *presentation* - turning rows into a file, or telling a template which classes this login may fill. Reading the rows stays in the services.
+DEF: xlsx_response[Send workbook bytes as a download.] | csv_response[Send CSV bytes as a download.] | writable_class_names[Class names this login may *write into*, for a template's dropdown. A class amin gets his own class, the super admin gets all of them - a te] | class_labels[``class_id -> name`` for every class the login can read.] | label_for[A ``class_id -> name`` lookup that never raises. The export builders take a callable rather than a dict because a boy whose class was delete]
+
+### app/routes/subscriptions.py
+DOC: اشتراكات الأولاد في الرحلات: إضافة، تعديل، حذف، وإجمالي لكل ولد.
+DEF: list_subscriptions[] | list_subscriptions_for_trip[] | trip_boy_totals[كل الولد في فصل الرحلة مع مجموع ما دفعه (مصروف ناقص استرداد).] | trip_summary[كل الأولاد في الرحلة مع total charged, recovered, paid, remaining.] | boy_trip_summary[ولد واحد في رحلة واحدة: كم دفع وكم تبقى عليه.] | create_subscription[] | update_subscription[] | delete_subscription[]
+
+### app/routes/task_values.py
+DOC: تسميعات المسابقات: تسجيل التسميع، وعلامات الاستلام في المستحقات.
+DEF: list_task_values[] | create_task_value[] | save_task_value_dues[حفظ صفحة المستحقات كلها في معاملة واحدة.] | get_task_value[] | update_task_value[] | delete_task_value[]
+
+### app/routes/tasks.py
+DOC: المسابقات - مسابقات الفصل ومكافآتها بالطايو: إضافة، تعديل، حذف.
+DEF: list_tasks[] | create_task[] | get_task[] | update_task[] | delete_task[]
+
+### app/routes/teacher_checks.py
+DOC: Friday review the amin runs over the servants of his class.
+DEF: list_teacher_checks[] | create_teacher_check[] | create_teacher_check_bulk[Review the whole class in one transaction.] | get_teacher_check[] | update_teacher_check[] | delete_teacher_check[]
+
+### app/routes/teachers.py
+DOC: Servants (الخدام) - directory, spreadsheet template / import / export.
+DEF: list_teachers[] | create_teacher[] | teachers_template[A ready-to-upload sample sheet with the class dropdown already filled.] | teachers_export[] | import_teachers[] | my_record[The logged-in servant's own directory row - name, birth date, آخر اعتراف...] | update_my_record[A servant updating his own data. His phone and his class are locked.] | get_teacher[] | update_teacher[] | delete_teacher[]
+
+### app/routes/trips.py
+DOC: Trips - اشتراكات الفصول في الرحلات: إضافة، تعديل، حذف.
+DEF: list_trips[] | create_trip[] | get_trip[] | update_trip[] | delete_trip[]
+
+### app/schemas/__init__.py
+DOC: API schemas, one module per domain. Import anything from ``app.schemas`` directly - the shared models are re-exported here so consumers stay decoupled from the file layout. The ORM classes live in ``app.models``; every ``*Response`` schema carries ``from_attributes`` so the services can return SQLAlchemy rows directly. Conventions ----------- ``*Create`` -> POST body; ids, timestamps and historica
+DEF: 
+
+### app/schemas/attend.py
+DOC: 
+DEF: AttendCreate[One boy's attendance for one day. ``class_id`` and ``recorded_by`` are stamped server-side: the class is a snapshot of the boy's class on ``] | AttendUpdate[Only the outcome is editable - boy/date/class are the row's identity.] | AttendResponse[] | AttendItem[One line of the Friday sheet: every boy of the class, present or not.] | AttendBulkCreate[Copy the class roster and tick the ones who showed up.]
+
+### app/schemas/base.py
+DOC: 
+DEF: ORMResponse[Base for every schema hydrated straight from a SQLAlchemy row. ``from_attributes`` lets the services return ORM objects as-is; fields named ]
+
+### app/schemas/boy.py
+DOC: 
+DEF: BoyCreate[Core boy record. ``age`` is derived from ``birth_date`` - never sent.] | BoyUpdate[Partial update - all fields optional. ``age`` is never accepted.] | BoyResponse[]
+
+### app/schemas/church.py
+DOC: 
+DEF: _clean_optional_text[Collapse whitespace on optional free-text fields; keep None as None.] | ChurchCreate[A new tenant of the platform - one church with its own data silo.] | ChurchUpdate[Partial update - all fields optional.] | ChurchResponse[]
+
+### app/schemas/follow_up.py
+DOC: 
+DEF: FollowUpCreate[A servant logs one contact with one boy. ``class_id`` (historical snapshot) and ``recorded_by`` are stamped server-side, so they are absent ] | FollowUpUpdate[Partial update - the (teacher, boy, class) identity never changes.] | FollowUpResponse[]
+
+### app/schemas/group.py
+DOC: 
+DEF: GroupAssign[Put boys into a servant's follow-up group (replaces their old one).] | GroupUnassign[Remove boys from any group.] | GroupResponse[]
+
+### app/schemas/location.py
+DOC: Request / response bodies for saving a boy's house point and the visit map. The server never guesses a phone's GPS: the client reads it with ``navigator.geolocation`` and sends ``latitude``/``longitude``. Coordinates are stored **on ``boys``** (the existing latitude/longitude columns). The follow-up type is the existing ``FollowEnum`` and belongs to ``follow_ups.status`` - if the client sends ``st
+DEF: LocationRecord[Body of ``POST /locations/boys/{boy_id}`` (and ``.../boys/me``).] | BoyLocationResponse[Result of saving a point - the boy's current coordinates.] | MapScopeEnum[The two filters the UI asked for, plus an explicit "all my classes".] | FollowUpPrefill[Body ready to POST to ``POST /follow-ups`` when (+) is tapped. The frontend can spread this object straight into its request; only ``status`] | MapHouse[One house on the map - whether it has coordinates or not.] | MapOrigin[The "مني" point the route starts from.] | MapLeg[One drawn segment between two consecutive stops.] | MapSummary[] | MapRouteResponse[Everything the map screen needs in one call.] | option_list[Turn an enum-label mapping into the ``[{value, label}]`` a <select> wants.]
+
+### app/schemas/notification.py
+DOC: Web push: subscriptions in, messages out. ``endpoint`` and the two keys come straight from the browser's ``PushSubscription.toJSON()``; a subscription is meaningless without the server's own VAPID pair, so keeping them is not the secret it looks like - but they are still only ever returned to the login that registered them.
+DEF: SubscriptionKeys[] | SubscriptionCreate[The browser's own ``PushSubscription.toJSON()`` shape.] | SendCreate[A hand-written message. ``class_id`` is who gets it: ``None`` means every servant of every class - which only the church-wide amin may say; ] | SendOut[What the send accepted: the log row plus how far it got.] | NotificationRow[] | InboxRow[One message in one login's own bell.] | UnreadCount[] | PushStatus[For the enable-push banner and the send screen's recipient count.]
+
+### app/schemas/school_class.py
+DOC: 
+DEF: normalise_class_name[Collapse whitespace, reject anything outside the catalogue.] | SchoolClassCreate[One class group for one academic year (e.g. "أولي ابتدائي", 2026/2027).] | SchoolClassUpdate[Partial update - all fields optional.] | SchoolClassResponse[]
+
+### app/schemas/subscription.py
+DOC: 
+DEF: SubscriptionCreate[تسجيل حركة مالية لولد في رحلة.] | SubscriptionUpdate[تعديل جزئي لحركة مالية.] | SubscriptionResponse[] | BoyTripTotal[مجموع ما دفعه ولد في رحلة معينة (مصروف ناقص استرداد).] | BoyTripSummary[ملخص دفعات ولد في رحلة: مصروف، استرداد، مدفوع، وباقي من تكلفة الرحلة.]
+
+### app/schemas/task.py
+DOC: 
+DEF: TaskCreate[مسابقة جديدة: اسمها، مكافأتها بالطايو، فصلها، وتاريخ تسجيلها.] | TaskUpdate[تعديل جزئي للمسابقة - كل الحقول اختيارية.] | TaskResponse[]
+
+### app/schemas/task_value.py
+DOC: 
+DEF: TaskValueCreate[تسجيل تسميع ولد لمسابقة: مين سمّعله بيتسجل من الحساب نفسه.] | TaskValueUpdate[تعديل جزئي لتسميع - التاريخ وحالة الاستلام فقط.] | TaskValueDuesItem[سطر من صفحة المستحقات: الولد ومستحقاته مسلّمة ولا لسة.] | TaskValueDuesBulk[حفظ كل العلامات اللي اتغيّرت في المستحقات مرة واحدة.] | TaskValueResponse[]
+
+### app/schemas/teacher.py
+DOC: 
+DEF: TeacherCreate[Register a servant. The login is created separately in ``users``. ``last_visit_date`` = last confession/visit by the father; NULL until the ] | TeacherUpdate[Partial update - all fields optional.] | TeacherResponse[]
+
+### app/schemas/teacher_check.py
+DOC: 
+DEF: TeacherCheckCreate[The amin's Friday review of one servant. The four flags are required: an empty body must not silently read as "nothing was done". ``class_id] | TeacherCheckUpdate[Partial update - only the answers and the note can change. ``date`` is part of the row's identity (one check per servant per day), so it is ] | TeacherCheckResponse[] | TeacherCheckItem[One servant's answers inside a whole-class review.] | TeacherCheckBulkCreate[Every servant of the class reviewed in one Friday POST.]
+
+### app/schemas/trip.py
+DOC: 
+DEF: TripCreate[رحلة جديدة: اسم، قيمة اشتراك، فصل، وتاريخ التسجيل.] | TripUpdate[تعديل جزئي للرحلة - كل الحقول اختيارية.] | TripResponse[]
+
+### app/schemas/user.py
+DOC: 
+DEF: check_owner[Mirror of the DB constraint ``ck_users_role_owner``. Raises ``ValueError`` with a message the API can return verbatim instead of leaking a r] | normalise_phone[Delegate to :func:`app.core.data.common.normalise_phone`. The rule itself lives in ``common`` so the service layer can use the same one; it ] | UserCreate[New login created by an administrator. ``password`` is optional: an account registered without one is created with ``password_hash = NULL`` ] | ManagedClassesUpdate[The whole class list of a stage amin - sent again on every change.] | UserUpdate[Partial update. ``password`` omitted = keep the current one. If ``role`` is sent, the owner links are re-checked against the *values in this] | UserImportRow[One row of the accounts sheet: phone | class_name | name | role. The sheet carries *descriptions*, not ids - the service resolves the servan] | SignupCheckRequest[Is this phone on file, and is it still waiting for a password?] | SignupCheckResponse[] | SignupRequest[The owner picks the password for his phone-registered account.] | UserInDB[Raw row - includes ``password_hash``. Never leave the server.] | UserResponse[What the client gets back - no credentials.] | Token[OAuth2 password-flow payload returned by POST /auth/login.]
+

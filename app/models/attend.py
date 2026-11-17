@@ -36,6 +36,12 @@ class Attend(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     boy_id = Column(
         Integer,
         ForeignKey("boys.id", ondelete="RESTRICT"),
@@ -65,6 +71,7 @@ class Attend(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     boy = relationship("Boy", back_populates="attends")
     class_ = relationship("SchoolClass", back_populates="attends")
     recorder = relationship("User", back_populates="attends")

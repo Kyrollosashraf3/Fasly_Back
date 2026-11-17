@@ -4,6 +4,7 @@ from app.routes.attendance import router as attendance_router
 from app.routes.auth import router as auth_router
 from app.routes.base import router as base_router
 from app.routes.boys import router as boys_router
+from app.routes.churches import router as churches_router
 from app.routes.classes import router as classes_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.follow_ups import router as follow_ups_router
@@ -23,6 +24,7 @@ __all__ = [
     "boys_router",
     "teachers_router",
     "classes_router",
+    "churches_router",
     "attendance_router",
     "follow_ups_router",
     "groups_router",

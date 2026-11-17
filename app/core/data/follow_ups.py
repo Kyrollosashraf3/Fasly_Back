@@ -84,6 +84,7 @@ class FollowUpService(BaseService):
         record = FollowUp(
             teacher_id=teacher.id,
             boy_id=boy.id,
+            church_id=self.church_for(class_id=boy.class_id, person=boy),
             class_id=boy.class_id,  # snapshot taken now
             action_date=data.action_date or date.today(),
             status=data.status,

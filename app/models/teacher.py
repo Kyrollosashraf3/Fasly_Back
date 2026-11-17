@@ -40,6 +40,12 @@ class Teacher(Base):
     __tablename__ = TABLE
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     teacher_name = Column(String(255), nullable=False, index=True)
     birth_date = Column(Date, nullable=True)
     phone = Column(String(50), nullable=True)
@@ -78,6 +84,7 @@ class Teacher(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     class_ = relationship("SchoolClass", back_populates="teachers")
     user = relationship(
         "User", back_populates="teacher", uselist=False, cascade="all, delete-orphan"

@@ -22,6 +22,7 @@ from app.core.data.common import (
     ensure_my_class,
     get_or_404,
     scope_classes,
+    target_church_id,
 )
 from app.models.user import User
 
@@ -35,8 +36,24 @@ class BaseService:
         self.user_id = current_user.id
 
     def classes_query(self, model) -> Query:
-        """Every row of ``model`` the login may see (class-scoped)."""
+        """Every row of ``model`` the login may see (church- and class-scoped)."""
         return scope_classes(self.db, self.db.query(model), model, self.user)
+
+    def church_for(
+        self,
+        requested_church_id: int | None = None,
+        *,
+        class_id: int | None = None,
+        person=None,
+    ) -> int:
+        """Resolve the tenant for a row this login is about to write."""
+        return target_church_id(
+            self.db,
+            self.user,
+            requested_church_id,
+            class_id=class_id,
+            person=person,
+        )
 
     def ensure_class(self, class_id: int | None) -> None:
         """403 unless ``class_id`` is the login's own class."""
@@ -171,6 +188,7 @@ class WeeklySheetService(BaseService):
                     self.person_fk: person.id,
                     "date": action_date,
                     "class_id": person.class_id,  # snapshot taken now
+                    "church_id": self.church_for(person=person),
                     "recorded_by": self.user_id,
                 }
             )

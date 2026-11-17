@@ -12,13 +12,16 @@ class RoleEnum(str, Enum):
                      (the group is written on his servant row in
                      ``general_admin_classes``, so the classes follow him even
                      if his login's phone changes).
-    SUPER_ADMIN -> church-wide amin: every class, servants and boys.
+    ABONA       -> the church amin (أبونا): every class and stage **in his own
+                  church only**. He cannot see another tenant's data.
+    SUPER_ADMIN -> the platform owner (developer): every church.
     """
 
     USER = "user"
     TEACHER = "teacher"
     ADMIN = "admin"
     GENERAL_ADMIN = "general_admin"
+    ABONA = "abona"
     SUPER_ADMIN = "super_admin"
 
 ROLE_ENUM_NAME = "role_enum"

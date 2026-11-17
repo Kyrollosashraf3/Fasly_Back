@@ -7,7 +7,14 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Query, joinedload
 
 from app.core.data.base import BaseService
-from app.core.data.common import apply_update, commit, my_class_ids
+from app.core.data.common import (
+    apply_update,
+    commit,
+    ensure_boy_access,
+    ensure_my_church,
+    my_class_ids,
+    scope_church,
+)
 from app.models.boy import Boy
 from app.models.enums import RoleEnum, SubscriptionTypeEnum
 from app.models.subscription import Subscription
@@ -34,7 +41,9 @@ class SubscriptionService(BaseService):
     # ------------------------------------------------------------- read
     def query(self) -> Query:
         """كل اشتراكات الفصول التي يراها الدخول (مقسمة على الفصل عبر Boy)."""
-        q = self.db.query(Subscription).join(Boy, Subscription.boy_id == Boy.id)
+        q = scope_church(
+            self.db.query(Subscription), Subscription, self.user
+        ).join(Boy, Subscription.boy_id == Boy.id)
         # A boy login only ever reads his own payments, even inside his class.
         if self.user.role == RoleEnum.USER:
             return q.filter(Subscription.boy_id == self.user.boy_id)
@@ -92,16 +101,19 @@ class SubscriptionService(BaseService):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="الرحلة غير موجودة.",
             )
+        # Church first: both ends of the payment must be in the caller's church.
+        ensure_boy_access(self.db, self.user, boy)
+        ensure_my_church(self.db, self.user, trip.church_id)
 
         # ----------------------------- الصلاحيات: فقط سوبر أديمن، أديمن، خادم
-        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
+        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ABONA, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="لا يمكنك إضافة اشتراكات. هذه العملية مقتصرة على الأمناء والخادم.",
             )
 
         # السوبر أديمن غير مقيد بفصل؛ الأديمن والخادم مقيدون بفصلهم فقط
-        if self.user.role in (RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
+        if self.user.role in (RoleEnum.ABONA, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             if boy.class_id not in my_class_ids(self.db, self.user):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -149,6 +161,7 @@ class SubscriptionService(BaseService):
                 )
 
         sub = Subscription(
+            church_id=self.church_for(class_id=boy.class_id, person=boy),
             boy_id=data.boy_id,
             trip_id=data.trip_id,
             type=SubscriptionTypeEnum(data.type),
@@ -170,14 +183,14 @@ class SubscriptionService(BaseService):
 
         boy = self.db.get(Boy, sub.boy_id)
         # ----------------------------- الصلاحيات: فقط سوبر أديمن، أديمن، خادم
-        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
+        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ABONA, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="لا يمكنك تعديل اشتراكات. هذه العملية مقتصرة على الأمناء والخادم.",
             )
 
         # السوبر أديمن غير مقيد بفصل؛ الأديمن والخادم مقيدون بفصلهم فقط
-        if self.user.role in (RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
+        if self.user.role in (RoleEnum.ABONA, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             if boy.class_id not in my_class_ids(self.db, self.user):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -194,14 +207,14 @@ class SubscriptionService(BaseService):
         sub = self.get(sub_id)  # مقسّم على الفصول تلقائيًا
 
         # ----------------------------- الصلاحيات: فقط سوبر أديمن، أديمن، خادم
-        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
+        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ABONA, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="لا يمكنك حذف اشتراكات. هذه العملية مقتصرة على الأمناء والخادم.",
             )
 
         # السوبر أديمن غير مقيد بفصل؛ الأديمن والخادم مقيدون بفصلهم فقط
-        if self.user.role in (RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
+        if self.user.role in (RoleEnum.ABONA, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN, RoleEnum.TEACHER):
             boy = self.db.get(Boy, sub.boy_id)
             if boy.class_id not in my_class_ids(self.db, self.user):
                 raise HTTPException(
@@ -222,6 +235,7 @@ class SubscriptionService(BaseService):
                 detail="الرحلة غير موجودة.",
             )
 
+        ensure_my_church(self.db, self.user, trip.church_id)
         mine = my_class_ids(self.db, self.user)
         if mine is not None and trip.class_id not in mine:
             raise HTTPException(
@@ -297,6 +311,7 @@ class SubscriptionService(BaseService):
                 detail="الرحلة غير موجودة.",
             )
 
+        ensure_my_church(self.db, self.user, trip.church_id)
         mine = my_class_ids(self.db, self.user)
         if mine is not None and trip.class_id not in mine:
             raise HTTPException(
@@ -341,6 +356,7 @@ class SubscriptionService(BaseService):
                 detail="الولد غير موجود.",
             )
 
+        ensure_my_church(self.db, self.user, trip.church_id)
         mine = my_class_ids(self.db, self.user)
         if mine is not None and trip.class_id not in mine:
             raise HTTPException(
@@ -354,7 +370,12 @@ class SubscriptionService(BaseService):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="لا يمكنك عرض ملخص إلا لنفسك.",
             )
-        elif self.user.role in (RoleEnum.TEACHER, RoleEnum.ADMIN, RoleEnum.GENERAL_ADMIN):
+        elif self.user.role in (
+            RoleEnum.TEACHER,
+            RoleEnum.ADMIN,
+            RoleEnum.GENERAL_ADMIN,
+            RoleEnum.ABONA,
+        ):
             if boy.class_id not in mine:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,

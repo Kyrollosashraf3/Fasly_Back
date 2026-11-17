@@ -89,6 +89,7 @@ class TaskService(BaseService):
         task = Task(
             task_name=data.task_name.strip(),
             value=data.value,
+            church_id=self.church_for(class_id=effective_class_id),
             class_id=effective_class_id,
             created_at=data.created_at or date.today(),
             status=data.status or 'active',

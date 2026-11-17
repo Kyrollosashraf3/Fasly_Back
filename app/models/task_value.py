@@ -38,6 +38,12 @@ class TaskValue(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     class_id = Column(
         Integer,
         ForeignKey("classes.id", ondelete="RESTRICT"),
@@ -67,6 +73,7 @@ class TaskValue(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     class_ = relationship("SchoolClass", back_populates="task_values")
     task = relationship("Task", back_populates="task_values")
     boy = relationship("Boy", back_populates="task_values")

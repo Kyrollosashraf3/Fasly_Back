@@ -32,11 +32,21 @@ class NotificationLog(Base):
 
     __tablename__ = TABLE
     __table_args__ = (
-        UniqueConstraint("dedupe_key", name="uq_notification_logs_dedupe_key"),
+        # A scheduled key is unique *per church*: two churches may each fire
+        # their own "followup:2026-11-03" on the same day.
+        UniqueConstraint(
+            "church_id", "dedupe_key", name="uq_notification_logs_church_dedupe_key"
+        ),
         Index("ix_notification_logs_kind_created_at", "kind", "created_at"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     kind = Column(String(24), nullable=False, index=True)
     dedupe_key = Column(String(64), nullable=True)
 

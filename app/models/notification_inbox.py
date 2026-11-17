@@ -32,6 +32,12 @@ class NotificationInbox(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     user_id = Column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),

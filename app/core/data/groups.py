@@ -18,6 +18,7 @@ from app.core.data.common import (
     my_class_ids,
     normalise_name,
     scope_boys,
+    scope_church,
     scope_teachers,
 )
 from app.models.attend import Attend
@@ -50,12 +51,14 @@ class GroupsService(BaseService):
         """Group rows this login may see."""
         if self.user.role == RoleEnum.TEACHER:
             return (
-                self.db.query(Group)
+                scope_church(self.db.query(Group), Group, self.user)
                 .join(Teacher, Group.teacher_id == Teacher.id)
                 .filter(Group.teacher_id == self.user.teacher_id)
             )
         mine = self._class_ids()
-        query = self.db.query(Group).join(Teacher, Group.teacher_id == Teacher.id)
+        query = scope_church(
+            self.db.query(Group), Group, self.user
+        ).join(Teacher, Group.teacher_id == Teacher.id)
         return query if mine is None else query.filter(Teacher.class_id.in_(mine))
 
     # ------------------------------------------------------------------ read
@@ -148,7 +151,15 @@ class GroupsService(BaseService):
                     detail=f"Boy '{boy.boy_name}' is not in the servant's class.",
                 )
             self._unfile(boy.id)
-            self.db.add(Group(teacher_id=servant.id, boy_id=boy.id))
+            self.db.add(
+                Group(
+                    teacher_id=servant.id,
+                    boy_id=boy.id,
+                    church_id=self.church_for(
+                        class_id=boy.class_id, person=boy
+                    ),
+                )
+            )
             assigned += 1
 
         commit(self.db, f"Group assign servant={servant.id} boys={assigned}")

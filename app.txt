@@ -111,3 +111,488 @@ ALTER TABLE users ADD CONSTRAINT ck_users_role_owner CHECK (
   OR (role = 'general_admin'    AND teacher_id IS NOT NULL AND boy_id IS NULL)
   OR (role = 'super_admin'      AND boy_id IS NULL)
 );
+
+
+================================================================================
+دليل مرجع الباك إند  -  Backend Reference Guide
+أُضيف في 17 نوفمبر 2026 بعد تحويل المشروع إلى منصة متعددة المستأجرين (multi-tenant SaaS)
+================================================================================
+
+الغرض من هذا الجزء
+------------------
+الجزء اللي فوق كان المواصفة الأصلية للمشروع. اللي تحته مرجع للفريق: يشرح كل
+موديول موجود دلوقتي، إيه المسؤولية بتاعته، وإزاي بيتكلم مع غيره. اعتبره دليل
+سريع لأي مطور جديد، ومرجع ثابت لما نرجع للكود بعد شهور. القاعدة الحاكمة:
+الصلاحية أو الحساب أو التحويل لا يتكرر في أكتر من مكان - لكل سؤال بيت في مكان
+واحد بس. لو محتاج تضيف حاجة، ابحث عن المكان المخصص ليها في الخريطة في القسم 2.
+
+
+1) الفكرة العامة والطبقات  -  Architecture
+-------------------------------------------
+الباك إند FastAPI + SQLAlchemy + PostgreSQL. الواجهة (React) موجودة في مشروع
+منفصل (front_fasly) بتتكلم معانا over HTTP. التطبيق دلوقتي SaaS: قاعدة بيانات
+واحدة تستضيف كنائس كتير، وكل كنيسة «سيلو» منفصل عن التاني.
+
+الطبقات من فوق لتحت:
+
+    routes/         -> HTTP بس: parser، تحقق من الشكل، استدعاء الخدمة. مفيش قرار صلاحية هنا.
+    schemas/        -> شكل الطلب والرد (Pydantic). مفيش منطق أعمال.
+    core/data/      -> الخدمات: لكل جدول service. كل سؤال بيسأله في مكانه.
+    core/DA/        -> تحليلات/تقارير (Data Analysis): قراءة فقط وتجميع في Python.
+    core/EDA/       -> Excel: قراءة/كتابة ملفات، قوالب، وتصدير.
+    core/notifications/ -> Web push: من ياخد الإشعار، ومين بعت، والرسائل المجدولة.
+    core/auth/      -> تسجيل الدخول، الهوية، الـ seed عند التشغيل، تحديد معدل الطلبات.
+    core/app.py     -> مصنع التطبيق: يجمع كل حاجة ويربط الـ routers والـ lifespan.
+    core/geo.py     -> حسابات المسافة والطريق (بدون خدمة خارجية).
+    core/middleware.py -> لوج لكل طلب.
+    models/         -> ORM: هو الـ schema نفسه (مفيش أداة migrations).
+    db/database.py  -> الـ engine والجلسة وترقية الـ schema عند التشغيل.
+    config/         -> الإعدادات واللوجر.
+
+قاعدة ذهبية: route ما ياخدش قرار، service ما يكررش قاعدة صلاحية، والصلاحية
+كلها في core/data/common.py.
+
+
+2) خريطة المجلدات  -  Directory map
+-----------------------------------
+    app/
+    ├── main.py                  نقطة الدخول (ASGI). uvicorn app.main:app
+    ├── config/
+    │   ├── settings.py          كل الإعدادات من .env (Singleton: settings)
+    │   └── logger.py            get_logger(__name__)
+    ├── db/
+    │   └── database.py          Engine / SessionLocal / Base / create_tables()
+    ├── models/                  17 جدول + enums.py  (كل الجداول هنا)
+    ├── schemas/                 Pydantic: Create / Update / Response لكل مجال
+    ├── routes/                  16 router (prefix لكل مجال)
+    └── core/
+        ├── app.py               FaslyApplication.create_app()
+        ├── middleware.py        RequestLogMiddleware
+        ├── geo.py               haversine / walk / nearest_neighbour
+        ├── auth/                security.py · deps.py · bootstrap.py · rate_limit.py
+        ├── data/                common.py + base.py + خدمة لكل جدول
+        │                        (churches · classes · teachers · boys · groups ·
+        │                         attendance · follow_ups · locations · map ·
+        │                         teacher_checks · trips · subscriptions · tasks ·
+        │                         task_values · users · names)
+        ├── DA/                  dashboard.py · follow_up_performance.py · check.py
+        ├── EDA/                 read_excel.py · templates.py · importer.py ·
+        │                        write_groups.py · write_servants.py · write_today_check.py
+        └── notifications/       vapid.py · sender.py · service.py · jobs.py
+
+
+3) دورة حياة الطلب  -  Request lifecycle
+-----------------------------------------
+    1. الطلب يدخل RequestLogMiddleware (يسجل المستخدم والزمن والمسار).
+    2. CORS + slowapi limiter (الـ login محدد بمعدل حسب رقم التليفون).
+    3. الـ route يفك الـ JSON عبر Pydantic schema (الشكل بس).
+    4. get_current_user يقرأ الـ Bearer JWT ويرجع صف User الحقيقي من DB.
+    5. الـ route يستدعي Service(db, current_user).method(data).
+    6. الخدمة تسأل common.py عن الصلاحية (الكنيسة أولاً، ثم الفصل)،
+       تكتب الـ church_id، وتعمل commit، وترجع الـ ORM row.
+    7. Pydantic يحوّل الـ row إلى Response (from_attributes=True).
+    8. الـ middleware يطبع سطر اللوج.
+
+ملاحظة: الخدمة بتاخد الـ User الحي مش نسخة منه، فـ role/church_id دايمًا
+من الـ DB في لحظة الطلب.
+
+
+4) نموذج تعدد الكنائس والصلاحيات  -  Tenancy & permissions
+----------------------------------------------------------
+المبدأ: «كل أمين عام يشوف كنيسته فقط». السؤال الأول في أي عملية: هل الصف ده
+من كنيستي؟ وبعدين: هل الفصل بتاعي؟ مفيش استثناء - حتى لو حد خمّن class_id
+من كنيسة تانية، الـ 403 تيجي قبل أي قراءة أو كتابة.
+
+الأدوار (RoleEnum في app/models/enums.py):
+
+    الدور            المعنى                          النطاق
+    --------------  -------------------------------  --------------------------------
+    user            ولد في الخدمة                    بياناته هو فقط
+    teacher         خادم/أستاذ                       نفسه + أولاد فصله (حضور/تعديل/إضافة)
+    admin           أمين فصل                         كل الخدام والأولاد في فصله
+    general_admin   أمين مرحلة                       مجموعة فصول من general_admin_classes
+    abona           أبونا / أمين الكنيسة             كل الفصول والمراحل في كنيسته فقط
+    super_admin     صاحب المنصة/المطور                كل الكنائس ( church_id = NULL )
+
+قواعد الـ tenant:
+
+    * كل جدول بيانات/لوج فيه church_id (ما عدا churches نفسه).
+    * القيد: NOT NULL في كل الجداول إلا users - الـ super_admin بس church_id NULL.
+    * كل church_id FK على churches(id) مع ON DELETE RESTRICT: كنيسة ليها بيانات
+      ما تتمسحش؛ لازم تمسح بياناتها أولاً (الخدمة بترجع 409 واضح).
+    * أرقام التليفونات فريدة globally (مش لكل كنيسة) - ما تتحولش لفريد لكل كنيسة.
+    * الإشعارات: dedupe_key فريد لكل كنيسة (church_id, dedupe_key)، والتجميع
+      بيحصل على (church_id, class_id) عشان كنيستين يقدروا يبعتوا نفس التذكير
+      في نفس اليوم.
+
+أهم دوال common.py (المرجع الوحيد للصلاحية):
+
+    is_manager(user)              صحيح لأي أمين (admin/general_admin/abona/owner)
+    my_church_ids(user)           كنائس المستخدم؛ None = كلها (owner بس)
+    my_class_ids(db, user)        فصول المستخدم؛ None = كلها (owner بس).
+                                  أبونا ياخد كل فصول كنيسته (قائمة مش None).
+    target_church_id(...)         كنيسة الصف الجديد: المستخدم متثبت لكنيسته،
+                                  والـ owner يقدر يختار أو يستنتج من الفصل/الشخص
+                                  أو يرجع للكنيسة الافتراضية.
+    ensure_my_church(...)         403 لو الكنيسة مش بتاعته  (يُندى أولاً)
+    ensure_my_class(...)          403 لو الفصل مش من فصوله  (الكنيسة تُفحص أولاً)
+    ensure_boy_access / ensure_teacher_access    الولد/الخادم يشوف نفسه بس
+    scope_church / scope_classes / scope_boys / scope_teachers /
+    scope_follow_ups / scope_checks / scope_users  فلترة الـ query حسب النطاق
+    get_or_404 · commit · ensure_unique · ensure_name_free ·
+    ensure_phone_free · apply_update · bulk_create · normalise_name ·
+    normalise_phone · is_past_friday · default_church_id
+
+لو كتبت service جديدة: ابدأ بـ scope_* أو ensure_* من هنا. ما تكتبش فلترة
+ church_id بإيدك في الخدمة.
+
+
+5) قاعدة البيانات  -  app/db/database.py
+----------------------------------------
+مفيش أداة migrations (Alembic وخلافه). الموديلز هي الـ schema. create_tables()
+بيتعمل في الـ lifespan عند كل تشغيل ويرقّي الـ DB الموجود خطوة بخطوة:
+
+    1. _rebuild_legacy_general_admin_classes()  إسقاط الجدول القديم لو مفتاحه user_id
+    2. Base.metadata.create_all()               إنشاء الجداول الناقصة
+    3. _add_role_labels()                        إضافة general_admin و abona للـ enum
+    4. _ensure_default_church()                  إنشاء الكنيسة الافتراضية لو مش موجودة
+    5. _add_tenant_columns()                     إضافة church_id (nullable أولاً)
+    6. _backfill_tenant_columns()                كل صف قديم → الكنيسة الافتراضية
+                                                 (users.church_id يفضل NULL للـ owner)
+    7. _add_tenant_constraints()                 الـ FKs والـ indexes
+    8. _set_tenant_columns_not_null()            جعل church_id إلزامي
+    9. _rebuild_notification_dedupe()            فريدية (church_id, dedupe_key)
+   10. _patch_role_owner_constraint()            إعادة بناء ck_users_role_owner
+   11. _add_missing_columns()                   أعمدة أضيفت للموديل على DB قديم
+
+church.txt هو نفس الخطوات دي بـ SQL خام جاهز للـ pgAdmin Query Tool. لو احتجت
+تنفذ على DB مباشرة، شغّله بـ Auto-commit، ولاحظ أن ALTER TYPE محتاج F5
+منفصل على إصدارات PostgreSQL القديمة.
+
+get_db(): dependency بيعطي جلسة واحدة لكل طلب ويقفلها في النهاية.
+
+
+6) الموديلز  -  app/models/  (17 جدول)
+--------------------------------------
+كل جدول فيه church_id ما عدا churches. class_id في جداول الحضور/المتابعة/
+التسميع/الرحلات هو «لقطة تاريخية» (snapshot) لفصل الولد/الخادم يوم التسجيل،
+وما بيتغيرش لو الولد نُقل لفصل تاني - عشان التاريخ يفضل صحيح.
+
+    الجدول                  الغرض والأعمدة المهمة
+    ----------------------  ------------------------------------------------------------
+    churches                الكنيسة (المستأجر): name, region (المنطقة), address,
+                            phone, phone_2, is_active, expiry_date, created_at/updated_at.
+                            is_active/expiry_date بيسمحوا للـ owner يوقف اشتراك
+                            من غير مسح بيانات.
+
+    users                   حسابات الدخول فقط: phone (فريد), password_hash (NULL
+                            لحد ما صاحبه يختار باسورد), role, church_id (NULL للـ
+                            owner), teacher_id / boy_id (واحد منهم حسب الدور).
+                            القيد ck_users_role_owner بيمنع التركيبات الغلط.
+
+    school_class            الفصل: name, academic_year, church_id. المرجع الوحيد
+                            لـ «الفصل». الاسم ثابت من الكتالوج (CLASS_NAMES).
+
+    teacher                 الخادم (مش حساب): teacher_name, phone/phone_2, zone,
+                            address, latitude/longitude, class_id, father_name,
+                            skills (ARRAY), last_visit_date, note.
+
+    boy                     الولد - العمود الفقري: boy_name, gender, birth_date,
+                            phone/phone_2, zone, address, latitude/longitude
+                            (إحداثيات البيت هنا، مفيش جدول location تاني),
+                            father_name, national_id, skills, class_id (الحالي),
+                            last_visit_date, note, issue_flag. العمر مش مخزن -
+                            بيُشتق من birth_date.
+
+    groups                  مجموعة الافتقاد: ربط (teacher_id, boy_id) فقط. مفيش
+                            class_id - الفصل يتوصل من أي طرف. ولد ينتمي لمجموعة
+                            واحدة.
+
+    general_admin_class     فصول أمين المرحلة: (teacher_id, class_id) فريدة،
+                            مفتاحها teacher_id عشان المجموعة تتبع الخادم لو اتغير
+                            رقمه، وchurch_id للعزل.
+
+    attend                  حضور يوم الجمعة: (boy_id, date) + present, liturgy,
+                            note, recorded_by, class_id (snapshot).
+
+    teacher_check           مراجعة الأمن للخدام جمعة بجمعة: attend, prepare,
+                            liturgy, follow, teachers_meeting (5 أسئلة) + note +
+                            class_id (snapshot). بتحسب درجة الأداء.
+
+    follow_up               افتقاد الخادم للولد: (teacher_id, boy_id, action_date) +
+                            status (FollowEnum), note, recorded_by, class_id
+                            (snapshot). نوع المتابعة موجود هنا على status مش على
+                            الإحداثيات.
+
+    task                    مسابقة الفصل: task_name, value (عدد الطايو), class_id,
+                            created_at, status (active/...).
+
+    task_value              تسميع ولد لمسابقة: (task_id, boy_id) فريدة + action_date,
+                            received (استلم الطايو), created_by, class_id (snapshot).
+
+    trip                    رحلة: name, cost, class_id, created_at, status.
+
+    subscription            حركة مالية لولد في رحلة: boy_id, trip_id,
+                            type (charge/recover), value, note, date, created_by.
+
+    notification_log        كل إرسال (يدوي أو مجدول): kind, dedupe_key (فريد لكل
+                            كنيسة), title, body, link, class_id, audience, sent,
+                            failed, sender_id.
+
+    notification_inbox      نسخة كل مستلم في «الجرس»: user_id, log_id, kind,
+                            title, body, link, read_at.
+
+    push_device             اشتراك متصفح واحد: user_id, endpoint (فريد), p256dh,
+                            auth, fails, last_sent_at.
+
+الـ enums في enums.py:
+    RoleEnum(user/teacher/admin/general_admin/abona/super_admin) ·
+    GenderEnum(m/f) · FollowEnum(call/visit/whatsapp/no_answer/other) +
+    FOLLOW_STATUS_LABELS · FatherEnum(3 كهنة) ·
+    SubscriptionTypeEnum(charge/recover) · SkillEnum(تمثيل/رسم/.../أخرى).
+    أسماء الـ enum في Postgres مذكورة في *_ENUM_NAME ثوابت.
+
+
+7) الـ Schemas  -  app/schemas/
+------------------------------
+اصطلاحات ثابتة:
+    *Create   -> جسم POST. الـ ids والتوقيتات و class_id التاريخية بيسجلها
+                 السيرفر، مش العميل.
+    *Update   -> جسم PATCH، كل الحقول اختيارية (exclude_unset).
+    *Response -> اللي بيخرج، from_attributes=True عشان يقرأ الـ ORM row مباشرة.
+    ORMResponse في base.py هو الأب المشترك.
+
+حالات خاصة لازم تعرفها:
+    user.py:  check_owner() هو مرآة ck_users_role_owner (يرجع ValueError بدل
+              IntegrityError). UserInDB فيه password_hash وما بيخرجش من السيرفر،
+              UserResponse نظيف. UserImportRow = صف الإكسيل.
+    boy.py:   العمر مش مقبول في Create/Update - بيُشتق من birth_date.
+    location.py: الإحداثيات على boys، و status هو FollowEnum القديم.
+    notification.py: endpoint + keys من PushSubscription.toJSON() بتاع المتصفح.
+    school_class.py: normalise_class_name بيرفض أي اسم برة الكتالوج.
+    church.py · attend · follow_up · group · subscription · task · task_value ·
+    teacher · teacher_check · trip: لكل واحد Create/Update/Response.
+
+
+8) طبقة الخدمات  -  app/core/data/
+----------------------------------
+base.py:
+    BaseService     -> يحمل (db, user) بس. كل الخدمات بترث منه.
+    WeeklySheetService -> CRUD مشترك لل«كشفين» (الحضور ومراجعة الخدام):
+                       صف واحد لكل (شخص, تاريخ)، و class_id snapshot.
+
+common.py:
+    كل أسئلة الصلاحية والدوال المشتركة (القائمة في قسم 4). لو حاجة بتتكرر،
+    مكانها هنا.
+
+الخدمات (الصلاحية مكتوبة من الأعلى للأسفل: قراءة / كتابة):
+
+    ChurchService    owner: كل الكنائس | غيره: كنيسته بس. الكتابة للـ owner فقط؛
+                     الحذف بيرجع 409 لو فيه بيانات.
+    ClassService     القراءة مفتوحة (اسم الفصل ما بيسربش حاجة)، الإنشاء/التعديل
+                     لأمين الفصل أو الـ owner. كل create بياخد church_id.
+    TeacherService   دليل الخدام. الـ login بيتعمل في UserService ويرجع عبر
+                     users.teacher_id.
+    BoyService       owner كل | admin/teacher فصلهم | الولد نفسه. مفيش صف
+                     جديد من غير فحص الاسم (names.py).
+    GroupsService    owner كل | أي أمين فصوله | خادم مجموعته. شاشة المجموعة
+                     بتضيف نسبة الحضور وآخر افتقاد لكل ولد.
+    AttendanceService / TeacherCheckService  كشف الجمعة: bulk save لكل الفصل
+                     في transaction واحدة.
+    FollowUpService  تسجيل افتقاد: class_id snapshot + recorded_by.
+    BoyLocationService / VisitMapService      حفظ إحداثيات البيت والخريطة
+                     (تفاصيل في قسم 11).
+    TaskService / TaskValueService / TripService / SubscriptionService
+                     المسابقات والتسميعات والرحلات والاشتراكات (بالعربية في الكود،
+                     بنفس نمط الصلاحية: owner > أمين مرحلة > أمين فصل > خادم > ولد).
+    UserService      الحسابات: التسجيل برقم تليفون، class_ids لأمين المرحلة،
+                     منع رفع role أو_abona لغير الـ owner، منع نقل حساب بين كنائس
+                     لغير الـ owner. signup_check / complete_signup على مستوى الموديول
+                     (بيشتغلوا قبل الدخول).
+    names.py         مقارنة الأسماء العربية: normalise / signature / similarity /
+                     matches_for / ensure_full_name / ensure_name_addable.
+                     المسؤول الوحيد عن «هل ده نفس الولد؟».
+
+
+9) التحليلات  -  app/core/DA/
+----------------------------
+    DashboardService (dashboard.py)
+        قراءة فقط، بنفس نطاق الـ CRUD. بيقرأ الجداول مرة واحدة ويحسب في
+        Python (البيانات صغيرة). يحسب: الحضور، الـ streaks، الغياب، درجة الخادم
+        (مجموع 5 أسئلة في teacher_check)، تغطية الافتقاد، عيد الميلاد، ملخص اليوم،
+        وتفصيل ولد واحد. نهاية السنة الكنسية حوالين 18 سبتمبر.
+        نقطتان رئيسيتان: /dashboard/summary و /dashboard/boys/{boy_id}.
+
+    FollowUpPerformanceService (follow_up_performance.py)
+        «أداء الافتقاد»: نسبة الولاد اللي اتفتقدوا في الفترة (أسبوع/شهر/سنة)،
+        مين تم ومين لسه، خادم بسجل وإيه، وترتيب الأولاد.
+
+    NameCheckService (check.py)
+        كشف تكرار الأسماء (نفس الولد باسم مختلف أو تحت فصل تاني) باستخدام
+        app/core/data/names.py. Read-only.
+
+
+10) Excel  -  app/core/EDA/
+--------------------------
+    read_excel.py    بيقرأ .xlsx/.csv إلى Create models. أول صف header بالـ keys
+                     الإنجليزية (boy_name, class_name, ...). الصف الفاضي متجاهل، وكل
+                     صف غلط بيتسجل في errors من غير ما يوقف الباقي. فيه readers
+                     للأولاد والخدام والمجموعات والحسابات. class_name بيتحول لـ
+                     class_id بنفس lookup بتاع كل الخدمات.
+    templates.py     بيبني ملفات قالب وتصدير: الورقة الأولى بيانات والورقة التانية
+                     «شرح» عربية مش بتتقرأ. class cells متعبّأة من فصول المستخدم.
+    importer.py      مسار الرفع المشترك: read_upload -> run_import -> add_list ->
+                     ملخص. خلا routes الإكسيل قصيرة.
+    write_groups.py / write_servants.py / write_today_check.py
+                     بناء ملفات التصدير (المجموعات، تفاصيل الخدام، كشف اليوم).
+
+    routes/sheets.py: xlsx_response / csv_response / writable_class_names /
+    class_labels / label_for - كلها «عرض»، مش قراءة بيانات.
+
+
+11) الإشعارات والتنبيهات  -  app/core/notifications/
+---------------------------------------------------
+    vapid.py     المفتاح العام/الخاص (VAPID) من scripts/make_vapid_keys.py في
+                 .env. من غير الزوج، push متوقف و /notifications/vapid-key بيرجع
+                 503 فالواجهة بتخفي البانر.
+    sender.py    deliver(): يبعت payload لكل subscription عبر خدمة الـ push.
+                 السيرفر ما بلمسش التليفون. fail بيزود fails في push_device.
+    service.py   أسئلة الـ routes: subscribe / status / send / history / inbox.
+                 الجمهور دايمًا كنيسة واحدة: church_id، وبعدين الفصل أو الخدام.
+                 send_now بيشتغل بعد الرد في جلسة منفصلة ويكتب sent/failed في اللوج.
+    jobs.py      الساعة: تذكير افتقاد 3pm، عيد ميلاد 9am، أربعاء 10am، وتنظيف
+                 أسبوعي. كل وظيفة بتتعمل مرة في اليوم. التجميع (church_id, class_id)
+                 و dedupe_key = "{church_id}:{kind}:{date}[:{part}]" بيمنع التكرار
+                 حتى مع أكتر من worker، وبيسمح لكل كنيسة بتذكيرها.
+                 notification_loop هو background task في الـ lifespan (دقيقة بدقيقة).
+    الإعدادات: PUSH_TIMEZONE (Africa/Cairo) والساعات في settings.py.
+
+
+12) الخريطة والإحداثيات  -  geo.py + data/locations.py + data/map.py
+-------------------------------------------------------------------
+    * مفيش جدول location جديد، ولا LocationSourceEnum، ولا has_whatsapp.
+    * إحداثيات البيت موجودة على boys.latitude / boys.longitude (و teacher كمان
+      latitude/longitude للعرض).
+    * نوع المتابعة هو FollowEnum القديم على follow_ups.status؛ لو المتصفح بعت
+      status مع الإحداثيات، بيتكتب follow-up في نفس الـ transaction.
+    * geo.py: haversine_m (مسافة بالأمتار)، walk_minutes، nearest_neighbour
+      (طريق أقرب-أولاً، greedy مقصود عشان يقرا بسهولة ويكون deterministic).
+    * VisitMapService: كل البيوت في النطاق + نقطة «مني» + legs + prefill عشان
+      زر (+). المتصفح بيرسم polyline ومarkers بس.
+    * Endpoints: /locations/boys/me (الولد لنفسه)،
+      /locations/boys/{boy_id} (الخادم/الأمين)، .../current، /locations/map.
+
+
+13) الـ Routes  -  app/routes/  (73 مسار)
+-----------------------------------------
+    prefix                المحتوى المختصر
+    --------------------  -------------------------------------------------------
+    / (base)              / و /health (liveness بدون تسجيل دخول)
+    /auth                 login · signup/check · signup · me · register ·
+                          users · users/{id} · users/{id}/classes
+    /churches             CRUD الكنائس (القراءة لنطاق المستخدم، الكتابة للـ owner)
+    /classes              CRUD الفصول
+    /teachers             دليل الخدام + template/import/export + /me
+    /boys                 دليل الأولاد + duplicate-names + template/import/export
+    /groups               تعيين/إلغاء + template/import/export
+    /attendance           كشف الجمعة (فردي + bulk)
+    /follow-ups           سجل الافتقاد
+    /locations            البيت + الخريطة (قسم 12)
+    /teacher-checks       مراجعة الخدام (فردي + bulk)
+    /trips                الرحلات
+    /subscriptions        الاشتراكات + ملخصات الرحلة والولد
+    /tasks                المسابقات
+    /task-values          التسميعات + حفظ المستحقات bulk
+    /notifications        subscription · status · send · log · inbox · unread · read
+    /dashboard            summary · my-performance · today-check (+tasks/export) ·
+                          follow-up · birthdays · boys/{id} · teachers/export
+
+كل router في app/routes/__init__.py ومُثبّت في core/app.py:_register_routers().
+مفيش منطق في الـ routes - لو لقيت قرار صلاحية في route، انقله لـ common.py.
+
+
+14) الإعدادات والتشغيل  -  config/settings.py + main.py
+-------------------------------------------------------
+    التشغيل:  uvicorn app.main:app --reload --port 9001
+    التوثيق:  /docs  ·  /redoc  ·  /openapi.json
+
+    المتغيرات المهمة في .env (case-sensitive، من pydantic-settings):
+        DATABASE_URL                  (إلزامي) رابط PostgreSQL
+        APP_NAME / APP_VERSION / APP_DESCRIPTION / CORS_ORIGINS / HOST / PORT
+        SECRET_KEY / ALGORITHM / ACCESS_TOKEN_EXPIRE_MINUTES   (JWT)
+        DEFAULT_CHURCH_NAME/REGION/ADDRESS/PHONE/PHONE_2       (المستأجر الافتراضي)
+        ADMIN_PHONE / ADMIN_PASSWORD                          (أول super_admin)
+        SEED_SUPER_ADMINS_JSON        أبوناات إضافية: [{"name","phone","church"|"church_id"}]
+        VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_CLAIMS_EMAIL
+        PUSH_TIMEZONE / FOLLOW_UP_REMINDER_HOUR / BIRTHDAY_REMINDER_HOUR /
+        WEDNESDAY_REMINDER_HOUR
+
+    عند الدخول (lifespan في core/app.py):
+        create_tables() -> ensure_default_classes() -> ensure_bootstrap_admin()
+        -> ensure_seeded_super_admins() -> notification_loop()
+
+    ensure_default_classes: ست فصول افتراضية في قاعدة فارغة بس.
+    ensure_bootstrap_admin: ADMIN_PHONE يبقى super_admin (صاحب المنصة) لو مش موجود.
+    ensure_seeded_super_admins: كل مدخل في JSON يبقى خادم + حساب abona على
+                    كنيسته (الاسم التاريخي احتفظنا بيه للتوافق مع الـ caller).
+
+
+15) إزاي تضيف موديول جديد  -  How-to
+-------------------------------------
+    1. models/<table>.py  -> عرّف الـ class (كل جدول بيانات لازم church_id + FK)
+                             وسجّله في models/__init__.py (__all__).
+    2. schemas/<table>.py -> Create / Update / Response (ورّث ORMResponse).
+                             سجّلها في schemas/__init__.py.
+    3. core/data/<table>.py -> Service(BaseService): query() تبدأ بـ scope_*/church،
+                             create/update/delete بيستدعي target_church_id و commit.
+                             صدّرها في core/data/__init__.py.
+    4. routes/<table>.py  -> APIRouter(prefix=...)، كل endpoint يستدعي الخدمة.
+                             أضف الـ router في routes/__init__.py و core/app.py.
+    5. db/database.py      -> لو الجدول قديم، أضف خطوة ALTER في create_tables()
+                             وظيرها في church.txt (نفس الترتيب).
+    6. DA/EDA              -> لو فيه تقرير أو إكسيل، المكان core/DA أو core/EDA.
+    7. اختبر: compileall + OpenAPI + smoke (الأوامر في قسم 17).
+
+
+16) نقاط مهمة ومخاطر  -  Gotchas
+--------------------------------
+    * class_id في attend/follow_up/teacher_check/task_value/trip/subscription
+      snapshot تاريخي - ما تعدّلهوش بأي تعديل لاحق على الولد.
+    * users.church_id nullable بالقصد (super_admin بس). أي محاولة تخليه NOT NULL
+      لازم تستثني الـ owner.
+    * ALTER TYPE ... ADD VALUE على PostgreSQL القديم محتاج commit منفصل؛
+      church.txt مكتوب مع Auto-commit عشان كده.
+    * إضافة حقل enum للـ CHECK constraint في نفس transaction على PG 12+ تمام،
+      وإصدارات أقدم محتاجة تشغيل القسم 8/9 تاني.
+    * مفيش LocationSourceEnum / has_whatsapp / جدول location - لا تضيفهم.
+    * dedupe_key لازم يتضمن church_id، وإلا كنيستين هيقطعوا إشعارات بعض.
+    * الأرقام فريدة globally - ما تعملش unique (church_id, phone).
+    * حذف كنيسة فيه بيانات بيرجع 409 (ON DELETE RESTRICT) - ده سلوك مقصود.
+    * smoke tests على SQLite محتاجة تستبدل ARRAY بـ JSON في boys.skills و
+      teachers.skills (الـ ARRAY نوع PostgreSQL).
+
+    لغة الكود: تعليقات بالعربية في مجالات المسابقات والاشتراكات، وبالإنجليزية في
+    الباقي. فضّل نفس نمط الملف اللي بتعدّل عليه.
+
+
+17) التحقق والاختبار  -  Validation
+-----------------------------------
+    python -m compileall -q app
+
+    $env:DATABASE_URL='sqlite:///./_smoke.db'
+    python -c "import app.core.app as a; a=a.create_app(); print(len(a.openapi()['paths']))"
+        -> 73 path
+
+    $env:PYTHONIOENCODING='utf-8'; $env:DATABASE_URL='sqlite:///./_smoke.db'
+    python <temp>/smoke_tenancy.py     -> ALL TENANCY SMOKE CHECKS PASSED
+    python <temp>/smoke_location.py    -> geo OK
+
+    على PostgreSQL الحقيقي:
+    $env:DATABASE_URL='postgresql://postgres:postgres@localhost:5432/fasly_db'
+    python <temp>/smoke_location.py
+
+الملفات المرجعية للنشر: church.txt (SQL الكنائس) و location.txt (SQL الموقع).
+
+================================================================================
+آخر تحديث: 17 نوفمبر 2026  -  كل التغييرات لسه مش committed (بناءً على طلبك).
+================================================================================

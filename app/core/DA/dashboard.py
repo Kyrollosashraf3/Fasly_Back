@@ -20,6 +20,7 @@ from app.config.logger import get_logger
 from app.core.data.base import BaseService
 from app.core.data.common import (
     ensure_boy_access,
+    ensure_my_church,
     ensure_roles,
     get_or_404,
     is_past_friday,
@@ -673,7 +674,8 @@ class DashboardService(BaseService):
         from app.core.data.common import ensure_staff
 
         ensure_staff(self.user)
-        get_or_404(self.db, SchoolClass, class_id, "Class")
+        school_class = get_or_404(self.db, SchoolClass, class_id, "Class")
+        ensure_my_church(self.db, self.user, school_class.church_id)
         tasks = (
             self.db.query(Task)
             .filter(Task.class_id == class_id, Task.status == "active")
@@ -712,6 +714,7 @@ class DashboardService(BaseService):
 
         ensure_staff(self.user)
         school_class = get_or_404(self.db, SchoolClass, class_id, "Class")
+        ensure_my_church(self.db, self.user, school_class.church_id)
         task = get_or_404(self.db, Task, task_id, "Task")
         if task.class_id != class_id:
             raise HTTPException(status_code=400, detail="Task does not belong to this class.")

@@ -21,13 +21,16 @@ from app.core.data.common import (
     is_unrestricted,
     my_class_ids,
     owner_class_id,
+    target_church_id,
 )
 from app.core.notifications.sender import MAX_FAILS, deliver
 from app.core.notifications.vapid import push_enabled
+from app.models.church import Church
 from app.models.enums import RoleEnum
 from app.models.notification_inbox import NotificationInbox
 from app.models.notification_log import NotificationLog
 from app.models.push_device import PushDevice
+from app.models.school_class import SchoolClass
 from app.models.teacher import Teacher
 from app.models.user import User
 from app.schemas.notification import SendCreate, SubscriptionCreate
@@ -58,12 +61,15 @@ def _target(query, class_id: int | None, teacher_ids: list[int] | None):
 
 def recipient_users(
     db: Session,
+    church_id: int,
     class_id: int | None = None,
     teacher_ids: list[int] | None = None,
 ) -> list[User]:
-    """The logins a message is written for: ``class_id`` or named servants."""
+    """The logins a message is written for: one church, then class / servants."""
     query = db.query(User).filter(
-        User.role.in_(RECIPIENT_ROLES), User.teacher_id.isnot(None)
+        User.role.in_(RECIPIENT_ROLES),
+        User.teacher_id.isnot(None),
+        User.church_id == church_id,
     )
     if teacher_ids is not None or class_id is not None:
         query = query.outerjoin(Teacher, Teacher.id == User.teacher_id)
@@ -72,31 +78,39 @@ def recipient_users(
 
 def devices_for(
     db: Session,
+    church_id: int,
     class_id: int | None = None,
     teacher_ids: list[int] | None = None,
 ) -> list[PushDevice]:
-    """Live subscriptions of that audience (nothing narrowed = every class)."""
+    """Live subscriptions of that church's audience (nothing narrowed = all its classes)."""
     query = (
         db.query(PushDevice)
         .join(User, User.id == PushDevice.user_id)
         .outerjoin(Teacher, Teacher.id == User.teacher_id)
-        .filter(User.role.in_(RECIPIENT_ROLES), PushDevice.fails < MAX_FAILS)
+        .filter(
+            User.role.in_(RECIPIENT_ROLES),
+            PushDevice.fails < MAX_FAILS,
+            PushDevice.church_id == church_id,
+        )
     )
     return _target(query, class_id, teacher_ids).all()
 
 
 def staff_count(
     db: Session,
+    church_id: int,
     class_id: int | None = None,
     teacher_ids: list[int] | None = None,
 ) -> int:
-    """Servants in that audience, subscribed or not.
+    """Servants in that church's audience, subscribed or not.
 
     The send screen shows this beside the device count so an amin can see who
     has still never switched their notifications on.
     """
     query = db.query(func.count(User.id)).filter(
-        User.role.in_(RECIPIENT_ROLES), User.teacher_id.isnot(None)
+        User.role.in_(RECIPIENT_ROLES),
+        User.teacher_id.isnot(None),
+        User.church_id == church_id,
     )
     if teacher_ids is not None or class_id is not None:
         query = query.outerjoin(Teacher, Teacher.id == User.teacher_id)
@@ -124,18 +138,22 @@ def send_now(
 
     db = SessionLocal()
     try:
+        log = db.get(NotificationLog, log_id)
+        if log is None:  # deleted while the send was in flight
+            return
+        # The audience is always one church: the log was written for it, so a
+        # send can never drift into another tenant even if ids are reused.
+        targets = devices_for(db, log.church_id, class_id, teacher_ids)
         sent, failed = deliver(
             db,
-            devices_for(db, class_id, teacher_ids),
+            targets,
             title,
             body,
             link=link,
             tag=tag,
         )
-        log = db.get(NotificationLog, log_id)
-        if log is not None:  # deleted while the send was in flight
-            log.sent, log.failed = sent, failed
-            db.commit()
+        log.sent, log.failed = sent, failed
+        db.commit()
         logger.info("notification %s: %d sent, %d failed", log_id, sent, failed)
     finally:
         db.close()
@@ -145,6 +163,15 @@ class NotificationService:
     def __init__(self, db: Session, current_user: User):
         self.db = db
         self.user = current_user
+
+    def _send_church_id(self, class_id: int | None = None) -> int:
+        """The single church a manual message belongs to.
+
+        A tenant login is pinned to its church. The platform owner is not, so
+        his send is scoped to the church of the class he picked, or to the
+        configured default church for a church-wide broadcast.
+        """
+        return target_church_id(self.db, self.user, class_id=class_id)
 
     # ------------------------------------------------------------ subscriptions
 
@@ -160,16 +187,22 @@ class NotificationService:
             .filter(PushDevice.endpoint == data.endpoint)
             .first()
         )
+        church_id = self._send_church_id()
         if device is None:
             device = PushDevice(
                 user_id=self.user.id,
+                church_id=church_id,
                 endpoint=data.endpoint,
                 p256dh=data.keys.p256dh,
                 auth=data.keys.auth,
             )
             self.db.add(device)
         else:
+            # A browser handed from one login to another moves with its owner,
+            # tenant included - a stale church_id could leak another church's
+            # message to the new owner.
             device.user_id = self.user.id
+            device.church_id = church_id
             device.p256dh = data.keys.p256dh
             device.auth = data.keys.auth
             device.fails = 0
@@ -196,6 +229,12 @@ class NotificationService:
             return requested
 
         ensure_manager(self.user)
+        if self.user.role == RoleEnum.ABONA:
+            # The church amin owns every class of his church: None means a
+            # church-wide send, a picked class is checked against his church.
+            if requested is not None:
+                ensure_my_class(self.db, self.user, requested)
+            return requested
         if self.user.role == RoleEnum.GENERAL_ADMIN:
             if requested is None:
                 if not named_servants:
@@ -222,6 +261,12 @@ class NotificationService:
             return None if requested is None else [requested]
 
         ensure_manager(self.user)
+        if self.user.role == RoleEnum.ABONA:
+            if requested is not None:
+                ensure_my_class(self.db, self.user, requested)
+                return [requested]
+            # Church-wide: every class of his own church, never another's.
+            return my_class_ids(self.db, self.user) or []
         if self.user.role == RoleEnum.GENERAL_ADMIN:
             if requested is not None:
                 ensure_my_class(self.db, self.user, requested)
@@ -232,21 +277,22 @@ class NotificationService:
         return [] if single is None else [single]
 
     def audience_teacher_ids(
-        self, requested: list[int] | None, class_id: int | None
+        self, requested: list[int] | None, class_id: int | None, church_id: int
     ) -> list[int] | None:
-        """Named servants, kept inside what this login may already reach.
+        """Named servants, kept inside this church and what this login may reach.
 
         The ids are checked against the servant rows themselves - not against
         the logins behind them - so naming a servant who has never made an
-        account is a send with a smaller audience, not an error. Only a servant
-        outside this login's reach is refused, and he comes back as an error
-        rather than a message that quietly skips him.
+        account is a send with a smaller audience, not an error. A servant from
+        another church is refused here, before any device is ever resolved.
         """
         if not requested:
             return None
 
         wanted = sorted({int(teacher_id) for teacher_id in requested})
-        query = self.db.query(Teacher.id).filter(Teacher.id.in_(wanted))
+        query = self.db.query(Teacher.id).filter(
+            Teacher.id.in_(wanted), Teacher.church_id == church_id
+        )
         if class_id is not None:
             query = query.filter(Teacher.class_id == class_id)
         allowed = {teacher_id for (teacher_id,) in query.all()}
@@ -266,11 +312,25 @@ class NotificationService:
             )
         return wanted
 
-    def devices(self, class_id: int | None, teacher_ids: list[int] | None = None) -> list[PushDevice]:
-        return devices_for(self.db, class_id, teacher_ids)
+    def devices(
+        self,
+        class_id: int | None,
+        teacher_ids: list[int] | None = None,
+        church_id: int | None = None,
+    ) -> list[PushDevice]:
+        return devices_for(
+            self.db, church_id or self._send_church_id(class_id), class_id, teacher_ids
+        )
 
-    def count_staff(self, class_id: int | None, teacher_ids: list[int] | None = None) -> int:
-        return staff_count(self.db, class_id, teacher_ids)
+    def count_staff(
+        self,
+        class_id: int | None,
+        teacher_ids: list[int] | None = None,
+        church_id: int | None = None,
+    ) -> int:
+        return staff_count(
+            self.db, church_id or self._send_church_id(class_id), class_id, teacher_ids
+        )
 
     def status(self, requested_class_id: int | None = None) -> dict:
         """For the enable-push banner and the send screen.
@@ -294,8 +354,11 @@ class NotificationService:
         if self.user.role in MANAGERS:
             targets = self.audience_class_ids(requested_class_id)
             if targets is None:
-                out["devices"] = len(self.devices(None))
-                out["staff"] = self.count_staff(None)
+                # Platform owner asking for everything: add up church by church
+                # so a single log/audience never spans two tenants.
+                for (church_id,) in self.db.query(Church.id).all():
+                    out["devices"] += len(self.devices(None, church_id=church_id))
+                    out["staff"] += self.count_staff(None, church_id=church_id)
             else:
                 out["devices"] = sum(len(self.devices(class_id)) for class_id in targets)
                 out["staff"] = sum(self.count_staff(class_id) for class_id in targets)
@@ -316,9 +379,10 @@ class NotificationService:
         class_id = self.audience_class_id(
             data.class_id, named_servants=bool(data.teacher_ids)
         )
-        teacher_ids = self.audience_teacher_ids(data.teacher_ids, class_id)
-        devices = self.devices(class_id, teacher_ids)
-        users = recipient_users(self.db, class_id, teacher_ids)
+        church_id = self._send_church_id(class_id)
+        teacher_ids = self.audience_teacher_ids(data.teacher_ids, class_id, church_id)
+        devices = self.devices(class_id, teacher_ids, church_id=church_id)
+        users = recipient_users(self.db, church_id, class_id, teacher_ids)
 
         if teacher_ids is not None:
             audience = "servants"
@@ -327,6 +391,7 @@ class NotificationService:
 
         log = NotificationLog(
             kind="manual",
+            church_id=church_id,
             title=data.title.strip(),
             body=data.body.strip(),
             link=data.link or DEFAULT_LINK,
@@ -341,6 +406,7 @@ class NotificationService:
         for user in users:
             self.db.add(
                 NotificationInbox(
+                    church_id=church_id,
                     user_id=user.id,
                     log_id=log.id,
                     kind=log.kind,
@@ -363,6 +429,8 @@ class NotificationService:
     def history(self, limit: int = 50) -> list[NotificationLog]:
         query = self.db.query(NotificationLog).order_by(NotificationLog.id.desc())
         if self.user.role != RoleEnum.SUPER_ADMIN:
+            # Church first, then class: no other tenant's log is ever visible.
+            query = query.filter(NotificationLog.church_id == self.user.church_id)
             mine = my_class_ids(self.db, self.user) or []
             query = query.filter(
                 NotificationLog.class_id.in_(mine)

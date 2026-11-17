@@ -39,15 +39,26 @@ class User(Base):
     __tablename__ = TABLE
     __table_args__ = (
         CheckConstraint(
-            "(role IN ('teacher', 'admin') AND teacher_id IS NOT NULL AND boy_id IS NULL)"
-            " OR (role = 'user' AND boy_id IS NOT NULL AND teacher_id IS NULL)"
-            " OR (role = 'general_admin' AND teacher_id IS NOT NULL AND boy_id IS NULL)"
+            "(role IN ('teacher', 'admin') AND teacher_id IS NOT NULL"
+            " AND boy_id IS NULL AND church_id IS NOT NULL)"
+            " OR (role = 'user' AND boy_id IS NOT NULL AND teacher_id IS NULL"
+            " AND church_id IS NOT NULL)"
+            " OR (role = 'general_admin' AND teacher_id IS NOT NULL"
+            " AND boy_id IS NULL AND church_id IS NOT NULL)"
+            " OR (role = 'abona' AND boy_id IS NULL AND church_id IS NOT NULL)"
             " OR (role = 'super_admin' AND boy_id IS NULL)",
             name="ck_users_role_owner",
         ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    #: NULL only for the platform owner (super_admin), who sees all churches.
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     phone = Column(String(20), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=True)
     role = Column(
@@ -85,6 +96,7 @@ class User(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     teacher = relationship("Teacher", back_populates="user", uselist=False)
     boy = relationship("Boy", back_populates="user", uselist=False)
     attends = relationship("Attend", back_populates="recorder")

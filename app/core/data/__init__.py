@@ -16,22 +16,28 @@ from __future__ import annotations
 from app.core.data.attendance import AttendanceService
 from app.core.data.base import BaseService, WeeklySheetService
 from app.core.data.boys import BoyService
+from app.core.data.churches import ChurchService
 from app.core.data.classes import ClassService
 from app.core.data.common import (
     MANAGERS,
     apply_update,
     bulk_create,
     commit,
+    default_church_id,
     ensure_boy_access,
     ensure_manager,
+    ensure_my_church,
     ensure_roles,
     ensure_teacher_access,
     get_or_404,
     is_unrestricted,
+    my_church_ids,
     my_class_ids,
     normalise_name,
     normalise_phone,
     owner_class_id,
+    scope_church,
+    target_church_id,
 )
 from app.core.data.follow_ups import FollowUpService
 from app.core.data.groups import GroupsService
@@ -57,6 +63,7 @@ __all__ = [
     # services
     "AttendanceService",
     "BoyService",
+    "ChurchService",
     "ClassService",
     "FollowUpService",
     "GroupsService",
@@ -78,14 +85,19 @@ __all__ = [
     "apply_update",
     "bulk_create",
     "commit",
+    "default_church_id",
     "ensure_boy_access",
     "ensure_manager",
+    "ensure_my_church",
     "ensure_roles",
     "ensure_teacher_access",
     "get_or_404",
     "is_unrestricted",
+    "my_church_ids",
     "my_class_ids",
     "normalise_name",
     "normalise_phone",
     "owner_class_id",
+    "scope_church",
+    "target_church_id",
 ]

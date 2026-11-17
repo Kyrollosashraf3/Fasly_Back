@@ -1,0 +1,273 @@
+-- ============================================================================
+-- church.txt  --  multi-tenant SaaS rollout (PostgreSQL / pgAdmin Query Tool)
+-- ============================================================================
+-- One database now hosts many churches. Every data / log row carries a
+-- church_id; the first permission question is always "is this row in my
+-- church?", then "is its class one of mine?". Only the platform owner
+-- (super_admin) has no church and sees everything.
+--
+-- Run this once on an existing fasly_db, or on a fresh one after the app has
+-- created its tables. The script is idempotent: every step is guarded, so it
+-- is safe to re-run. It mirrors app/db/database.py:create_tables() exactly.
+--
+-- NOTE: run with autocommit ON (pgAdmin: Query Tool -> "Auto-commit"), or run
+-- the two ALTER TYPE statements in section 0 as a separate F5 first. On
+-- PostgreSQL 12+ the new enum labels are visible to the CHECK constraint in
+-- section 8 within the same script; older servers need a second run of 8.
+-- ============================================================================
+
+
+-- ---------------------------------------------------------------------------
+-- 0. Role enum: add the two roles the app now knows about.
+--    general_admin (stage amin) and abona (church amin / أبونا).
+-- ---------------------------------------------------------------------------
+ALTER TYPE role_enum ADD VALUE IF NOT EXISTS 'general_admin';
+ALTER TYPE role_enum ADD VALUE IF NOT EXISTS 'abona';
+
+
+-- ---------------------------------------------------------------------------
+-- 1. The tenant anchor table. One row per church.
+--    is_active + expiry_date let the platform owner suspend / expire a tenant
+--    without deleting any of its data.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS churches (
+    id          SERIAL PRIMARY KEY,
+    name        VARCHAR(200) NOT NULL,
+    region      VARCHAR(100),
+    address     TEXT,
+    phone       VARCHAR(50),
+    phone_2     VARCHAR(50),
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    expiry_date DATE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ix_churches_id         ON churches (id);
+CREATE INDEX IF NOT EXISTS ix_churches_name       ON churches (name);
+CREATE INDEX IF NOT EXISTS ix_churches_region     ON churches (region);
+CREATE INDEX IF NOT EXISTS ix_churches_is_active  ON churches (is_active);
+CREATE INDEX IF NOT EXISTS ix_churches_expiry_date ON churches (expiry_date);
+
+
+-- ---------------------------------------------------------------------------
+-- 2. Rebuild the stage-amin class table if an old database still keys it on
+--    users.user_id. The new one is keyed on the servant (teacher_id) so the
+--    group follows him when his phone changes. WARNING: this drops the legacy
+--    assignment rows; they are re-created from the UI / seed afterwards.
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'general_admin_classes'
+          AND column_name = 'user_id'
+    ) THEN
+        DROP TABLE IF EXISTS general_admin_classes;
+
+        CREATE TABLE general_admin_classes (
+            id         SERIAL PRIMARY KEY,
+            church_id  INTEGER NOT NULL REFERENCES churches(id) ON DELETE RESTRICT,
+            teacher_id INTEGER NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+            class_id   INTEGER NOT NULL REFERENCES classes(id)   ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT uq_general_admin_classes_teacher_id_class_id
+                UNIQUE (teacher_id, class_id)
+        );
+        CREATE INDEX ix_general_admin_classes_church_id  ON general_admin_classes (church_id);
+        CREATE INDEX ix_general_admin_classes_teacher_id ON general_admin_classes (teacher_id);
+        CREATE INDEX ix_general_admin_classes_class_id   ON general_admin_classes (class_id);
+    END IF;
+END $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 3. Add the church_id column (nullable at first) to every tenant table.
+--    Same list as TENANT_TABLES in app/db/database.py.
+-- ---------------------------------------------------------------------------
+ALTER TABLE users                  ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE teachers               ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE boys                   ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE classes                ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE groups                 ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE general_admin_classes  ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE attends                ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE follow_ups             ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE teacher_checks         ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE tasks                  ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE task_values            ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE trips                  ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE subscriptions          ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE notification_logs      ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE notification_inbox     ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE push_devices           ADD COLUMN IF NOT EXISTS church_id INTEGER;
+
+
+-- ---------------------------------------------------------------------------
+-- 4. Create the configured default tenant if it is missing. Every legacy row
+--    and every seed entry with no church is assigned to it. Change the name
+--    here if DEFAULT_CHURCH_NAME in the .env differs.
+-- ---------------------------------------------------------------------------
+INSERT INTO churches (name, region, address, phone, phone_2, is_active)
+SELECT 'الكنيسة الافتراضية', NULL, NULL, NULL, NULL, TRUE
+WHERE NOT EXISTS (
+    SELECT 1 FROM churches WHERE name = 'الكنيسة الافتراضية'
+);
+
+
+-- ---------------------------------------------------------------------------
+-- 5. Backfill existing rows with the default church id.
+--    users.church_id stays NULL only for the platform owner (super_admin),
+--    exactly the one role that belongs to no church.
+-- ---------------------------------------------------------------------------
+UPDATE users
+   SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1)
+ WHERE church_id IS NULL AND role <> 'super_admin';
+
+UPDATE teachers              SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE boys                  SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE classes               SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE groups                SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE general_admin_classes SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE attends               SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE follow_ups            SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE teacher_checks        SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE tasks                 SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE task_values           SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE trips                 SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE subscriptions         SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE notification_logs     SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE notification_inbox    SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE push_devices          SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+
+
+-- ---------------------------------------------------------------------------
+-- 6. Tenant foreign keys + indexes. Guarded by pg_constraint so re-runs skip
+--    the ones create_all() already made on a fresh database.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+    t TEXT;
+BEGIN
+    FOREACH t IN ARRAY ARRAY[
+        'users', 'teachers', 'boys', 'classes', 'groups',
+        'general_admin_classes', 'attends', 'follow_ups', 'teacher_checks',
+        'tasks', 'task_values', 'trips', 'subscriptions',
+        'notification_logs', 'notification_inbox', 'push_devices'
+    ]
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = t || '_church_id_fkey'
+              AND conrelid = t::regclass
+        ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I ADD CONSTRAINT %I '
+                'FOREIGN KEY (church_id) REFERENCES churches(id) ON DELETE RESTRICT',
+                t, t || '_church_id_fkey'
+            );
+        END IF;
+        EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I (church_id)', 'ix_' || t || '_church_id', t);
+    END LOOP;
+END $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 7. Make church_id required. users is the exception: the platform owner
+--    keeps NULL. Every other tenant row must name its church.
+-- ---------------------------------------------------------------------------
+ALTER TABLE teachers              ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE boys                  ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE classes               ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE groups                ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE general_admin_classes ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE attends               ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE follow_ups            ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE teacher_checks        ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE tasks                 ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE task_values           ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE trips                 ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE subscriptions         ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE notification_logs     ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE notification_inbox    ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE push_devices          ALTER COLUMN church_id SET NOT NULL;
+
+
+-- ---------------------------------------------------------------------------
+-- 8. Notification dedupe key becomes unique *per church* so two churches may
+--    each fire their own "followup:YYYY-MM-DD" on the same day. Manual rows
+--    keep dedupe_key NULL and remain allowed many times over.
+-- ---------------------------------------------------------------------------
+ALTER TABLE notification_logs DROP CONSTRAINT IF EXISTS uq_notification_logs_dedupe_key;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_notification_logs_church_dedupe_key'
+    ) THEN
+        ALTER TABLE notification_logs
+            ADD CONSTRAINT uq_notification_logs_church_dedupe_key
+            UNIQUE (church_id, dedupe_key);
+    END IF;
+END $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 9. Rebuild the account/owner CHECK constraint for the tenant rules and the
+--    new abona role. Mirrors _ROLE_OWNER_CHECK in app/db/database.py and
+--    app/models/user.py. Only rebuilds if the stored definition is outdated.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+    stored TEXT;
+BEGIN
+    SELECT pg_get_constraintdef(oid) INTO stored
+      FROM pg_constraint
+     WHERE conname = 'ck_users_role_owner';
+
+    IF stored IS NULL
+       OR stored NOT LIKE '%abona%'
+       OR stored NOT LIKE '%church_id IS NOT NULL%' THEN
+
+        ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_role_owner;
+        ALTER TABLE users ADD CONSTRAINT ck_users_role_owner CHECK (
+            (role IN ('teacher', 'admin') AND teacher_id IS NOT NULL
+             AND boy_id IS NULL AND church_id IS NOT NULL)
+            OR (role = 'user' AND boy_id IS NOT NULL AND teacher_id IS NULL
+                AND church_id IS NOT NULL)
+            OR (role = 'general_admin' AND teacher_id IS NOT NULL
+                AND boy_id IS NULL AND church_id IS NOT NULL)
+            OR (role = 'abona' AND boy_id IS NULL AND church_id IS NOT NULL)
+            OR (role = 'super_admin' AND boy_id IS NULL)
+        );
+    END IF;
+END $$;
+
+
+-- ---------------------------------------------------------------------------
+-- 10. Stray columns a recent model change may need on older rows (the app
+--     also applies these in _add_missing_columns()).
+-- ---------------------------------------------------------------------------
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS note VARCHAR;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS date DATE;
+
+
+-- ---------------------------------------------------------------------------
+-- 11. Verify - every tenant table should report NOT NULL (except users) and
+--     no rows should be left without a church.
+-- ---------------------------------------------------------------------------
+SELECT table_name, column_name, is_nullable
+  FROM information_schema.columns
+ WHERE table_schema = current_schema()
+   AND column_name = 'church_id'
+ ORDER BY table_name;
+
+SELECT 'users_without_church' AS check_name, COUNT(*) AS rows
+  FROM users WHERE church_id IS NULL AND role <> 'super_admin'
+UNION ALL
+SELECT 'classes_without_church', COUNT(*) FROM classes WHERE church_id IS NULL
+UNION ALL
+SELECT 'boys_without_church',    COUNT(*) FROM boys    WHERE church_id IS NULL;
+-- All counts should be 0.

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -19,6 +19,12 @@ class SchoolClass(Base):
     __tablename__ = TABLE
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     name = Column(String(100), nullable=False, index=True)
     academic_year = Column(String(20), nullable=False, index=True)
     created_at = Column(
@@ -26,6 +32,7 @@ class SchoolClass(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     teachers = relationship("Teacher", back_populates="class_")
     boys = relationship("Boy", back_populates="class_")
     attends = relationship("Attend", back_populates="class_")

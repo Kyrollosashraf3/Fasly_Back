@@ -42,6 +42,12 @@ class Boy(Base):
     __tablename__ = TABLE
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     boy_name = Column(String(255), index=True, nullable=False)
     gender = Column(
         Enum(
@@ -90,6 +96,7 @@ class Boy(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     class_ = relationship("SchoolClass", back_populates="boys")
     user = relationship(
         "User", back_populates="boy", uselist=False, cascade="all, delete-orphan"

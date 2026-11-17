@@ -10,9 +10,9 @@ from app.core.data.common import (
     apply_update,
     commit,
     ensure_roles,
-    get_or_404,
     my_class_ids,
     normalise_name,
+    scope_church,
 )
 from app.models.boy import Boy
 from app.models.school_class import SchoolClass
@@ -28,7 +28,8 @@ class ClassService(BaseService):
 
 
     def query(self) -> Query:
-        return self.db.query(SchoolClass)
+        # Church first: no tenant may ever read a class of another church.
+        return scope_church(self.db.query(SchoolClass), SchoolClass, self.user)
 
     def list(self) -> list[SchoolClass]:
         return (
@@ -38,12 +39,21 @@ class ClassService(BaseService):
         )
 
     def get(self, class_id: int) -> SchoolClass:
-        return get_or_404(self.db, SchoolClass, class_id, "Class")
+        school_class = self.query().filter(SchoolClass.id == class_id).first()
+        if school_class is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Class {class_id} not found.",
+            )
+        return school_class
 
     def create(self, data: SchoolClassCreate) -> SchoolClass:
         ensure_roles(self.user, *CLASS_KEEPERS)
+        church_id = self.church_for(getattr(data, "church_id", None))
         school_class = SchoolClass(
-            name=data.name.strip(), academic_year=data.academic_year
+            name=data.name.strip(),
+            academic_year=data.academic_year,
+            church_id=church_id,
         )
         self.db.add(school_class)
         commit(self.db, f"Class create name={data.name}")

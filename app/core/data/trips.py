@@ -92,6 +92,7 @@ class TripService(BaseService):
         trip = Trip(
             name=data.name.strip(),
             cost=data.cost,
+            church_id=self.church_for(class_id=effective_class_id),
             class_id=effective_class_id,
             created_at=data.created_at or date.today(),
             status=data.status or 'active',

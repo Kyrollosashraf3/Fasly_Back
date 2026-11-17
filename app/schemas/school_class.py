@@ -45,6 +45,11 @@ class SchoolClassCreate(BaseModel):
     academic_year: str = Field(
         ..., min_length=4, max_length=20, examples=["2026/2027"]
     )
+    church_id: int | None = Field(
+        None,
+        description="Tenant that owns the class. Tenant users are pinned to their "
+        "own church; only the platform owner may pick another one.",
+    )
 
     @field_validator("name", mode="before")
     @classmethod
@@ -66,6 +71,7 @@ class SchoolClassUpdate(BaseModel):
 
 class SchoolClassResponse(ORMResponse):
     id: int
+    church_id: int | None = None
     name: str
     academic_year: str
     created_at: datetime

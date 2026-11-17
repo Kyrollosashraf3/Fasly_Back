@@ -22,6 +22,12 @@ class Task(Base):
     __tablename__ = TABLE
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     task_name = Column(String(200), nullable=False, index=True)
     value = Column(Integer, nullable=False, default=0)
     class_id = Column(
@@ -34,6 +40,7 @@ class Task(Base):
     status = Column(String(20), nullable=False, default='active', index=True)
 
     # Relationships
+    church = relationship("Church")
     class_ = relationship("SchoolClass", back_populates="tasks")
     task_values = relationship("TaskValue", back_populates="task")
 

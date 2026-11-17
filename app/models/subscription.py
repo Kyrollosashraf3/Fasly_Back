@@ -33,6 +33,12 @@ class Subscription(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    church_id = Column(
+        Integer,
+        ForeignKey("churches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     boy_id = Column(
         Integer,
         ForeignKey("boys.id", ondelete="RESTRICT"),
@@ -67,6 +73,7 @@ class Subscription(Base):
     )
 
     # Relationships
+    church = relationship("Church")
     boy = relationship("Boy", back_populates="subscriptions")
     trip = relationship("Trip", back_populates="subscriptions")
     creator = relationship("User", back_populates="subscriptions")

@@ -2,6 +2,7 @@
 
 from app.models.attend import Attend
 from app.models.boy import Boy
+from app.models.church import Church
 from app.models.follow_up import FollowUp
 from app.models.general_admin_class import GeneralAdminClass
 from app.models.group import Group
@@ -18,6 +19,7 @@ from app.models.trip import Trip
 from app.models.user import User
 
 __all__ = [
+    "Church",
     "SchoolClass",
     "User",
     "Teacher",

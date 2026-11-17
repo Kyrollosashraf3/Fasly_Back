@@ -16,12 +16,15 @@ from app.core.data.common import (
     MANAGERS,
     bulk_create,
     commit,
+    deny,
     ensure_manager,
+    ensure_my_church,
     ensure_unique,
     get_or_404,
     normalise_name,
     normalise_phone,
     scope_users,
+    target_church_id,
 )
 from app.models.boy import Boy
 from app.models.enums import RoleEnum
@@ -80,6 +83,11 @@ class UserService(BaseService):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the super admin can create a stage amin account.",
             )
+        if data.role == RoleEnum.ABONA and self.user.role != RoleEnum.SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the platform owner can create a church amin account.",
+            )
         if data.role == RoleEnum.GENERAL_ADMIN and not data.teacher_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -89,11 +97,13 @@ class UserService(BaseService):
         ensure_unique(self.db, User, "phone", data.phone, label="Account")
         self._ensure_owner_free(data.teacher_id, data.boy_id)
 
+        church_id = self._account_church(data.church_id, data.teacher_id, data.boy_id)
         user = User(
             phone=data.phone,
             # no password yet = the owner sets it himself from /auth/signup
             password_hash=get_password_hash(data.password) if data.password else None,
             role=data.role,
+            church_id=church_id,
             teacher_id=data.teacher_id,
             boy_id=data.boy_id,
         )
@@ -106,14 +116,16 @@ class UserService(BaseService):
     def assign_classes(self, user: User, class_ids: list[int]) -> None:
         """Replace the classes this stage amin's servant row answers for.
 
-        Only the church-wide amin may hand out a group of classes - otherwise a
-        stage amin could widen his own scope. The rows are written through the
-        session, not committed here, so an account and its classes land together.
+        Only the platform owner or the church amin may hand out a group of
+        classes - otherwise a stage amin could widen his own scope. A church
+        amin is confined to his own church's classes. The rows are written
+        through the session, not committed here, so an account and its classes
+        land together.
         """
-        if self.user.role != RoleEnum.SUPER_ADMIN:
+        if self.user.role not in (RoleEnum.SUPER_ADMIN, RoleEnum.ABONA):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the super admin can choose a stage amin's classes.",
+                detail="Only the church amin can choose a stage amin's classes.",
             )
         if user.teacher_id is None:
             raise HTTPException(
@@ -122,15 +134,22 @@ class UserService(BaseService):
             )
         wanted = list(dict.fromkeys(int(class_id) for class_id in class_ids))
         for class_id in wanted:
-            get_or_404(self.db, SchoolClass, class_id, "Class")
+            klass = get_or_404(self.db, SchoolClass, class_id, "Class")
+            ensure_my_church(self.db, self.user, klass.church_id)
         teacher = self.db.get(Teacher, user.teacher_id)
+        ensure_my_church(self.db, self.user, teacher.church_id)
         # Reconciled, not replaced: writing the whole list again would insert a
         # class the servant already owns and hit the unique (teacher, class) index.
         owned = {link.class_id for link in teacher.managed_classes}
         for link in [row for row in teacher.managed_classes if row.class_id not in wanted]:
             teacher.managed_classes.remove(link)
         for class_id in [row for row in wanted if row not in owned]:
-            teacher.managed_classes.append(GeneralAdminClass(class_id=class_id))
+            teacher.managed_classes.append(
+                GeneralAdminClass(
+                    class_id=class_id,
+                    church_id=self.church_for(class_id=class_id),
+                )
+            )
 
     def set_managed_classes(self, user_id: int, class_ids: list[int]) -> User:
         """``PUT /auth/users/{id}/classes`` - the stage amin's whole class list."""
@@ -177,6 +196,10 @@ class UserService(BaseService):
                 old_teacher.managed_classes = []
         if "boy_id" in fields:
             user.boy_id = fields["boy_id"]
+        if "church_id" in fields:
+            if self.user.role != RoleEnum.SUPER_ADMIN:
+                deny("Only the platform owner can move an account between churches.")
+            user.church_id = target_church_id(self.db, self.user, fields["church_id"])
         if password:
             user.password_hash = get_password_hash(password)
 
@@ -244,12 +267,12 @@ class UserService(BaseService):
                 detail="Only the super admin can grant that role.",
             )
         if (
-            role == RoleEnum.GENERAL_ADMIN
+            role in (RoleEnum.GENERAL_ADMIN, RoleEnum.ABONA)
             and role != user.role
             and self.user.role != RoleEnum.SUPER_ADMIN
         ):
-            # A stage amin must not be granted - or widened - by a class amin,
-            # and he must not hand the role to anybody himself.
+            # A stage amin / church amin must not be granted by a lower role,
+            # and must not hand the role to anybody himself.
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the super admin can grant that role.",
@@ -274,13 +297,33 @@ class UserService(BaseService):
             exclude_id=user.id,
         )
 
+    def _account_church(
+        self,
+        requested_church_id: int | None,
+        teacher_id: int | None,
+        boy_id: int | None,
+    ) -> int:
+        """Church of a new account: an explicit id, else its owner's church."""
+        person = None
+        if teacher_id is not None:
+            person = self.db.get(Teacher, teacher_id)
+        elif boy_id is not None:
+            person = self.db.get(Boy, boy_id)
+        return target_church_id(
+            self.db, self.user, requested_church_id, person=person
+        )
+
     def _ensure_owner_in_scope(
         self, teacher_id: int | None, boy_id: int | None
     ) -> None:
         if teacher_id is not None:
-            self.ensure_class(get_or_404(self.db, Teacher, teacher_id, "Servant").class_id)
+            teacher = get_or_404(self.db, Teacher, teacher_id, "Servant")
+            ensure_my_church(self.db, self.user, teacher.church_id)
+            self.ensure_class(teacher.class_id)
         if boy_id is not None:
-            self.ensure_class(get_or_404(self.db, Boy, boy_id, "Boy").class_id)
+            boy = get_or_404(self.db, Boy, boy_id, "Boy")
+            ensure_my_church(self.db, self.user, boy.church_id)
+            self.ensure_class(boy.class_id)
 
     def _ensure_owner_free(
         self,
@@ -333,7 +376,11 @@ class UserService(BaseService):
             if normalise_name(servant.teacher_name) == wanted:
                 self.ensure_class(servant.class_id)
                 return servant
-        servant = Teacher(teacher_name=row.name, class_id=row.class_id)
+        servant = Teacher(
+            teacher_name=row.name,
+            class_id=row.class_id,
+            church_id=self.church_for(class_id=row.class_id),
+        )
         self.db.add(servant)
         commit(self.db, f"Servant created during users import: {row.name}")
         return servant

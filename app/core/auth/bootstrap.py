@@ -1,5 +1,5 @@
 """Seeds the first super admin, the default classes and the curated list of
-church-wide admins on startup."""
+church admins (أبونا) on startup."""
 
 import json
 from datetime import date
@@ -8,7 +8,9 @@ import re
 from app.config.logger import get_logger
 from app.config.settings import settings
 from app.core.auth.security import get_password_hash
+from app.core.data.common import default_church_id
 from app.db.database import SessionLocal
+from app.models.church import Church
 from app.models.enums import RoleEnum
 from app.models.school_class import SchoolClass
 from app.models.teacher import Teacher
@@ -34,17 +36,26 @@ def ensure_default_classes() -> None:
     """Seed the six default classes once, so a fresh database is usable.
 
     Only runs while the ``classes`` table is empty: an administrator who
-    renamed or removed a class keeps their own catalogue.
+    renamed or removed a class keeps their own catalogue. Every seeded class
+    belongs to the configured default church.
     """
     db = SessionLocal()
     try:
         if db.query(SchoolClass.id).first() is not None:
             return
+        church_id = default_church_id(db)
         year = current_academic_year()
         for name in DEFAULT_CLASS_NAMES:
-            db.add(SchoolClass(name=name, academic_year=year))
+            db.add(
+                SchoolClass(name=name, academic_year=year, church_id=church_id)
+            )
         db.commit()
-        logger.info("Seeded %d default classes for %s", len(DEFAULT_CLASS_NAMES), year)
+        logger.info(
+            "Seeded %d default classes for %s (church id=%d)",
+            len(DEFAULT_CLASS_NAMES),
+            year,
+            church_id,
+        )
     except Exception:
         db.rollback()
         logger.exception("Failed to seed default classes")
@@ -56,14 +67,9 @@ def ensure_default_classes() -> None:
 def ensure_bootstrap_admin() -> None:
     """Create the first super admin if it does not exist.
 
-    Controlled by ADMIN_PHONE / ADMIN_PASSWORD in the environment.
-
-    The account is seeded as ``super_admin`` on purpose: every other role must
-    be attached to an existing servant or boy (``ck_users_role_owner``), and on
-    a brand new database neither exists yet. From this account the first class,
-    servant, boy and ordinary logins are created.
-
-    Safe to call on every startup: it is a no-op once the phone is taken.
+    Controlled by ADMIN_PHONE / ADMIN_PASSWORD in the environment. The account
+    is the platform owner: it stays a ``super_admin`` with no church so it can
+    see every tenant. Safe to call on every startup.
     """
     if not settings.ADMIN_PHONE or not settings.ADMIN_PASSWORD:
         logger.info("Bootstrap admin skipped (ADMIN_PHONE/ADMIN_PASSWORD not set)")
@@ -84,6 +90,7 @@ def ensure_bootstrap_admin() -> None:
             phone=phone,
             password_hash=get_password_hash(settings.ADMIN_PASSWORD),
             role=RoleEnum.SUPER_ADMIN,
+            church_id=None,
         )
         db.add(admin)
         db.commit()
@@ -97,32 +104,50 @@ def ensure_bootstrap_admin() -> None:
         db.close()
 
 
+def _seed_church_id(db, entry: dict) -> int:
+    """Church of a seed entry: explicit id, else name, else the default."""
+    church_id = entry.get("church_id")
+    if church_id is not None:
+        return int(church_id)
+    name = entry.get("church") or entry.get("church_name")
+    if name:
+        church = db.query(Church).filter(Church.name == str(name).strip()).first()
+        if church is not None:
+            return church.id
+        logger.warning(
+            "Church seed %r not found for %r; using the default church",
+            name,
+            entry.get("phone"),
+        )
+    return default_church_id(db)
+
+
 def ensure_seeded_super_admins() -> None:
-    """Create the church-wide admins listed in ``SEED_SUPER_ADMINS_JSON``.
+    """Create the church admins listed in ``SEED_SUPER_ADMINS_JSON``.
 
-    Each entry is ``{"name": "...", "phone": "..."}``. On every startup each
-    entry ends up as a servant with **no class** (his scope is every class)
-    and as a ``super_admin`` login linked to that servant, so the account
-    has a name.
+    The historical name is kept for compatibility with the startup caller.
+    Each entry ``{"name", "phone", "church" | "church_id"}`` becomes a servant
+    with no class and an ``abona`` login tied to one church - the amin who sees
+    every class of his church and nothing outside it.
 
-    Idempotent and additive: a phone already registered is never duplicated.
-    When the login already exists the missing piece (the servant and/or the
-    ``teacher_id`` link) is added; existing teachers of the same phone are
-    reused.
+    Idempotent: a phone is never duplicated. A legacy ``super_admin`` that was
+    seeded here (it has a servant row) is converted to ``abona`` and assigned
+    its church; the ``ADMIN_PHONE`` bootstrap account has no servant row and is
+    left platform-wide.
     """
     raw = settings.SEED_SUPER_ADMINS_JSON
     if not raw:
-        logger.info("Super-admin seed skipped (SEED_SUPER_ADMINS_JSON not set)")
+        logger.info("Church-admin seed skipped (SEED_SUPER_ADMINS_JSON not set)")
         return
     try:
         entries = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning(
-            "Super-admin seed skipped (SEED_SUPER_ADMINS_JSON is not valid JSON)"
+            "Church-admin seed skipped (SEED_SUPER_ADMINS_JSON is not valid JSON)"
         )
         return
     if not isinstance(entries, list) or not entries:
-        logger.info("Super-admin seed skipped (empty list)")
+        logger.info("Church-admin seed skipped (empty list)")
         return
 
     db = SessionLocal()
@@ -132,13 +157,15 @@ def ensure_seeded_super_admins() -> None:
             phone = entry.get("phone")
             if not name or not phone:
                 logger.warning(
-                    "Super-admin seed: skipped entry without name/phone: %r", entry
+                    "Church-admin seed: skipped entry without name/phone: %r", entry
                 )
                 continue
             phone = str(normalise_phone(phone))
             if not re.fullmatch(PHONE_PATTERN, phone):
-                logger.warning("Super-admin seed: skipped bad phone %r", phone)
+                logger.warning("Church-admin seed: skipped bad phone %r", phone)
                 continue
+
+            church_id = _seed_church_id(db, entry)
 
             teacher = (
                 db.query(Teacher).filter(Teacher.phone == phone).first()
@@ -147,39 +174,60 @@ def ensure_seeded_super_admins() -> None:
                 .first()
             )
             if teacher is None:
-                # A church-wide admin does not belong to one class - the
-                # servant row is filed with NULL so he sees every class.
-                teacher = Teacher(teacher_name=name, phone=phone, class_id=None)
+                # A church amin does not belong to one class - the servant row
+                # is filed with NULL so he sees every class of his church.
+                teacher = Teacher(
+                    teacher_name=name,
+                    phone=phone,
+                    class_id=None,
+                    church_id=church_id,
+                )
                 db.add(teacher)
                 db.flush()
-                logger.info("Super-admin seed: created servant %s (%s)", name, phone)
+                logger.info("Church-admin seed: created servant %s (%s)", name, phone)
+            elif teacher.church_id is None:
+                teacher.church_id = church_id
 
             user = db.query(User).filter(User.phone == phone).first()
             if user is None:
                 user = User(
-                    phone=phone, role=RoleEnum.SUPER_ADMIN, teacher_id=teacher.id
+                    phone=phone,
+                    role=RoleEnum.ABONA,
+                    teacher_id=teacher.id,
+                    church_id=church_id,
                 )
                 db.add(user)
                 db.flush()
                 logger.info(
-                    "Super-admin seed: created login %s -> servant %s", phone, name
+                    "Church-admin seed: created login %s -> servant %s", phone, name
                 )
-            elif user.role != RoleEnum.SUPER_ADMIN:
-                logger.warning(
-                    "Super-admin seed: %s already exists with role %s - untouched",
+            elif user.role == RoleEnum.SUPER_ADMIN and user.teacher_id is not None:
+                # A previously seeded church-wide admin: he was never the
+                # platform owner (that account has no servant row).
+                user.role = RoleEnum.ABONA
+                user.church_id = church_id
+                logger.info(
+                    "Church-admin seed: converted %s to abona in church %d",
                     phone,
-                    user.role,
+                    church_id,
                 )
-            elif user.teacher_id != teacher.id:
+            elif user.role == RoleEnum.ABONA and user.church_id is None:
+                user.church_id = church_id
+
+            if user.teacher_id != teacher.id:
                 user.teacher_id = teacher.id
                 logger.info(
-                    "Super-admin seed: attached servant %s to login %s", name, phone
+                    "Church-admin seed: attached servant %s to login %s", name, phone
                 )
 
         db.commit()
     except Exception:
         db.rollback()
-        logger.exception("Failed to seed super admins")
+        logger.exception("Failed to seed church admins")
         raise
     finally:
         db.close()
+
+
+#: Readable alias used by newer callers.
+ensure_seeded_church_admins = ensure_seeded_super_admins
