@@ -35,6 +35,8 @@ from app.core.data.common import (
 )
 from app.core.data.follow_ups import FollowUpService
 from app.core.data.groups import GroupsService
+from app.core.data.locations import BoyLocationService
+from app.core.data.map import VisitMapService
 from app.core.data.subscriptions import SubscriptionService
 from app.core.data.task_values import TaskValueService
 from app.core.data.tasks import TaskService
@@ -58,6 +60,8 @@ __all__ = [
     "ClassService",
     "FollowUpService",
     "GroupsService",
+    "BoyLocationService",
+    "VisitMapService",
     "SubscriptionService",
     "TaskService",
     "TaskValueService",

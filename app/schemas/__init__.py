@@ -28,6 +28,18 @@ from app.schemas.base import ORMResponse
 from app.schemas.boy import BoyCreate, BoyResponse, BoyUpdate
 from app.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
 from app.schemas.group import GroupAssign, GroupResponse, GroupUnassign
+from app.schemas.location import (
+    FOLLOW_UP_STATUS_OPTIONS,
+    BoyLocationResponse,
+    FollowUpPrefill,
+    LocationRecord,
+    MapHouse,
+    MapLeg,
+    MapOrigin,
+    MapRouteResponse,
+    MapScopeEnum,
+    MapSummary,
+)
 from app.schemas.school_class import (
     CLASS_NAMES,
     SchoolClassCreate,
@@ -90,6 +102,16 @@ __all__ = [
     "GroupAssign",
     "GroupUnassign",
     "GroupResponse",
+    "LocationRecord",
+    "BoyLocationResponse",
+    "MapScopeEnum",
+    "FollowUpPrefill",
+    "MapHouse",
+    "MapOrigin",
+    "MapLeg",
+    "MapSummary",
+    "MapRouteResponse",
+    "FOLLOW_UP_STATUS_OPTIONS",
     "SubscriptionCreate",
     "SubscriptionUpdate",
     "SubscriptionResponse",

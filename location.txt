@@ -1,0 +1,271 @@
+================================================================================
+تسليم الفرونت إند — اللوكيشن + خريطة افتقاد المنازل
+================================================================================
+
+تصحيحات مهمة قبل القراءة:
+--------------------------------------------------------------------------------
+1. مفيش جدول لوكيشن جديد. الإحداثيات بتتخزن في نفس جدول boys في العمودين
+   الموجودين أصلاً:
+       boys.latitude   float | null
+       boys.longitude  float | null
+   يعني الـ GET العادي /boys و /boys/{id} يرجّعوا اللوكيشن ضمن بيانات الولد.
+2. مفيش enum جديد للوكيشن. "نوع الافتقاد" هو الـ FollowEnum الموجود أصلاً
+   والمخزّن في follow_ups.status:
+       call | visit | whatsapp | no_answer | other
+   لو الباك استلم status مع تسجيل اللوكيشن، بيكتب سطر افتقاد في follow_ups
+   في نفس العملية. لو الـ status اتبعت null/متتبعتش، بتتسجل الإحداثيات بس.
+3. مفيش has_whatsapp. أي ولد له رقم هاتف هيطلع له رابط واتساب (wa.me) ورابط
+   تليفون (tel:) في بيانات الخريطة.
+4. كل الميزات الجديدة تحت prefix واحد: /locations  +  توكن Bearer إلزامي.
+5. Swagger جاهز على /docs و /openapi.json.
+
+================================================================================
+التاسك 1 — زرار "تسجيل اللوكيشن الحالي" جوّه بيانات الولد
+================================================================================
+
+الفكرة:
+- الخادم / الأمين / أي مستخدم له صلاحية يشوف الولد، يروح يقف قدام بيت الولد،
+  يضغط الزرار، المتصفح يقرأ الـ GPS الحالي ويرسله للباك، الباك يكتبه على
+  boys.latitude / boys.longitude.
+- مستقبلاً الولد نفسه يعمل لوجين بحسابه (role=user) ويضغط نفس الزرار؛ فيه
+  route خاص بيه بيكتب إحداثياته هو بس.
+
+--------------------------------------------------------------------------------
+1.1) POST /locations/boys/{boy_id}     (تسجيل لوكيشن ولد معيّن)
+--------------------------------------------------------------------------------
+Headers: Authorization: Bearer <access_token>
+Body (JSON):
+{
+  "latitude": 30.0501,          // required, -90..90
+  "longitude": 31.2004,         // required, -180..180
+  "status": "visit",            // optional: call|visit|whatsapp|no_answer|other
+  "note": "زيارة البيت"          // optional, يروح لـ follow_ups.note لو status اتبعت
+}
+
+Response 201:
+{
+  "boy_id": 12,
+  "boy_name": "مينا",
+  "latitude": 30.0501,
+  "longitude": 31.2004,
+  "updated_at": "2026-11-17T10:22:31.123456Z",
+  "follow_up_id": 88            // null لو مفيش status اتبعت
+}
+
+السلوك:
+- بيحدّث boys.latitude / boys.longitude (ودي هي النقطة اللي الخريطة هترسمها).
+- لو status اتبعت: بينشئ FollowUp(boy_id, teacher_id, class_id snapshot,
+  action_date=اليوم, status, note, recorded_by=المستخدم الحالي) في نفس
+  Transaction. لو مفيش خادم مرتبط بالولد (Group) والـ caller مش خادم، هيرجع 400.
+- لا يلمس boys.last_visit_date — ده تاريخ زيارة أبونا للاعتراف، مش زيارة الخادم.
+
+الصلاحيات:
+- super_admin / general_admin / admin / teacher: يقدروا يسجلوا لأي ولد داخل
+  نطاقهم (الخادم: فصله؛ الأمين: فصله/فصوله؛ العام: كل حاجة).
+- user (الولد): يقدر يسجل لنفسه بس عبر 1.2، ولو بعت status هنا هيتم تجاهله (ما بيكتبش
+  follow-up لأن الولد مسموحلهش يكتب افتقادات).
+
+--------------------------------------------------------------------------------
+1.2) POST /locations/boys/me        (الولد يسجّل لوكيشن بيته بنفسه)
+--------------------------------------------------------------------------------
+نفس الـ body حق 1.1 (الـ status متجاهَل تماماً هنا).
+يستخدم user.boy_id من التوكن — مفيش boy_id في الـ path.
+Response 201 بنفس شكل 1.1 بـ follow_up_id = null.
+لو المستخدم مش role=user → 403.
+
+--------------------------------------------------------------------------------
+1.3) GET /locations/boys/{boy_id}/current
+--------------------------------------------------------------------------------
+Response 200: نفس شكل 1.1، أو null لو الولد لسه مالوش إحداثيات.
+يستخدمه الفرونت لما يفتح صفحة الولد: لو null يظهر الزرار بحالة "سجّل الموقع".
+
+الأخطاء:
+401 توكن مفقود/منتهي | 403 خارج النطاق | 404 ولد غير موجود |
+422 إحداثيات غلط (خارج النطاق) | 400 مفيش خادم عشان تسجيل الافتقاد.
+
+--------------------------------------------------------------------------------
+1.4) كود مقترح للزرار في الفرونت
+--------------------------------------------------------------------------------
+async function saveCurrentLocation(boyId, { alsoLogVisit = false } = {}) {
+  const pos = await new Promise((resolve, reject) => {
+    if (!navigator.geolocation)
+      return reject(new Error('Geolocation not supported'));
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,   // مهم لأننا واقفين قدام البيت
+      timeout: 10000,
+      maximumAge: 0,              // لازم قراءة جديدة مش كاش قديمة
+    });
+  });
+
+  return api.post(`/locations/boys/${boyId}`, {
+    latitude: pos.coords.latitude,
+    longitude: pos.coords.longitude,
+    status: alsoLogVisit ? 'visit' : undefined,
+  });
+}
+
+حالات لازم تظهر للمستخدم:
+- PERMISSION_DENIED → "السماح باللوكيشن مغلق من إعدادات المتصفح".
+- POSITION_UNAVAILABLE / TIMEOUT → "تعذّر قراءة اللوكيشن، حاول تاني".
+- 404 / 403 → كما هو موضح فوق.
+- بعد النجاح: اعمل invalidate لـ /boys/{id} و /locations/map عشان الماركر يتحدّث.
+- التنبيه: المتصفحات تسمح بـ geolocation على HTTPS أو localhost بس.
+
+================================================================================
+التاسك 2 — خريطة افتقاد المنازل
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1) GET /locations/map  — كل حاجة في طلب واحد
+--------------------------------------------------------------------------------
+Query params (كلها اختيارية):
+  latitude=30.049      // موقع "أنا"/الخادم الآن. لو اتبعت بيعملوا نقطة البداية
+  longitude=31.199     // لو اتتركوا، الباك يبدأ من أول بيت ويرجّع origin.source=first_house
+  scope=group|class|all     // الافتراضي class
+        group = مجموعتي فقط (Servant group)
+        class = الفصل كله (أو كل فصول الأمين/الأمين العام)
+        all   = نفس نطاق class — اسم تاني أوضح في الـ UI للـ super admin
+  teacher_id=7         // للأمين: يشوف مجموعة خادم معيّن بدل مجموعته هو
+  class_id=3           // تضييق إضافي على فصل واحد جوّه النطاق
+
+مثال:
+GET /locations/map?latitude=30.049&longitude=31.199&scope=group
+
+Response 200 (كل المفاتيح موجودة دايماً):
+{
+  "scope": "group",
+  "scope_label": "مجموعتي فقط",
+  "teacher_id": 7,
+  "class_ids": [3],                  // null للـ super admin = كل الفصول
+  "origin": {"latitude": 30.049, "longitude": 31.199, "source": "client"},
+  "houses": [ ... ],                 // مرتبة من الأقرب للأبعد (اللي لهم لوكيشن)
+  "unlocated": [ ... ],              // ولاد بدون إحداثيات — اعرض زر تسجيل
+  "legs": [ ... ],                   // كل قطعة خط بين نقطتين
+  "polyline": [[30.049,31.199],[30.05,31.2],[30.051,31.201]],  // [lat,lng]
+  "ordered_boy_ids": [5,9,12],
+  "total_distance_m": 515,
+  "total_distance_km": 0.52,
+  "total_walk_minutes": 7,
+  "summary": {
+    "total_boys": 8,
+    "located": 5,
+    "unlocated": 3,
+    "visited_today": 2,
+    "coverage_percent": 62.5
+  },
+  "follow_up_status_options": [
+    {"value":"call","label":"تليفون"}, {"value":"visit","label":"زيارة"},
+    {"value":"whatsapp","label":"واتساب"}, {"value":"no_answer","label":"مفيش رد"},
+    {"value":"other","label":"أخرى"}
+  ],
+  "generated_at": "2026-11-17T10:25:00Z"
+}
+
+شكل كل house في houses / unlocated:
+{
+  "boy_id": 5,
+  "boy_name": "مينا",
+  "gender": "m",                       // m | f
+  "class_id": 3,
+  "class_name": "أولي ابتدائي",
+  "teacher_id": 7,
+  "teacher_name": "أحمد",
+  "latitude": 30.05,                   // null في unlocated
+  "longitude": 31.2,                   // null في unlocated
+  "has_coordinates": true,
+  "zone": "شبرا",
+  "address": "شارع ...",
+  "phone": "01011111111",
+  "phone_2": null,
+  "whatsapp_url": "https://wa.me/201011111111",  // null لو مفيش رقم
+  "call_url": "tel:+201011111111",               // null لو مفيش رقم
+  "last_follow_up_date": "2026-11-14",
+  "last_follow_up_status": "whatsapp",
+  "follow_up_count": 6,
+  "prefill": {
+    "teacher_id": 7,
+    "boy_id": 5,
+    "status": "visit",                 // جاهز: زيارة / افتقاد بالبيت
+    "action_date": "2026-11-17",       // اليوم (من سيرفر)
+    "note": ""
+  },
+  "can_record_location": true,
+  "can_follow_up": true                // false لحساب الولد (user)
+}
+
+شكل كل leg:
+{
+  "order": 1,
+  "from_boy_id": null,     // null = من نقطة "أنا" (أول خط)
+  "from_latitude": 30.049,
+  "from_longitude": 31.199,
+  "to_boy_id": 5,
+  "to_latitude": 30.05,
+  "to_longitude": 31.2,
+  "distance_m": 147,
+  "distance_km": 0.147,
+  "walk_minutes": 2
+}
+
+--------------------------------------------------------------------------------
+2.2) إزاي تستخدم الـ response في الرسم
+--------------------------------------------------------------------------------
+1) استخدم Leaflet + بلاط OpenStreetMap المجاني (مفيش API key):
+   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', ...)
+2) ارسم "أنا" من origin (marker مختلف / دائرة زرقاء).
+3) ارسم LineString من polyline مباشرة — الباك رتّب البيوت أقرب فأقرب بالفعل،
+   متعملش nearest-neighbour تاني في الفرونت.
+4) لكل house في houses:
+   - Marker فوق boys.latitude/longitude باسم الولد.
+   - فوق الماركر: أيقونة واتساب → window.open(whatsapp_url)
+     وأيقونة تليفون → window.location.href = call_url
+     وأيقونة (+) → تفتح بانل المتابعة.
+   - البانل يتحول منه prefill مباشرة: boy_id و teacher_id و status=visit
+     و action_date كلهم محطوطين؛ المستخدم يعدّل status/note بس، وبعدين
+     POST /follow-ups بالجسم ده (الباك هيضيف class_id بنفسه).
+5) leg.order و leg.distance_m و leg.walk_minutes للـ labels على الخطوط.
+6) houses مرتبة زي ordered_boy_ids بالظبط — استخدمها لترقيم البيوت 1،2،3...
+7) unlocated: ظهرهم في قائمة جانبية أو ماركرات رمادية بـ CTA "سجّل اللوكيشن"
+   تستدعي التاسك 1 لكل ولد. لو اتبعت latitude/longitude للخريطة، اعمل refetch
+   بعد التسجيل عشان البيت ينقل من unlocated لـ houses.
+8) الفلاتر: 3 أزرار group / class / all تبعت scope. لو الأمين عايز يشوف
+   مجموعة خادم معيّن ابعت teacher_id. لو super/عام عايز فصل واحد ابعت class_id.
+9) origin.source == "first_house" يعني الخادم مبعتش إحداثياته — اطلب إذن GPS
+   وابعته في الطلب التالي عشان الخط يبدأ من مكانه هو.
+
+--------------------------------------------------------------------------------
+2.3) القواعد والصلاحيات
+--------------------------------------------------------------------------------
+- super_admin: كل الفصول؛ general_admin: فصوله المسجّلة؛ admin: فصله؛
+  teacher: فصله، و scope=group يبقى مجموعته هو؛ user: بيته هو بس.
+- خارج النطاق بيرجع 403 أو 404 زي باقي الباك (مفيش تسريب لبيوت تانية).
+- scope=group لمستخدم مش خادم ومفيش teacher_id → 400 برسالة واضحة.
+- البيانات دي للقراءة فقط؛ أي تعديل بيحصل عبر التاسك 1 أو /follow-ups.
+
+================================================================================
+ملخص التاسكات اللي الفرونت هياخدها
+================================================================================
+T1  زرار داخل صفحة الولد → navigator.geolocation → POST /locations/boys/{id}
+T2  (اختياري) نفس الزرار مع alsoLogVisit → بيكتب افتقاد "visit" تلقائي
+T3  حساب الولد: POST /locations/boys/me
+T4  عرض الحالة الحالية: GET /locations/boys/{id}/current
+T5  شاشة الخريطة: GET /locations/map بالفلاتر + رسم polyline والماركرات
+T6  أيقونات واتساب/تليفون من house.whatsapp_url / house.call_url
+T7  أيقونة (+) تفتح بانل /follow-ups بـ house.prefill
+T8  قائمة unlocated + زر تسجيل لوكيشن يحدّث الخريطة
+
+================================================================================
+ملاحظات للباك (للمطوّر)
+================================================================================
+الملفات اللي اضيفت/اتعدّلت:
+- app/schemas/location.py        (كل الـ request/response schemas)
+- app/core/geo.py                (haversine + nearest_neighbour + walk time)
+- app/core/data/locations.py     (كتابة الإحداثيات على boys + افتقاد اختياري)
+- app/core/data/map.py           (بناء الخريطة والترتيب والـ prefill)
+- app/routes/locations.py        (الـ 4 routes)
+- app/core/app.py, app/routes/__init__.py, app/schemas/__init__.py,
+  app/core/data/__init__.py      (تسجيل)
+- مفيش تغيير في نموذج قاعدة البيانات: boys.latitude/longitude موجودين أصلاً،
+  و follow_ups.status هو مصدر نوع الافتقاد. مفيش migration مطلوبة.
+- الترتيب: nearest-neighbour جشعي (greedy) بـ haversine، كافي لعدة بيوت في
+  نفس المنطقة؛ مفيش مزود خرائط خارجي أو API key.

@@ -50,6 +50,20 @@ class FollowEnum(str, Enum):
 FOLLOW_ENUM_NAME = "follow_enum"
 
 
+#: Labels for the existing ``FollowEnum`` - the *only* follow-up type, stored
+#: on ``follow_ups.status``. The location button may write one of these into
+#: that table; coordinates themselves live on ``boys``.
+FOLLOW_STATUS_LABELS: dict[FollowEnum, str] = {
+    FollowEnum.CALL: "تليفون",
+    FollowEnum.VISIT: "زيارة",
+    FollowEnum.WHATSAPP: "واتساب",
+    FollowEnum.NO_ANSWER: "مفيش رد",
+    FollowEnum.OTHER: "أخرى",
+}
+
+###########################
+
+
 class FatherEnum(str, Enum):
     """ابونا الاعتراف الخاص بالولد (optional)."""
     KIERLOS = "ابونا كيرلس روماني"
