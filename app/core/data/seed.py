@@ -29,6 +29,24 @@ from app.models.trip_attendance import TripAttendance
 from app.models.user import User
 
 
+BOY_NAMES = {
+    "أولي ابتدائي": [
+        "آدم أحمد محمود", "أمير محمد حسن", "أنطونيوس مينا عادل", "إبرام فادي جرجس",
+        "باسم كريم سمير", "بيشوي رامي فوزي", "جورج بيتر نبيل", "حنا مينا عاطف",
+        "زياد أحمد إبراهيم", "سيف يوسف سامح", "فارس عماد حمدي", "كيرلس أشرف فخري",
+        "مينا وائل صبري", "ملاك رامي عادل", "مارك تامر عاطف", "مايكل فادي سمير",
+        "يوسف شادي مجدي", "ياسين خالد محمود", "رامي بيشوي نادر", "عمر هاني فؤاد",
+    ],
+    "تانية ابتدائي": [
+        "أبانوب عمرو جرجس", "أحمد مينا فايز", "إيليا رامي عادل", "بطرس فادي نجيب",
+        "توني بيشوي عاطف", "جوزيف كريم حنا", "حازم شريف محمود", "دانيال مينا مجدي",
+        "رؤوف سامح فؤاد", "سامي بيتر جرجس", "شادي أحمد ناصر", "فادي رامي حبيب",
+        "فيلوباتير مينا عادل", "كريم وائل يوسف", "لوقا عادل جرجس", "مينا نبيل فخري",
+        "ميناوي بيشوي سامح", "نعيم عماد مكرم", "هاني تامر جاد", "يوسف رامي صبحي",
+    ],
+}
+
+
 class SeedService(BaseService):
     def seed(self) -> dict:
         if self.user.role != RoleEnum.SUPER_ADMIN:
@@ -59,18 +77,18 @@ class SeedService(BaseService):
             {
                 "name": "كنيسة الشهيد مارجرجس",
                 "region": "القاهرة",
-                "address": "القاهرة",
+                "address": "القاهرة الجديدة",
                 "phone": "01000000001",
                 "church_code": "1",
-                "coords": (30.0444, 31.2357),
+                "coords": (30.1971163, 31.3534442),
             },
             {
                 "name": "كنيسة القديس العظيم مرقس",
-                "region": "الإسكندرية",
-                "address": "الإسكندرية",
+                "region": "القاهرة",
+                "address": "القاهرة الجديدة",
                 "phone": "01000000002",
                 "church_code": "2",
-                "coords": (31.2001, 29.9187),
+                "coords": (30.1971163, 31.3534442),
             },
         ]
 
@@ -123,8 +141,8 @@ class SeedService(BaseService):
                 counts["users"] += 1
 
             class_specs = [
-                ("ابتدائي", today.year if today.month >= 9 else today.year - 1),
-                ("إعدادي", today.year if today.month >= 9 else today.year - 1),
+                ("أولي ابتدائي", today.year if today.month >= 9 else today.year - 1),
+                ("تانية ابتدائي", today.year if today.month >= 9 else today.year - 1),
             ]
             for class_index, (class_name, year_start) in enumerate(class_specs):
                 class_record = (
@@ -145,58 +163,79 @@ class SeedService(BaseService):
                     self.db.flush()
                     counts["classes"] += 1
 
-                teacher_phone = f"0100000{church_index + 1}{class_index + 1}00"
-                teacher = (
-                    self.db.query(Teacher)
-                    .filter(Teacher.phone == teacher_phone, Teacher.church_id == church.id)
-                    .first()
-                )
-                if teacher is None:
-                    teacher = Teacher(
-                        teacher_name=f"خادم {class_name} {church_index + 1}",
-                        phone=teacher_phone,
-                        class_id=class_record.id,
-                        church_id=church.id,
-                        zone=spec["region"],
-                        address=spec["address"],
-                        latitude=spec["coords"][0] + 0.002 * class_index,
-                        longitude=spec["coords"][1] + 0.002 * class_index,
+                teachers = []
+                teacher_users = []
+                for servant_index in range(2):
+                    teacher_phone = (
+                        f"0109{church_index + 1}{class_index + 1}"
+                        f"{servant_index + 1}0000"
                     )
-                    self.db.add(teacher)
-                    self.db.flush()
-                    counts["teachers"] += 1
-
-                teacher_user = self.db.query(User).filter(User.phone == teacher_phone).first()
-                if teacher_user is None:
-                    teacher_user = User(
-                        phone=teacher_phone,
-                        password_hash=password_hash,
-                        role=RoleEnum.TEACHER,
-                        church_id=church.id,
-                        teacher_id=teacher.id,
+                    teacher = (
+                        self.db.query(Teacher)
+                        .filter(
+                            Teacher.phone == teacher_phone,
+                            Teacher.church_id == church.id,
+                        )
+                        .first()
                     )
-                    self.db.add(teacher_user)
-                    self.db.flush()
-                    counts["users"] += 1
+                    if teacher is None:
+                        teacher = Teacher(
+                            teacher_name=(
+                                f"{'مينا' if servant_index == 0 else 'بيشوي'} "
+                                f"{'فوزي' if church_index == 0 else 'عادل'} "
+                                f"{servant_index + 1}"
+                            ),
+                            phone=teacher_phone,
+                            class_id=class_record.id,
+                            church_id=church.id,
+                            zone=spec["region"],
+                            address=spec["address"],
+                            latitude=spec["coords"][0] + 0.0002 * (servant_index + 1),
+                            longitude=spec["coords"][1] + 0.0002 * (servant_index + 1),
+                        )
+                        self.db.add(teacher)
+                        self.db.flush()
+                        counts["teachers"] += 1
+                    teacher_user = (
+                        self.db.query(User).filter(User.phone == teacher_phone).first()
+                    )
+                    if teacher_user is None:
+                        teacher_user = User(
+                            phone=teacher_phone,
+                            password_hash=password_hash,
+                            role=RoleEnum.TEACHER,
+                            church_id=church.id,
+                            teacher_id=teacher.id,
+                        )
+                        self.db.add(teacher_user)
+                        self.db.flush()
+                        counts["users"] += 1
+                    teachers.append(teacher)
+                    teacher_users.append(teacher_user)
 
-                for boy_index in range(3):
-                    boy_name = f"ولد {boy_index + 1} - {class_name} - كنيسة {church_index + 1}"
+                demo_boys = []
+                for boy_index, boy_name in enumerate(BOY_NAMES[class_name]):
+                    group_index = boy_index // 10
                     boy = (
                         self.db.query(Boy)
-                        .filter(Boy.boy_name == boy_name, Boy.church_id == church.id)
+                        .filter(
+                            Boy.boy_name == boy_name,
+                            Boy.church_id == church.id,
+                            Boy.class_id == class_record.id,
+                        )
                         .first()
                     )
                     if boy is None:
                         boy = Boy(
                             boy_name=boy_name,
                             gender=GenderEnum.MALE,
-                            birth_date=date(2012 - class_index, 4, 10 + boy_index),
-                            phone=f"011000{church_index + 1}{class_index + 1}{boy_index}",
-                            phone_2=f"010111{church_index + 1}{class_index + 1}{boy_index}",
+                            birth_date=date(2019 - class_index, 4, 1 + boy_index % 28),
+                            phone=f"011{church_index + 1}{class_index + 1}{boy_index + 1:06d}",
+                            phone_2=f"012{church_index + 1}{class_index + 1}{boy_index + 1:06d}",
                             zone=spec["region"],
-                            address=f"عنوان تجريبي {boy_index + 1}",
-                            latitude=spec["coords"][0] + 0.003 * (boy_index + 1),
-                            longitude=spec["coords"][1] + 0.003 * (boy_index + 1),
+                            address=f"شارع التسعين، القاهرة الجديدة، عمارة {boy_index + 1}",
+                            latitude=spec["coords"][0] + 0.00012 * ((boy_index % 5) - 2),
+                            longitude=spec["coords"][1] + 0.00012 * ((boy_index // 5) - 1.5),
                             class_id=class_record.id,
                             church_id=church.id,
                             issue_flag=boy_index == 2,
@@ -204,16 +243,16 @@ class SeedService(BaseService):
                         self.db.add(boy)
                         self.db.flush()
                         counts["boys"] += 1
+                    demo_boys.append(boy)
 
-                    group = (
-                        self.db.query(Group)
-                        .filter(Group.teacher_id == teacher.id, Group.boy_id == boy.id)
-                        .first()
-                    )
-                    if group is None:
+                    groups = self.db.query(Group).filter(Group.boy_id == boy.id).all()
+                    if len(groups) != 1 or groups[0].teacher_id != teachers[group_index].id:
+                        self.db.query(Group).filter(Group.boy_id == boy.id).delete(
+                            synchronize_session=False
+                        )
                         self.db.add(Group(
                             church_id=church.id,
-                            teacher_id=teacher.id,
+                            teacher_id=teachers[group_index].id,
                             boy_id=boy.id,
                         ))
                         counts["groups"] += 1
@@ -245,7 +284,7 @@ class SeedService(BaseService):
                                 date=action_date,
                                 present=boy_index != 2,
                                 liturgy=boy_index == 0,
-                                recorded_by=teacher_user.id,
+                                recorded_by=teacher_users[group_index].id,
                             ))
                             counts["attendance"] += 1
 
@@ -262,12 +301,12 @@ class SeedService(BaseService):
                         self.db.add(FollowUp(
                             church_id=church.id,
                             class_id=class_record.id,
-                            teacher_id=teacher.id,
+                            teacher_id=teachers[group_index].id,
                             boy_id=boy.id,
                             action_date=followup_date,
                             status=FollowEnum.VISIT if boy_index != 1 else FollowEnum.CALL,
                             note="افتقاد تجريبي",
-                            recorded_by=teacher_user.id,
+                            recorded_by=teacher_users[group_index].id,
                         ))
                         counts["followups"] += 1
 
@@ -284,14 +323,15 @@ class SeedService(BaseService):
                         church_id=church.id,
                         created_at=today,
                         status="active",
-                        recorded_by=teacher_user.id,
+                        recorded_by=teacher_users[0].id,
                     )
                     self.db.add(trip)
                     self.db.flush()
                     counts["trips"] += 1
 
-                boys = self.db.query(Boy).filter(Boy.class_id == class_record.id).all()
-                for boy in boys:
+                boys = demo_boys
+                for boy_index, boy in enumerate(boys):
+                    group_index = boy_index // 10
                     existing_subscription = (
                         self.db.query(Subscription)
                         .filter(
@@ -309,7 +349,7 @@ class SeedService(BaseService):
                             type=SubscriptionTypeEnum.CHARGE,
                             value=100,
                             date=today,
-                            created_by=teacher_user.id,
+                            created_by=teacher_users[group_index].id,
                             note="دفعة تجريبية",
                         ))
                         counts["subscriptions"] += 1
@@ -326,7 +366,7 @@ class SeedService(BaseService):
                             church_id=church.id,
                             trip_id=trip.id,
                             boy_id=boy.id,
-                            teacher_id=teacher.id,
+                            teacher_id=teachers[group_index].id,
                             attend_flag=True,
                         ))
                         counts["trip_attendance"] += 1
@@ -349,7 +389,7 @@ class SeedService(BaseService):
                     self.db.flush()
                     counts["tasks"] += 1
 
-                for boy in boys:
+                for boy_index, boy in enumerate(boys):
                     task_value = (
                         self.db.query(TaskValue)
                         .filter(TaskValue.task_id == task.id, TaskValue.boy_id == boy.id)
@@ -363,7 +403,7 @@ class SeedService(BaseService):
                             boy_id=boy.id,
                             action_date=today,
                             received=True,
-                            created_by=teacher.id,
+                            created_by=teachers[boy_index // 10].id,
                         ))
                         counts["task_values"] += 1
 

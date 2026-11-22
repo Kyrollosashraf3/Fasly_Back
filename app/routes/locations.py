@@ -24,16 +24,22 @@ def visit_map(
     scope: MapScopeEnum = Query(MapScopeEnum.CLASS, description="group | class | all"),
     teacher_id: int | None = Query(None, description="لمجموعة خادم معين (للأمين)"),
     class_id: int | None = Query(None, description="تضييق أكثر على فصل واحد"),
+    name: str | None = Query(None, max_length=100, description="بحث باسم الولد"),
+    zone: str | None = Query(None, max_length=255, description="تصفية بالمنطقة"),
+    address: str | None = Query(None, max_length=255, description="بحث تقريبي بالعنوان"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """All houses in scope + a nearest-first route from the caller's position."""
+    """Filtered houses in scope + a nearest-first route from the caller's position."""
     return VisitMapService(db, current_user).route(
         latitude=latitude,
         longitude=longitude,
         scope=scope,
         teacher_id=teacher_id,
         class_id=class_id,
+        name=name,
+        zone=zone,
+        address=address,
     )
 
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 from app.core.data.base import BaseService
@@ -67,9 +68,12 @@ class VisitMapService(BaseService):
         scope: MapScopeEnum = MapScopeEnum.CLASS,
         teacher_id: int | None = None,
         class_id: int | None = None,
+        name: str | None = None,
+        zone: str | None = None,
+        address: str | None = None,
     ) -> MapRouteResponse:
         boys = (
-            self._boys_query(scope, teacher_id, class_id)
+            self._boys_query(scope, teacher_id, class_id, name, zone, address)
             .options(
                 joinedload(Boy.class_),
                 joinedload(Boy.groups).joinedload(Group.teacher),
@@ -116,7 +120,7 @@ class VisitMapService(BaseService):
         )
 
     # -------------------------------------------------------------- internals
-    def _boys_query(self, scope, teacher_id, class_id):
+    def _boys_query(self, scope, teacher_id, class_id, name, zone, address):
         """The filtered boy list; scope-out never leaks another class's house."""
         if self.user.role == RoleEnum.USER:
             query = self.db.query(Boy).filter(Boy.id == self.user.boy_id)
@@ -148,7 +152,25 @@ class VisitMapService(BaseService):
         if class_id is not None:
             self.ensure_class(class_id)
             query = query.filter(Boy.class_id == class_id)
+        if name and name.strip():
+            query = query.filter(Boy.boy_name.ilike(self._like(name.strip()), escape="!"))
+        if zone and zone.strip():
+            area_pattern = self._like(zone.strip())
+            query = query.filter(
+                or_(
+                    Boy.zone.ilike(area_pattern, escape="!"),
+                    Boy.address.ilike(area_pattern, escape="!"),
+                )
+            )
+        if address and address.strip():
+            query = query.filter(Boy.address.ilike(self._like(address.strip()), escape="!"))
         return query
+
+    @staticmethod
+    def _like(value: str) -> str:
+        """Escape user-supplied LIKE metacharacters while keeping substring search."""
+        escaped = value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        return f"%{escaped}%"
 
     def _follow_up_stats(self, ids: list[int]) -> tuple[dict[int, dict], int]:
         if not ids:
