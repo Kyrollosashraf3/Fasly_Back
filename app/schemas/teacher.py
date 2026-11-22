@@ -15,6 +15,9 @@ class TeacherCreate(BaseModel):
     """
 
     teacher_name: str = Field(..., min_length=1, max_length=255)
+    church_id: int | None = Field(
+        None, description="Church for a platform-owner-created servant"
+    )
     birth_date: date | None = None
     phone: str | None = Field(None, max_length=50)
     phone_2: str | None = Field(None, max_length=50)

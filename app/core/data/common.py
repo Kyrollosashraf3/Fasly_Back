@@ -165,6 +165,13 @@ def target_church_id(
         deny("That church does not exist.")
     if user.role == RoleEnum.SUPER_ADMIN:
         if requested_church_id is not None:
+            selected = getattr(user, "selected_church_id", None)
+            if selected is not None and int(selected) != int(requested_church_id):
+                deny("You do not have access to that church.")
+            if class_id is not None:
+                klass = db.get(SchoolClass, class_id)
+                if klass is not None and klass.church_id != int(requested_church_id):
+                    deny("The selected class belongs to a different church.")
             return int(requested_church_id)
         if class_id is not None:
             klass = db.get(SchoolClass, class_id)

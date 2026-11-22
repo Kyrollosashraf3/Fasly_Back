@@ -13,6 +13,9 @@ class BoyCreate(BaseModel):
     boy_name: str = Field(..., min_length=1, max_length=255)
     gender: GenderEnum
     class_id: int = Field(..., description="His current class - FK classes.id")
+    church_id: int | None = Field(
+        None, description="Church for a platform-owner-created boy"
+    )
     birth_date: date | None = None
     phone: str | None = Field(None, max_length=50)
     phone_2: str | None = Field(None, max_length=50)

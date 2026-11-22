@@ -85,7 +85,7 @@ class BoyService(BaseService):
 
         boy = Boy(
             boy_name=boy_name,
-            church_id=self.church_for(class_id=data.class_id),
+            church_id=self.church_for(data.church_id, class_id=data.class_id),
             gender=data.gender,
             birth_date=data.birth_date,
             phone=data.phone,
