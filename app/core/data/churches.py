@@ -15,7 +15,6 @@ from app.core.data.common import (
     deny,
     ensure_unique,
     get_or_404,
-    my_church_ids,
 )
 from app.models.church import Church
 from app.models.enums import RoleEnum
@@ -28,9 +27,15 @@ class ChurchService(BaseService):
     """
 
     def query(self):
-        ids = my_church_ids(self.user)
+        # The church list is the owner's tenant directory, so it deliberately
+        # ignores ``selected_church_id``: the header filter must keep offering
+        # every church even while the owner is looking at one of them.
         query = self.db.query(Church)
-        return query if ids is None else query.filter(Church.id.in_(ids))
+        if self.user.role == RoleEnum.SUPER_ADMIN:
+            return query
+        if self.user.church_id is None:
+            return query.filter(Church.id.in_([]))
+        return query.filter(Church.id == self.user.church_id)
 
     def list(self) -> list[Church]:
         return self.query().order_by(Church.name).all()

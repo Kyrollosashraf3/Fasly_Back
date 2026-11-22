@@ -27,6 +27,7 @@ from app.core.data.common import (
     my_class_ids,
     scope_boys,
     scope_checks,
+    scope_church,
     scope_follow_ups,
     scope_teachers,
 )
@@ -206,7 +207,7 @@ class DashboardService(BaseService):
         The filter is on ``SchoolClass.id`` (its own PK) - there is no
         ``classes.class_id`` column.
         """
-        query = self.db.query(SchoolClass)
+        query = scope_church(self.db.query(SchoolClass), SchoolClass, self.user)
         class_ids = my_class_ids(self.db, self.user)
         return query if class_ids is None else query.filter(SchoolClass.id.in_(class_ids))
 

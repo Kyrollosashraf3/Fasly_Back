@@ -110,9 +110,14 @@ def my_church_ids(user: User) -> list[int] | None:
     Only the platform owner has no church. Every other role is pinned to
     ``users.church_id``; a NULL there (a misconfigured account) yields an empty
     set rather than "all", so a broken account can never leak another tenant.
+
+    The owner may narrow his whole session to one church from the header
+    filter; that choice arrives as ``user.selected_church_id`` and is applied
+    here so every scoped read follows it without each route knowing about it.
     """
     if user.role == RoleEnum.SUPER_ADMIN:
-        return None
+        selected = getattr(user, "selected_church_id", None)
+        return None if selected is None else [int(selected)]
     if user.church_id is None:
         return []
     return [user.church_id]
@@ -167,6 +172,11 @@ def target_church_id(
                 return klass.church_id
         if person is not None and getattr(person, "church_id", None) is not None:
             return person.church_id
+        # A class created while the header is filtered belongs to that church,
+        # not to the bootstrap default.
+        selected = getattr(user, "selected_church_id", None)
+        if selected is not None:
+            return int(selected)
         return default_church_id(db)
 
     if user.church_id is None:
@@ -177,10 +187,16 @@ def target_church_id(
 
 
 def ensure_my_church(db: Session, user: User, church_id: int | None) -> None:
-    """403 unless ``church_id`` is a church this login may touch."""
-    if user.role == RoleEnum.SUPER_ADMIN:
+    """403 unless ``church_id`` is a church this login may touch.
+
+    The platform owner normally passes for every church, but while the header
+    filter is set to one church his whole view is narrowed to it - including
+    writes - so a row from another tenant is refused here too.
+    """
+    ids = my_church_ids(user)
+    if ids is None:
         return
-    if church_id is None or church_id != user.church_id:
+    if church_id is None or church_id not in ids:
         deny("You do not have access to that church.")
 
 
@@ -219,7 +235,17 @@ def my_class_ids(db: Session, user: User) -> list[int] | None:
     class of his servant / boy row.
     """
     if user.role == RoleEnum.SUPER_ADMIN:
-        return None
+        selected = getattr(user, "selected_church_id", None)
+        if selected is None:
+            return None
+        # While the header is filtered, "every class" means every class of the
+        # selected church - not every class on the platform.
+        return [
+            row[0]
+            for row in db.query(SchoolClass.id).filter(
+                SchoolClass.church_id == int(selected)
+            )
+        ]
     if user.role == RoleEnum.ABONA:
         return [
             row[0]
@@ -283,9 +309,11 @@ def ensure_my_class(db: Session, user: User, class_id: int | None) -> None:
 
 def ensure_boy_access(db: Session, user: User, boy: Boy) -> None:
     """403 unless the login may read this boy (a boy: only himself)."""
+    # Church first, for every role: a filtered platform owner is pinned to the
+    # selected church just like a tenant login is pinned to its own.
+    ensure_my_church(db, user, boy.church_id)
     if user.role == RoleEnum.SUPER_ADMIN:
         return
-    ensure_my_church(db, user, boy.church_id)
     if user.role == RoleEnum.USER:
         if boy.id != user.boy_id:
             deny("You can only view your own record.")
@@ -295,9 +323,9 @@ def ensure_boy_access(db: Session, user: User, boy: Boy) -> None:
 
 def ensure_teacher_access(db: Session, user: User, teacher: Teacher) -> None:
     """403 unless the login may read this servant (a servant: only himself)."""
+    ensure_my_church(db, user, teacher.church_id)
     if user.role == RoleEnum.SUPER_ADMIN:
         return
-    ensure_my_church(db, user, teacher.church_id)
     if user.role == RoleEnum.TEACHER:
         if teacher.id != user.teacher_id:
             deny("You can only view your own record.")
@@ -340,9 +368,12 @@ def scope_boys(db: Session, query: Query, model, user: User, boy_column) -> Quer
 def scope_teachers(db: Session, query: Query, user: User) -> Query:
     """Servants this login may see: a servant only himself, staff his classes."""
     ensure_staff(user)
+    church_ids = my_church_ids(user)
+    if user.role == RoleEnum.SUPER_ADMIN and church_ids is None:
+        return query
+    query = scope_church(query, Teacher, user)
     if user.role == RoleEnum.SUPER_ADMIN:
         return query
-    query = query.filter(Teacher.church_id == user.church_id)
     if user.role == RoleEnum.TEACHER:
         return query.filter(Teacher.id == user.teacher_id)
     return query.filter(Teacher.class_id.in_(my_class_ids(db, user) or []))
@@ -354,9 +385,12 @@ def scope_follow_ups(db: Session, query: Query, user: User) -> Query:
     A boy sees the calls made about him, a servant only the ones he wrote,
     an amin every row of his classes.
     """
+    church_ids = my_church_ids(user)
+    if user.role == RoleEnum.SUPER_ADMIN and church_ids is None:
+        return query
+    query = scope_church(query, FollowUp, user)
     if user.role == RoleEnum.SUPER_ADMIN:
         return query
-    query = query.filter(FollowUp.church_id == user.church_id)
     if user.role == RoleEnum.TEACHER:
         return query.filter(FollowUp.teacher_id == user.teacher_id)
     if user.role == RoleEnum.USER:
@@ -367,9 +401,12 @@ def scope_follow_ups(db: Session, query: Query, user: User) -> Query:
 def scope_checks(db: Session, query: Query, user: User) -> Query:
     """Servant review rows: a servant his own reviews, staff their classes."""
     ensure_roles(user, *REVIEWERS)
+    church_ids = my_church_ids(user)
+    if user.role == RoleEnum.SUPER_ADMIN and church_ids is None:
+        return query
+    query = scope_church(query, TeacherCheck, user)
     if user.role == RoleEnum.SUPER_ADMIN:
         return query
-    query = query.filter(TeacherCheck.church_id == user.church_id)
     if user.role == RoleEnum.TEACHER:
         return query.filter(TeacherCheck.teacher_id == user.teacher_id)
     return query.filter(TeacherCheck.class_id.in_(my_class_ids(db, user) or []))
@@ -382,9 +419,12 @@ def scope_users(db: Session, query: Query, user: User) -> Query:
     an amin: the accounts of the servants and boys of his classes - and the
     church is always checked first, so no other tenant's login leaks.
     """
+    church_ids = my_church_ids(user)
+    if user.role == RoleEnum.SUPER_ADMIN and church_ids is None:
+        return query
+    query = scope_church(query, User, user)
     if user.role == RoleEnum.SUPER_ADMIN:
         return query
-    query = query.filter(User.church_id == user.church_id)
     if user.role in (RoleEnum.TEACHER, RoleEnum.USER):
         return query.filter(User.id == user.id)
     class_ids = my_class_ids(db, user) or []

@@ -353,7 +353,12 @@ class NotificationService:
         }
         if self.user.role in MANAGERS:
             targets = self.audience_class_ids(requested_class_id)
-            if targets is None:
+            selected = getattr(self.user, "selected_church_id", None)
+            if targets is None and selected is not None:
+                # The header is filtered: the owner is counting one church.
+                out["devices"] = len(self.devices(None, church_id=int(selected)))
+                out["staff"] = self.count_staff(None, church_id=int(selected))
+            elif targets is None:
                 # Platform owner asking for everything: add up church by church
                 # so a single log/audience never spans two tenants.
                 for (church_id,) in self.db.query(Church.id).all():
@@ -428,6 +433,7 @@ class NotificationService:
 
     def history(self, limit: int = 50) -> list[NotificationLog]:
         query = self.db.query(NotificationLog).order_by(NotificationLog.id.desc())
+        selected = getattr(self.user, "selected_church_id", None)
         if self.user.role != RoleEnum.SUPER_ADMIN:
             # Church first, then class: no other tenant's log is ever visible.
             query = query.filter(NotificationLog.church_id == self.user.church_id)
@@ -436,6 +442,9 @@ class NotificationService:
                 NotificationLog.class_id.in_(mine)
                 | (NotificationLog.sender_id == self.user.id)
             )
+        elif selected is not None:
+            # The owner's header filter applies to the log too.
+            query = query.filter(NotificationLog.church_id == int(selected))
         return query.limit(limit).all()
 
     # --------------------------------------------------------------------- bell

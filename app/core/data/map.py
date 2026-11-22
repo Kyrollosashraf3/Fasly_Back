@@ -20,6 +20,7 @@ from app.core.data.common import (
     get_or_404,
     my_class_ids,
     scope_boys,
+    scope_church,
 )
 from app.core.geo import haversine_m, nearest_neighbour, walk_minutes
 from app.models.boy import Boy
@@ -137,7 +138,10 @@ class VisitMapService(BaseService):
                     Group.teacher_id == teacher.id
                 )
             ]
-            query = self.db.query(Boy).filter(Boy.id.in_(boy_ids))
+            # Tenant first: a group row is not proof the boy is in this church.
+            query = scope_church(self.db.query(Boy), Boy, self.user).filter(
+                Boy.id.in_(boy_ids)
+            )
         else:
             query = scope_boys(self.db, self.db.query(Boy), Boy, self.user, Boy.id)
 

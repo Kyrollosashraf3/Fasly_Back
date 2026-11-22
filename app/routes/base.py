@@ -1,8 +1,13 @@
 """Service meta endpoints - who the API is and whether it is alive."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.auth.deps import get_current_user
+from app.core.data.seed import SeedService
+from app.db.database import get_db
+from app.models.user import User
 
 router = APIRouter(tags=["Meta"])
 
@@ -21,3 +26,12 @@ def root() -> dict:
 def health() -> dict:
     """Unauthenticated liveness probe."""
     return {"status": "ok"}
+
+
+@router.post("/seed", include_in_schema=True)
+def seed_demo_data(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create idempotent demo data for exactly two isolated churches."""
+    return SeedService(db, current_user).seed()

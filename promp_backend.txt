@@ -1,0 +1,265 @@
+================================================================================
+# Fasly — دليل مرجعي كامل للتطبيق (Backend + Frontend)
+================================================================================
+المسار: E:\AI_projects\Fasly
+الهدف: مرجع شامل لأي محادثة جديدة مع ال AI بحيث لا يحتاج لقراءة جميع الملفات من scratch.
+يحتوي على وصف كامل لكل جزء من أجزاء النظام، بنية القواعد، المسارات، الصلاحيات، الموديلات، السكيمات، والفرونت إند.
+
+--------------------------------------------------------------------------------
+## 1. نظرة عامة على النظام (Overview)
+--------------------------------------------------------------------------------
+فاسلي (Fasly) نظام إدارة مدرسة الأحد (Sunday School) لكنيسة، يخدم متابعة الأولاد،
+الحضور، الغياب، الاشتراكات في الرحلات، المتابعة الفردية، الإشعارات، والتقارير.
+
+البنية:
+- Back-end: FastAPI (Python) + PostgreSQL + SQLAlchemy ORM + JWT Auth + bcrypt
+- Front-end: React (Vite) + JavaScript (JSX) + CSS مخصصة
+- المنافذ: الخادم على 9001، وال واجهات على Vite dev server
+
+--------------------------------------------------------------------------------
+## 2. هيكل المجلدات (Backend)
+--------------------------------------------------------------------------------
+core/auth\: security.py (bcrypt+JWT), deps.py (get_current_user, require_admin), bootstrap.py
+core/data\: base.py, common.py, boys.py, teachers.py, trips.py, subscriptions.py, attendance.py, follow_ups.py, groups.py, teacher_checks.py, tasks.py, task_values.py, users.py, churches.py, classes.py, locations.py, map.py
+core/DA\: dashboard.py, follow_up_performance.py
+core/notifications\: خدمة الإشعارات (Web Push + VAPID)
+core/EDA\: Excel import/export
+db\database.py: engine, session, create_tables(), TENANT_TABLES
+models\: boy.py, user.py, teacher.py, trip.py, subscription.py, school_class.py, church.py, group.py, follow_up.py, teacher_check.py, task.py, task_value.py, enums.py
+schemas\: boy.py, user.py, trip.py, subscription.py, teacher.py, base.py (ORMResponse)
+routes\: base.py, auth.py, boys.py, teachers.py, classes.py, churches.py, trips.py, subscriptions.py, attendance.py, follow_ups.py, groups.py, teacher_checks.py, tasks.py, task_values.py, locations.py, notifications.py, dashboard.py, sheets.py
+config\: settings.py (Pydantic Settings), logger.py
+.env: متغيرات البيئة (سري)
+requirements.txt: مكتبات Python المطلوبة
+
+--------------------------------------------------------------------------------
+## 2ب. هيكل المجلدات (Frontend)
+--------------------------------------------------------------------------------
+front_fasly\src\features\myTrip\: BoyAccount.jsx (معدل حالياً), myTrip.css, MyTripPage.jsx, RegisterSubscription.jsx, SubscriptionAnalysis.jsx, TripActionsPage.jsx, TripDialog.jsx, TripStatus.jsx, ServerAccountStatement.jsx
+front_fasly\src\features\boys\: BoyForm.jsx, BoyProfile.jsx, BoysPage.jsx, boys.css, boysColumns.jsx, BoyName.jsx, boyBits.jsx, BoyFormFields.jsx, boyFormModel.js, DuplicateNamesModal.jsx, useBoysList.js
+front_fasly\src\lib\: api.js (axios مع Bearer token), endpoints.js (AuthAPI, BoyAPI, TeacherAPI, SubscriptionAPI, TripAPI, DashboardAPI, NotificationAPI...), format.js (formatDate, num, initials, waLink)
+front_fasly\src\components\ui\: Badge, Icon, States (Loading, ErrorState, EmptyState)
+
+
+--------------------------------------------------------------------------------
+## 3. الموديلات (Database Models)
+--------------------------------------------------------------------------------
+كل الجداول تحمل church_id للعزل بين الكنائس. السوبر أدمين يرى كل الكنائس، باقي الأدوار مقيدة بكنيستهم.
+
+3.1 جدول users (الحسابات / تسجيل الدخول)
+الحقول: id (PK), phone (varchar(20) unique), password_hash (varchar(255) nullable), role (enum), church_id (int FK), teacher_id (int FK nullable unique), boy_id (int FK nullable unique), created_at, updated_at
+القيود (ck_users_role_owner):
+- teacher/admin: teacher_id موجود، boy_id NULL، church_id موجود
+- user: boy_id موجود، teacher_id NULL، church_id موجود
+- general_admin: teacher_id موجود، boy_id NULL، church_id موجود
+- abona: boy_id NULL، church_id موجود (teacher_id اختياري للعرض)
+- super_admin: boy_id NULL، church_id اختياري (يرى كل الكنائس)
+الخصائص المحسوبة: display_name (اسم المعلم أو الولد)، managed_class_ids (فصول أمين المرحلة)، pending_signup (True إذا password_hash NULL)
+
+3.2 جدول boys (الأولاد)
+الحقول: id (PK), boy_name, gender (m/f), birth_date, phone, phone_2, zone, address, latitude, longitude, father_name (enum nullable), national_id, skills (ARRAY text), class_id (int FK), last_visit_date, note, issue_flag (boolean default False), created_at, updated_at
+العلاقات: church, class_, user (1:1), attends, follow_ups, groups, subscriptions, trip_attendances, task_values
+الخصائص المحسوبة: teacher_id (من جدول المجموعات)، teacher_name (اسم الخادم من المجموعات)، age (محسوب من birth_date لا يُخزن)
+
+3.3 جدول teachers (الخدام - ليس حساب تسجيل دخول)
+الحقول: id (PK), teacher_name, birth_date, phone, phone_2, zone, address, latitude, longitude, class_id (int FK nullable), father_name (enum nullable), skills (ARRAY text), last_visit_date, note, created_at, updated_at
+العلاقات: church, class_, user (1:1), groups, follow_ups, teacher_checks, task_values, trip_attendances, managed_classes
+
+3.4 جدول trips (الرحلات)
+الحقول: id (PK), name (varchar(200)), cost (int بالجنيه), class_id (int FK), created_at (date), status (varchar default 'active'), recorded_by (int FK users)
+
+3.5 جدول subscriptions (الاشتراكات المالية)
+الحقول: id (PK), boy_id (int FK), trip_id (int FK), type (enum charge/recover), value (int بالجنيه), note (varchar nullable), date (date nullable), created_at (datetime), created_by (int FK users nullable)
+الفهارس: (trip_id, boy_id), (boy_id, created_at)
+
+--------------------------------------------------------------------------------
+## 4.枚ادات النظام (Enums)
+--------------------------------------------------------------------------------
+RoleEnum (الأدوار): USER (ولد - بياناته فقط), TEACHER (خادم - فصله وأولاده ومتابعاته), ADMIN (أمين فصل - فصله وخدمته وأولاده), GENERAL_ADMIN (أمين مرحلة - مجموعة فصول محددة)، ABONA (أبونا/أمين كنيسة - كل فصول كنيسته فقط)، SUPER_ADMIN (مالك المنصة - كل الكنائس وكل الفصول)
+GenderEnum: m (ذكر), f (أنثى)
+FollowEnum: call, visit, whatsapp, no_answer, other
+FatherEnum: ابونا كيرلس روماني, ابونا ارسانيوس عزت, ابونا فام عبدالمسيح
+SubscriptionTypeEnum: charge (مصروف), recover (استرداد)
+SkillEnum: تمثيل, رسم, تلوين, عزف, ديكور, برمجة, تصميم جرافيك, اكسل, كمبيوتر, تأليف, أخرى
+
+--------------------------------------------------------------------------------
+## 5. نظام الصلاحيات (Authorization)
+--------------------------------------------------------------------------------
+المبدأ: كل صف يحمل church_id. السؤال الأول: "هل هذا页 في كنيستي؟" ثم "هل فصله ضمن فصولي؟"
+الصف خارج نطاق الرؤية يظهر كـ 404. العزل على مستوى الكنيسة أولاً عبر scope_church / ensure_my_church.
+
+مصفوفة الصلاحيات (من common.py):
+| العملية | super_admin | abona | general_admin | admin | teacher | user |
+|---------|-------------|-------|---------------|-------|---------|------|
+| الكنائس | كل الكنائس | كنيسته | كنيسته | كنيسته | كنيسته | كنيسته |
+| الفصول | كل الفصول | كل فصول كنيسته | مجموعته فقط | فصله | للقراءة فقط | - |
+| الأولاد | الكل | كل كنيسته | مجموعته | فصله | فصله | نفسه فقط |
+| الخدام | الكل | كل كنيسته | مجموعته | فصله | نفسه فقط | - |
+| الحسابات | الكل | كل كنيسته | مجموعته | فصله | نفسه | نفسه فقط |
+
+MANAGERS = (ADMIN, GENERAL_ADMIN, ABONA, SUPER_ADMIN) - مسموح لهم بالكتابة
+STAFF = (TEACHER, ADMIN, GENERAL_ADMIN, ABONA, SUPER_ADMIN) - كل من لديه حساب في كنيسة
+دوال الصلاحية: scope_church, scope_boys, scope_teachers, scope_classes, ensure_my_class, ensure_my_church, ensure_manager, ensure_roles, ensure_teacher_access, is_unrestricted
+
+--------------------------------------------------------------------------------
+## 6. مسارات API (Endpoints) - الباك إند
+--------------------------------------------------------------------------------
+جميع المسارات تحتاج مصادقة (Bearer JWT) باستثناء /, /health, /auth/login, /auth/signup/*.
+
+6.1 Meta (base.py): GET /, GET /health
+6.2 المصادقة (auth.py) - prefix /auth: POST /login, POST /signup/check, POST /signup, GET /me, GET /users, POST /users, POST /register (معطل), PUT /users/{id}/classes, PATCH /users/{id}, DELETE /users/{id}
+6.3 الأولاد (boys.py) - prefix /boys: GET, POST, GET /duplicate-names, GET /template, GET /export, POST /import, GET /{boy_id}, PATCH /{boy_id}, DELETE /{boy_id}
+6.4 الخدام (teachers.py) - prefix /teachers: GET, POST, GET /template, GET /export, POST /import, GET /me, PATCH /me, GET /{teacher_id}, PATCH /{teacher_id}, DELETE /{teacher_id}
+6.5 الرحلات (trips.py) - prefix /trips: GET, POST, GET /{trip_id}, PATCH /{trip_id}, DELETE /{trip_id}
+6.6 الاشتراكات المالية (subscriptions.py) - prefix /subscriptions: GET, GET /trip/{trip_id}, GET /trip/{trip_id}/boys, GET /trip/{trip_id}/summary, GET /trip/{trip_id}/boy/{boy_id}/summary, POST, PATCH /{sub_id}, DELETE /{sub_id}
+المسكات المهمة في BoyTripSummary: boy_id, boy_name, trip_id, trip_name, trip_cost, total_charged, total_recovered, total_paid, remaining, registered
+6.7 الحضور (attendance.py) - prefix /attendance: GET, POST, POST /bulk, GET /{record_id}, PATCH /{record_id}, DELETE /{record_id}
+6.8 المتابعة (follow_ups.py) - prefix /follow-ups: GET, POST, GET /{record_id}, PATCH /{record_id}, DELETE /{record_id}
+6.9 المجموعات (groups.py) - prefix /groups: GET, POST /assign, POST /unassign, GET /template, POST /import, GET /export
+6.10 تقييم الخدام (teacher_checks.py) - prefix /teacher-checks: GET, POST, POST /bulk, GET /{record_id}, PATCH /{record_id}, DELETE /{record_id}
+6.11 المهام (tasks.py) - prefix /tasks: GET, POST, GET /{task_id}, PATCH /{task_id}, DELETE /{task_id}
+6.12 علامات الاستلام (task_values.py) - prefix /task-values: GET, POST, PATCH /bulk, GET /{value_id}, PATCH /{value_id}, DELETE /{value_id}
+6.13 المواقع والخريطة (locations.py) - prefix /locations: GET /map, POST /boys/me, POST /boys/{boy_id}, GET /boys/{boy_id}/current
+6.14 الإشعارات (notifications.py) - prefix /notifications: GET /vapid-key, PUT /subscription, GET /status, POST /send, GET /log, GET /inbox, GET /inbox/unread, PATCH /inbox/read-all, PATCH /inbox/{id}/read
+6.15 لوحة المعلومات (dashboard.py) - prefix /dashboard: GET /summary, GET /my-performance, GET /today-check/tasks, GET /today-check, GET /today-check/export, GET /teachers/export, GET /follow-up, GET /birthdays, GET /boys/{boy_id}
+
+--------------------------------------------------------------------------------
+## 7. طبقة الخدمات (Service Layer)
+--------------------------------------------------------------------------------
+كل مسار يستدعي خدمة في app.core.data، ولا يتخذ المسار أي قرار صلاحية بذاته.
+الخدمات الأساسية: BoyService, TeacherService, TripService, SubscriptionService, AttendanceService, FollowUpService, GroupsService, TeacherCheckService, TaskService, TaskValueService, UserService, ChurchService, ClassService, BoyLocationService, VisitMapService
+الأساسات: BaseService (يحمل session والمستخدم الحالي، يوفر classes_query() و church_for()), WeeklySheetService (CRUD مشترك للورقتين الأسبوعيتين: الحضور وتقييم الخدام، صف واحد لكل (شخص، تاريخ))
+
+--------------------------------------------------------------------------------
+## 8. السكامات (Pydantic Schemas)
+--------------------------------------------------------------------------------
+كل سكام يرث من ORMResponse الذي يضبط from_attributes=True.
+BoyCreate/BoyUpdate/BoyResponse: boy_name, gender, class_id, birth_date, phone, phone_2, zone, address, latitude, longitude, father_name, national_id, skills, last_visit_date, note, issue_flag, teacher_id, confirm_similar (Create فقط). الاستجابة تضيف: id, age, teacher_name, created_at, updated_at.
+SubscriptionCreate/SubscriptionUpdate/SubscriptionResponse: boy_id, trip_id, type (charge/recover), value, note, date, created_at. الاستجابة تضيف: boy_name, trip_name, created_by_name.
+BoyTripTotal: boy_id, boy_name, total_paid (مجموع مصروف ناقص استرداد).
+BoyTripSummary: boy_id, boy_name, trip_id, trip_name, trip_cost, total_charged, total_recovered, total_paid, remaining, registered.
+TripCreate/TripUpdate/TripResponse: name, cost, class_id, created_at, status.
+UserCreate/UserUpdate/UserResponse: phone, password, role, church_id, teacher_id, boy_id, display_name, pending_signup, managed_class_ids.
+TeacherCreate/TeacherUpdate/TeacherResponse: teacher_name, birth_date, phone, phone_2, zone, address, latitude, longitude, class_id, father_name, skills.
+
+--------------------------------------------------------------------------------
+## 9. إعدادات البيئة (.env)
+--------------------------------------------------------------------------------
+الملف: E:\AI_projects\Fasly\back_fasly\.env
+ADMIN_PHONE=01281875199
+ADMIN_PASSWORD=kero0244
+SEED_SUPER_ADMINS_JSON=[{"name":"كيرلس اشرف فخري","phone":"01281875199"},...]
+DATABASE_URL=postgresql://postgres:0244@localhost:5432/fasly_db
+SECRET_KEY=opoa08880-8w8wqaski-trghpp50508-6070089
+VAPID_PUBLIC_KEY=BEsbi5TfA-XW7nk3E4gaBVprr4CPvT9f9bZtSgaOkRC07nGbS6okQrvL2YALL4rb0hCeLSqgvK3gsYna7fzbT0w
+VAPID_PRIVATE_KEY=-----BEGIN EC PRIVATE KEY-----...
+VAPID_CLAIMS_EMAIL=mailto:kerlosashraf55@gmail.com
+requirements.txt: sqlalchemy, psycopg[binary], bcrypt, pyjwt, slowapi, fastapi==0.141.1, uvicorn[standard]==0.52.4, pydantic==2.13.5, python-dotenv, pydantic-settings, python-multipart, openpyxl, pywebpush
+
+--------------------------------------------------------------------------------
+## 10. مكون BoyAccount.jsx - التفاصيل الحالية (معدل)
+--------------------------------------------------------------------------------
+المسار: E:\AI_projects\Fasly\front_fasly\src\features\myTrip\BoyAccount.jsx
+
+الغرض: عرض حساب ولد في رحلة معينة: مبلغ الدفع، الباقي، تاريخ الدفعات، واسم الخادم المشرف.
+
+حالة التعديل الحالي (ال Done):
+1. إزالة حقل <Field>/<Select> المنسدل (dropdown filter) بالكامل
+2. إضافة منطق تصفية تلقائي: إظهار فقط الأولاد الذين total_paid > 0
+3. إضافة تصميم كارت الولد: الاسم + مبالغ دفع/باقي مع تسميات صغيرة وقيم عريضة
+4. إضافة عرض teacher_name باستخدام usersMap (المملوء من TeacherAPI) عبر usersMap[String(boy.boy_id)]
+5. إضافة klasse CSS .mytrip__teacher-info في myTrip.css
+6. الاحتفاظ بالبحث بالاسم (search by name)
+
+المنطق الحالي في المكون:
+- الحالة: boys (قائمة الأولاد من getTripSummary، مصفاة registered), payments (دفعات الرحلة من getForTrip), usersMap (خريطة id → اسم display), search (نص البحث), boyId (معرف الولد المحدد)
+- التحميل (useEffect عند تغيير tripId): SubscriptionAPI.getTripSummary(tripId), SubscriptionAPI.getForTrip(tripId), AuthAPI.users()
+- التصفية: boys.filter((b) => b.registered) (فقط من سجل اسمهم في الرحلة)
+- نتائج البحث: boys.filter((b) => b.boy_name?.includes(q))
+- الولد المحدد: boys.find((b) => b.boy_id === boyId)
+- تاريخ الدفعات: payments.filter((p) => String(p.boy_id) === String(boy.boy_id))
+- العرض: حقل بحث بالنص (بدون منسدل)، كارت الولد يحتوي اسم الولد + شارة حالة (مكتمل/حجز اسم/جزئي)، مبالغ دفع/باقي/الإجمالي (ألفاظ عربية: دفع، باقي، الإجمالي)، teacher_name يظهر تحت اسم الولد (إذا وجد في usersMap، وإلا "غير معروف")
+- usersMap يُبنى من AuthAPI.users() التي تستدعي GET /auth/users - يتم استخدام u.display_name || u.name || u.username || u.phone
+- المفتاح في usersMap هو String(u.id) (تحويل إلى نص للمقارنة الآمنة)
+- عند البحث عن teacher_name للولد: usersMap[String(boy.boy_id)] - افتراض أن معرف الحساب يتطابق مع معرف الولد (لأن حساب النوع user مرتبط بـ boy_id)
+- إذا لم يوجد الاسم: يعرض غير معروف
+
+ملفات CSS ذات الصلة (myTrip.css):
+.mytrip__account-card - تصميم كارت الحساب
+.mytrip__account-card-name - اسم الولد في الكارت
+.mytrip__account-card-amounts - منطقة المبالغ
+.mytrip__pill / .mytrip__pill--paid / .mytrip__pill--due / .mytrip__pill--neutral - أكياس المبالغ
+.mytrip__pill-label / .mytrip__pill-val - التسمية والقيمة
+.mytrip__history-list / .mytrip__history-item - قائمة الدفعات
+.mytrip__search-wrap / .mytrip__search-input / .mytrip__search-clear - حقل البحث
+.mytrip__teacher-info - (يجب الإضافة) تصميم اسم الخادم
+
+--------------------------------------------------------------------------------
+## 11. نقاط الربط بين الباك إند والفرونت إند
+--------------------------------------------------------------------------------
+11.1 اشتراكات الولد في رحلة (المنتدى الأساسي لـ BoyAccount):
+| العملية | المسار | الاستجابة |
+|---------|--------|----------|
+| ملخص أولاد الرحلة | GET /subscriptions/trip/{trip_id}/summary | list[BoyTripSummary] |
+| دفعات الرحلة | GET /subscriptions/trip/{trip_id} | list[SubscriptionResponse] |
+| ملخص ولد واحد | GET /subscriptions/trip/{trip_id}/boy/{boy_id}/summary | BoyTripSummary |
+
+11.2 جلب بيانات المستخدمين (لبناء usersMap):
+| العملية | المسار | الاستجابة |
+|---------|--------|----------|
+| قائمة الحسابات | GET /auth/users | list[UserResponse] (يحتوي على display_name, phone, role, teacher_id, boy_id) |
+
+11.3 جلب بيانات المعلمين (للخريطة البديلة):
+| العملية | المسار | الاستجابة |
+|---------|--------|----------|
+| قائمة الخدام | GET /teachers | list[TeacherResponse] (يحتوي على teacher_name, id, class_id) |
+
+--------------------------------------------------------------------------------
+## 12. cómoية التشغيل والنشر
+--------------------------------------------------------------------------------
+الباك إند:
+cd E:\AI_projects\Fasly\back_fasly
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 9001
+توثيق API: http://localhost:9001/docs
+
+الفرونت إند:
+cd E:\AI_projects\Fasly\front_fasly
+npm install
+npm run dev
+npm run build
+
+متطلبات النظام:
+- PostgreSQL يعمل على localhost:5432 قاعدة بيانات fasly_db
+- Python 3.10+ للباك إند
+- Node.js 18+ للفرونت إند
+
+--------------------------------------------------------------------------------
+## 13. أنماط البرمجة والتقاليد المتبعة (Conventions)
+--------------------------------------------------------------------------------
+1. اللغة العربية: الواجهات والمُعَرِّبات بالعربية، تعليقات الكود mixte (عربي وإنجليزي)
+2. صلاحيات البيانات: كل مسار يستدعي خدمة، والقرارات الصلاحية في common.py فقط
+3. العزل متعدد المستأجرين: كل جدول يحمل church_id، والفحص يكون على مستوى الكنيسة أولاً
+4. عدم وجود أداة ترحيل (Migration): create_tables() في database.py يضيف الأعمدة الناقصة تلقائياً عند التشغيل
+5. الأرقام: المخزنة كـ int بالجنيه المصري (بدون كسور)
+6. التواريخ: ISO format (YYYY-MM-DD) على الشبكة، تُنظَّم للعرض عبر format.js
+7. أرقام الهواتف: تُخزّن بصيغة 01xxxxxxxxx بعد الت.Normalization عبر normalise_phone()
+8. المصادقة: JWT Bearer token، ينتهي بعد 60 دقيقة، يُخزّن في localStorage في الفرونت إند
+9. معالجة الأخطاء: الخدمات تُلقي HTTPException مع رمز حالة مناسب ورسالة عربية
+
+--------------------------------------------------------------------------------
+## 14. ملاحظات التطوير الحالية (TODO / In Progress)
+--------------------------------------------------------------------------------
+- [ ] التحقق من صحة بناء JSX في BoyAccount.jsx (كان هناك خطأ تحليل سابق في السطر 152)
+- [ ] التأكد من تطابق أنواع مفاتيح usersMap مع boy.boy_id (نص مقابل رقم)
+- [ ] اختبار العرض: ظهور اسم المعلم تحت كارت الولد، وسلوك البحث والفلترة سليم
+- [ ] التحقق من تطبيق klasse CSS .mytrip__teacher-info بشكل صحيح (قد يحتاج متغير حدّودي border)
+- [x] إزالة المنسدل (dropdown filter) - مكتمل
+- [x] التصفية التلقائية (total_paid > 0) - مكتمل
+- [x] تصميم كارت الولد مع مبالغ دفع/باقي - مكتمل
+- [x] عرض teacher_name عبر usersMap - مكتمل
+
+--------------------------------------------------------------------------------
+# نهاية التوثيق
+================================================================================

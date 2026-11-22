@@ -30,6 +30,7 @@ from app.core.data.common import (
     my_class_ids,
     scope_boys,
     scope_checks,
+    scope_church,
     scope_follow_ups,
     scope_teachers,
 )
@@ -81,7 +82,7 @@ class FollowUpPerformanceService(BaseService):
     # ----------------------------------------------------------------- scope
     def _classes(self):
         """The class catalogue this login may see (an amin: his own classes)."""
-        query = self.db.query(SchoolClass)
+        query = scope_church(self.db.query(SchoolClass), SchoolClass, self.user)
         class_ids = my_class_ids(self.db, self.user)
         return query if class_ids is None else query.filter(SchoolClass.id.in_(class_ids))
 
