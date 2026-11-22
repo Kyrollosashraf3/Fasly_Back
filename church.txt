@@ -313,3 +313,5 @@ SELECT 'trip_attendance_wrong_church' AS check_name, COUNT(*) AS rows
   FROM trip_attendances a JOIN trips t ON t.id = a.trip_id
  WHERE a.church_id <> t.church_id;
 -- Both counts should be 0.
+
+done
