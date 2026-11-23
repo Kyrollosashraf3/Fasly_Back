@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import TripAttendanceService
+from app.features.trip_attendance.services import TripAttendanceService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.trip_attendance import (
+from app.features.user.models.user import User
+from app.features.trip_attendance.schemas.trip_attendance import (
     TripAttendanceAssign,
     TripAttendanceBulkCreate,
     TripAttendanceResponse,

@@ -24,7 +24,7 @@ from datetime import date, timedelta
 
 from fastapi import HTTPException
 
-from app.core.DA.dashboard import _season_start
+from app.features.dashboard.services import _season_start
 from app.core.data.base import BaseService
 from app.core.data.common import (
     my_class_ids,
@@ -34,13 +34,13 @@ from app.core.data.common import (
     scope_follow_ups,
     scope_teachers,
 )
-from app.models.boy import Boy
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
-from app.models.follow_up import FollowUp
-from app.models.group import Group
-from app.models.school_class import SchoolClass
-from app.models.teacher import Teacher
-from app.models.teacher_check import TeacherCheck
+from app.features.follow_up.models.follow_up import FollowUp
+from app.features.group.models.group import Group
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.teacher.models.teacher import Teacher
+from app.features.teacher_check.models.teacher_check import TeacherCheck
 
 #: The period windows the module offers (mirrors the query pattern).
 PERIODS = ("week", "month", "season", "all")

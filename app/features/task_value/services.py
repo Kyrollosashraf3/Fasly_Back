@@ -8,11 +8,11 @@ from sqlalchemy.orm import Query, joinedload
 
 from app.core.data.base import BaseService
 from app.core.data.common import apply_update, commit, deny, ensure_boy_access
-from app.models.boy import Boy
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
-from app.models.task import Task
-from app.models.task_value import TaskValue
-from app.schemas.task_value import (
+from app.features.task.models.task import Task
+from app.features.task_value.models.task_value import TaskValue
+from app.features.task_value.schemas.task_value import (
     TaskValueCreate,
     TaskValueDuesBulk,
     TaskValueUpdate,

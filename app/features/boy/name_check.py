@@ -18,11 +18,11 @@ is only reported between boys he can already open.
 
 from __future__ import annotations
 
-from app.core.DA.dashboard import _iso
+from app.features.dashboard.services import _iso
 from app.core.data.base import BaseService
 from app.core.data.common import ensure_staff, scope_boys
-from app.core.data.names import class_labels, signature, similarity, words
-from app.models.boy import Boy
+from app.features.boy.names import class_labels, signature, similarity, words
+from app.features.boy.models.boy import Boy
 
 
 class NameCheckService(BaseService):

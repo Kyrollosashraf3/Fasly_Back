@@ -10,9 +10,9 @@ from app.core.data.common import (
     ensure_roles,
     scope_boys,
 )
-from app.models.attend import Attend
-from app.models.boy import Boy
-from app.schemas.attend import AttendBulkCreate, AttendCreate, AttendUpdate
+from app.features.attendance.models.attend import Attend
+from app.features.boy.models.boy import Boy
+from app.features.attendance.schemas.attend import AttendBulkCreate, AttendCreate, AttendUpdate
 
 
 class AttendanceService(WeeklySheetService):

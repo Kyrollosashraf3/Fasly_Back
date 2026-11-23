@@ -17,9 +17,9 @@ from app.core.data.common import (
     scope_church,
 )
 from app.models.enums import RoleEnum
-from app.models.teacher import Teacher
-from app.models.teacher_follow_up import TeacherFollowUp
-from app.schemas.teacher_follow_up import TeacherFollowUpCreate, TeacherFollowUpUpdate
+from app.features.teacher.models.teacher import Teacher
+from app.features.teacher_follow_up.models.teacher_follow_up import TeacherFollowUp
+from app.features.teacher_follow_up.schemas.teacher_follow_up import TeacherFollowUpCreate, TeacherFollowUpUpdate
 
 
 class TeacherFollowUpService(BaseService):

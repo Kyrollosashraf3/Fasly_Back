@@ -14,12 +14,12 @@ from app.core.data.common import (
     get_or_404,
     scope_boys,
 )
-from app.core.data.names import ensure_full_name, ensure_name_addable
-from app.models.boy import Boy
+from app.features.boy.names import ensure_full_name, ensure_name_addable
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
-from app.models.group import Group
-from app.models.teacher import Teacher
-from app.schemas.boy import BoyCreate, BoyUpdate
+from app.features.group.models.group import Group
+from app.features.teacher.models.teacher import Teacher
+from app.features.boy.schemas.boy import BoyCreate, BoyUpdate
 
 #: ``teacher_id`` is not a column - it files the boy under a servant's
 #: follow-up group, so it is handled apart from the plain PATCH fields.

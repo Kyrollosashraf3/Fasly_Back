@@ -36,9 +36,9 @@ from pydantic import ValidationError
 
 from app.config.logger import get_logger
 from app.models.enums import FatherEnum, GenderEnum, RoleEnum, SkillEnum
-from app.schemas.boy import BoyCreate
-from app.schemas.teacher import TeacherCreate
-from app.schemas.user import UserImportRow, normalise_phone
+from app.features.boy.schemas.boy import BoyCreate
+from app.features.teacher.schemas.teacher import TeacherCreate
+from app.features.user.schemas.user import UserImportRow, normalise_phone
 
 logger = get_logger(__name__)
 

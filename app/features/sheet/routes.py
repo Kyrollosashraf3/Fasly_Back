@@ -11,7 +11,7 @@ from typing import Callable
 from fastapi import Response
 from sqlalchemy.orm import Session
 
-from app.models.user import User
+from app.features.user.models.user import User
 
 XLSX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -49,7 +49,7 @@ def writable_class_names(db: Session, user: User) -> list[str]:
     A class amin gets his own class, the super admin gets all of them - a
     template never offers a class the uploader could not fill.
     """
-    from app.core.data.classes import ClassService
+    from app.features.school_class.services import ClassService
 
     service = ClassService(db, user)
     lookup = service.label_lookup()
@@ -58,7 +58,7 @@ def writable_class_names(db: Session, user: User) -> list[str]:
 
 def class_labels(db: Session, user: User) -> dict[int, str]:
     """``class_id -> name`` for every class the login can read."""
-    from app.core.data.classes import ClassService
+    from app.features.school_class.services import ClassService
 
     return {row.id: row.name for row in ClassService(db, user).list()}
 

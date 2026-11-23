@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import BoyLocationService, TeacherLocationService, VisitMapService
+from app.features.location.services import BoyLocationService
+from app.features.location.teacher_locations import TeacherLocationService
+from app.features.visit_map.services import VisitMapService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.location import (
+from app.features.user.models.user import User
+from app.features.location.schemas.location import (
     BoyLocationResponse,
     LocationRecord,
     MapRouteResponse,

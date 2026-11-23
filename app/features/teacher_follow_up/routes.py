@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import TeacherFollowUpService
+from app.features.teacher_follow_up.services import TeacherFollowUpService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.teacher_follow_up import (
+from app.features.user.models.user import User
+from app.features.teacher_follow_up.schemas.teacher_follow_up import (
     TeacherFollowUpCreate,
     TeacherFollowUpResponse,
     TeacherFollowUpUpdate,

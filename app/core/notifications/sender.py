@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_logger
 from app.core.notifications.vapid import claims, push_enabled, vapid_private_key
-from app.models.push_device import PushDevice
+from app.features.notification.models.push_device import PushDevice
 
 logger = get_logger(__name__)
 

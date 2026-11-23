@@ -19,10 +19,10 @@ from sqlalchemy.orm import Query
 
 from app.core.data.base import BaseService
 from app.core.data.common import commit, ensure_boy_access, get_or_404
-from app.models.boy import Boy
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
-from app.models.follow_up import FollowUp
-from app.schemas.location import BoyLocationResponse, LocationRecord
+from app.features.follow_up.models.follow_up import FollowUp
+from app.features.location.schemas.location import BoyLocationResponse, LocationRecord
 
 
 class BoyLocationService(BaseService):

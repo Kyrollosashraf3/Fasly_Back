@@ -29,16 +29,16 @@ from app.core.auth.rate_limit import (
     login_account_key,
 )
 from app.core.auth.security import create_access_token, verify_password
-from app.core.data import (
-    ClassService,
+from app.features.school_class.services import ClassService
+from app.features.user.services import (
     UserService,
     complete_signup,
     get_user_by_phone,
     signup_check,
 )
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.user import (
+from app.features.user.models.user import User
+from app.features.user.schemas.user import (
     ManagedClassesUpdate,
     SignupCheckRequest,
     SignupCheckResponse,

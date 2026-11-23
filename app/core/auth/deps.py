@@ -10,7 +10,7 @@ from app.core.auth.security import decode_access_token
 from app.core.data.common import MANAGERS, ensure_roles
 from app.db.database import get_db
 from app.models.enums import RoleEnum
-from app.models.user import User
+from app.features.user.models.user import User
 
 logger = get_logger(__name__)
 

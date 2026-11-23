@@ -7,8 +7,8 @@ from app.core.data.common import (
     ensure_teacher_access,
     get_or_404,
 )
-from app.models.teacher import Teacher
-from app.schemas.location import TeacherLocationRecord, TeacherLocationResponse
+from app.features.teacher.models.teacher import Teacher
+from app.features.location.schemas.location import TeacherLocationRecord, TeacherLocationResponse
 
 
 class TeacherLocationService(BaseService):

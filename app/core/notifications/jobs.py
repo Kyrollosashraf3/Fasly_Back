@@ -36,13 +36,13 @@ from app.core.notifications.sender import MAX_FAILS, deliver
 from app.core.notifications.service import RECIPIENT_ROLES
 from app.core.notifications.vapid import push_enabled
 from app.db.database import SessionLocal
-from app.models.boy import Boy
-from app.models.group import Group
-from app.models.notification_inbox import NotificationInbox
-from app.models.notification_log import NotificationLog
-from app.models.push_device import PushDevice
-from app.models.teacher import Teacher
-from app.models.user import User
+from app.features.boy.models.boy import Boy
+from app.features.group.models.group import Group
+from app.features.notification.models.notification_inbox import NotificationInbox
+from app.features.notification.models.notification_log import NotificationLog
+from app.features.notification.models.push_device import PushDevice
+from app.features.teacher.models.teacher import Teacher
+from app.features.user.models.user import User
 
 logger = get_logger(__name__)
 

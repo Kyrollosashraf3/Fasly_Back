@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import TeacherCheckService
+from app.features.teacher_check.services import TeacherCheckService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.teacher_check import (
+from app.features.user.models.user import User
+from app.features.teacher_check.schemas.teacher_check import (
     TeacherCheckBulkCreate,
     TeacherCheckCreate,
     TeacherCheckResponse,

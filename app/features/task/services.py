@@ -14,9 +14,9 @@ from app.core.data.common import (
     owner_class_id,
 )
 from app.models.enums import RoleEnum
-from app.models.school_class import SchoolClass
-from app.models.task import Task
-from app.schemas.task import TaskCreate, TaskUpdate
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.task.models.task import Task
+from app.features.task.schemas.task import TaskCreate, TaskUpdate
 
 
 class TaskService(BaseService):

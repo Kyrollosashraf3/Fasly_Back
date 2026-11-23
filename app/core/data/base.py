@@ -24,7 +24,7 @@ from app.core.data.common import (
     scope_classes,
     target_church_id,
 )
-from app.models.user import User
+from app.features.user.models.user import User
 
 
 class BaseService:

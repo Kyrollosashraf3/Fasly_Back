@@ -14,8 +14,8 @@ from app.core.auth.deps import get_current_user, require_admin
 from app.core.notifications import NotificationService, send_now, vapid_public_key
 from app.core.notifications.vapid import push_enabled
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.notification import (
+from app.features.user.models.user import User
+from app.features.notification.schemas.notification import (
     InboxRow,
     NotificationRow,
     PushStatus,

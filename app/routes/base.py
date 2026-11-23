@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.auth.deps import get_current_user
-from app.core.data.seed import SeedService
+from app.features.seed.services import SeedService
 from app.db.database import get_db
-from app.models.user import User
+from app.features.user.models.user import User
 
 router = APIRouter(tags=["Meta"])
 

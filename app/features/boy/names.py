@@ -20,9 +20,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.data.common import scope_boys
-from app.models.boy import Boy
-from app.models.school_class import SchoolClass
-from app.models.user import User
+from app.features.boy.models.boy import Boy
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.user.models.user import User
 
 #: One sound, several keys: how a name happens to be typed must not matter.
 _LETTERS = str.maketrans(

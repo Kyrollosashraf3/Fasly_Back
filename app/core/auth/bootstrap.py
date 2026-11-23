@@ -10,13 +10,13 @@ from app.config.settings import settings
 from app.core.auth.security import get_password_hash
 from app.core.data.common import default_church_id
 from app.db.database import SessionLocal
-from app.models.church import Church
+from app.features.church.models.church import Church
 from app.models.enums import RoleEnum
-from app.models.school_class import SchoolClass
-from app.models.teacher import Teacher
-from app.models.user import User
-from app.schemas.school_class import CLASS_NAMES
-from app.schemas.user import PHONE_PATTERN, normalise_phone
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.teacher.models.teacher import Teacher
+from app.features.user.models.user import User
+from app.features.school_class.schemas.school_class import CLASS_NAMES
+from app.features.user.schemas.user import PHONE_PATTERN, normalise_phone
 
 logger = get_logger(__name__)
 

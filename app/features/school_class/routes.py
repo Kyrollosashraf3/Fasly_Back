@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import ClassService
+from app.features.school_class.services import ClassService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.school_class import (
+from app.features.user.models.user import User
+from app.features.school_class.schemas.school_class import (
     SchoolClassCreate,
     SchoolClassResponse,
     SchoolClassUpdate,

@@ -1,43 +1,37 @@
-"""models package - SQLAlchemy ORM models mapped to the PostgreSQL tables."""
+"""Lazy exports for ORM models now housed in feature packages."""
 
-from app.models.attend import Attend
-from app.models.boy import Boy
-from app.models.church import Church
-from app.models.follow_up import FollowUp
-from app.models.general_admin_class import GeneralAdminClass
-from app.models.group import Group
-from app.models.notification_inbox import NotificationInbox
-from app.models.notification_log import NotificationLog
-from app.models.push_device import PushDevice
-from app.models.school_class import SchoolClass
-from app.models.subscription import Subscription
-from app.models.task import Task
-from app.models.task_value import TaskValue
-from app.models.teacher import Teacher
-from app.models.teacher_check import TeacherCheck
-from app.models.teacher_follow_up import TeacherFollowUp
-from app.models.trip import Trip
-from app.models.trip_attendance import TripAttendance
-from app.models.user import User
+from importlib import import_module
 
-__all__ = [
-    "Church",
-    "SchoolClass",
-    "User",
-    "Teacher",
-    "Boy",
-    "Group",
-    "GeneralAdminClass",
-    "Attend",
-    "FollowUp",
-    "TeacherCheck",
-    "TeacherFollowUp",
-    "Trip",
-    "TripAttendance",
-    "Subscription",
-    "Task",
-    "TaskValue",
-    "PushDevice",
-    "NotificationLog",
-    "NotificationInbox",
-]
+_MODEL_MODULES = {
+    "Attend": "app.features.attendance.models.attend",
+    "Boy": "app.features.boy.models.boy",
+    "Church": "app.features.church.models.church",
+    "FollowUp": "app.features.follow_up.models.follow_up",
+    "GeneralAdminClass": "app.features.school_class.models.general_admin_class",
+    "Group": "app.features.group.models.group",
+    "NotificationInbox": "app.features.notification.models.notification_inbox",
+    "NotificationLog": "app.features.notification.models.notification_log",
+    "PushDevice": "app.features.notification.models.push_device",
+    "SchoolClass": "app.features.school_class.models.school_class",
+    "Subscription": "app.features.subscription.models.subscription",
+    "Task": "app.features.task.models.task",
+    "TaskValue": "app.features.task_value.models.task_value",
+    "Teacher": "app.features.teacher.models.teacher",
+    "TeacherCheck": "app.features.teacher_check.models.teacher_check",
+    "TeacherFollowUp": "app.features.teacher_follow_up.models.teacher_follow_up",
+    "Trip": "app.features.trip.models.trip",
+    "TripAttendance": "app.features.trip_attendance.models.trip_attendance",
+    "User": "app.features.user.models.user",
+}
+
+
+def __getattr__(name: str):
+    module_name = _MODEL_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+__all__ = list(_MODEL_MODULES)

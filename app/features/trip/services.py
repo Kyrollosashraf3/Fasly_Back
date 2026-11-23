@@ -14,9 +14,9 @@ from app.core.data.common import (
     owner_class_id,
 )
 from app.models.enums import RoleEnum
-from app.models.school_class import SchoolClass
-from app.models.trip import Trip
-from app.schemas.trip import TripCreate, TripUpdate
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.trip.models.trip import Trip
+from app.features.trip.schemas.trip import TripCreate, TripUpdate
 
 
 class TripService(BaseService):

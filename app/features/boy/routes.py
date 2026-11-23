@@ -4,17 +4,19 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, statu
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.DA.check import NameCheckService
-from app.core.data import BoyService, ClassService, TeacherService
+from app.features.boy.name_check import NameCheckService
+from app.features.boy.services import BoyService
+from app.features.school_class.services import ClassService
+from app.features.teacher.services import TeacherService
 from app.db.database import get_db
-from app.models.user import User
-from app.routes.sheets import (
+from app.features.user.models.user import User
+from app.features.sheet.routes import (
     class_labels,
     label_for,
     writable_class_names,
     xlsx_response,
 )
-from app.schemas.boy import BoyCreate, BoyResponse, BoyUpdate
+from app.features.boy.schemas.boy import BoyCreate, BoyResponse, BoyUpdate
 
 router = APIRouter(prefix="/boys", tags=["Boys"])
 

@@ -26,13 +26,13 @@ from app.core.data.common import (
     scope_teachers,
 )
 from app.core.geo import haversine_m, nearest_neighbour, walk_minutes
-from app.models.boy import Boy
+from app.features.boy.models.boy import Boy
 from app.models.enums import FollowEnum, RoleEnum
-from app.models.follow_up import FollowUp
-from app.models.group import Group
-from app.models.teacher import Teacher
-from app.models.teacher_follow_up import TeacherFollowUp
-from app.schemas.location import (
+from app.features.follow_up.models.follow_up import FollowUp
+from app.features.group.models.group import Group
+from app.features.teacher.models.teacher import Teacher
+from app.features.teacher_follow_up.models.teacher_follow_up import TeacherFollowUp
+from app.features.location.schemas.location import (
     FOLLOW_UP_STATUS_OPTIONS,
     FollowUpPrefill,
     MapHouse,

@@ -26,13 +26,13 @@ from app.core.data.common import (
     scope_users,
     target_church_id,
 )
-from app.models.boy import Boy
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
-from app.models.general_admin_class import GeneralAdminClass
-from app.models.school_class import SchoolClass
-from app.models.teacher import Teacher
-from app.models.user import User
-from app.schemas.user import (
+from app.features.school_class.models.general_admin_class import GeneralAdminClass
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.teacher.models.teacher import Teacher
+from app.features.user.models.user import User
+from app.features.user.schemas.user import (
     UserCreate,
     UserImportRow,
     UserUpdate,

@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import FatherEnum, GenderEnum
 from app.schemas.base import ORMResponse
-from app.schemas.user import normalise_phone
+from app.features.user.schemas.user import normalise_phone
 
 
 class BoyCreate(BaseModel):

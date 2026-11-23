@@ -14,10 +14,10 @@ from app.core.data.common import (
     normalise_name,
     scope_church,
 )
-from app.models.boy import Boy
-from app.models.school_class import SchoolClass
-from app.models.teacher import Teacher
-from app.schemas.school_class import SchoolClassCreate, SchoolClassUpdate
+from app.features.boy.models.boy import Boy
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.teacher.models.teacher import Teacher
+from app.features.school_class.schemas.school_class import SchoolClassCreate, SchoolClassUpdate
 
 
 class ClassService(BaseService):

@@ -1,152 +1,81 @@
-"""
-API schemas, one module per domain.
+"""Lazy exports for API schemas now housed in feature packages."""
 
-Import anything from ``app.schemas`` directly - the shared models are
-re-exported here so consumers stay decoupled from the file layout.
+from importlib import import_module
 
-The ORM classes live in ``app.models``; every ``*Response`` schema carries
-``from_attributes`` so the services can return SQLAlchemy rows directly.
+_SCHEMA_MODULES = {
+    "ORMResponse": "app.schemas.base",
+    "AttendBulkCreate": "app.features.attendance.schemas.attend",
+    "AttendCreate": "app.features.attendance.schemas.attend",
+    "AttendItem": "app.features.attendance.schemas.attend",
+    "AttendResponse": "app.features.attendance.schemas.attend",
+    "AttendUpdate": "app.features.attendance.schemas.attend",
+    "BoyCreate": "app.features.boy.schemas.boy",
+    "BoyResponse": "app.features.boy.schemas.boy",
+    "BoyUpdate": "app.features.boy.schemas.boy",
+    "ChurchCreate": "app.features.church.schemas.church",
+    "ChurchResponse": "app.features.church.schemas.church",
+    "ChurchUpdate": "app.features.church.schemas.church",
+    "FollowUpCreate": "app.features.follow_up.schemas.follow_up",
+    "FollowUpResponse": "app.features.follow_up.schemas.follow_up",
+    "FollowUpUpdate": "app.features.follow_up.schemas.follow_up",
+    "GroupAssign": "app.features.group.schemas.group",
+    "GroupResponse": "app.features.group.schemas.group",
+    "GroupUnassign": "app.features.group.schemas.group",
+    "FOLLOW_UP_STATUS_OPTIONS": "app.features.location.schemas.location",
+    "BoyLocationResponse": "app.features.location.schemas.location",
+    "FollowUpPrefill": "app.features.location.schemas.location",
+    "LocationRecord": "app.features.location.schemas.location",
+    "MapHouse": "app.features.location.schemas.location",
+    "MapLeg": "app.features.location.schemas.location",
+    "MapOrigin": "app.features.location.schemas.location",
+    "MapRouteResponse": "app.features.location.schemas.location",
+    "MapScopeEnum": "app.features.location.schemas.location",
+    "MapSummary": "app.features.location.schemas.location",
+    "CLASS_NAMES": "app.features.school_class.schemas.school_class",
+    "SchoolClassCreate": "app.features.school_class.schemas.school_class",
+    "SchoolClassResponse": "app.features.school_class.schemas.school_class",
+    "SchoolClassUpdate": "app.features.school_class.schemas.school_class",
+    "BoyTripSummary": "app.features.subscription.schemas.subscription",
+    "BoyTripTotal": "app.features.subscription.schemas.subscription",
+    "SubscriptionCreate": "app.features.subscription.schemas.subscription",
+    "SubscriptionResponse": "app.features.subscription.schemas.subscription",
+    "SubscriptionUpdate": "app.features.subscription.schemas.subscription",
+    "TeacherCreate": "app.features.teacher.schemas.teacher",
+    "TeacherResponse": "app.features.teacher.schemas.teacher",
+    "TeacherUpdate": "app.features.teacher.schemas.teacher",
+    "TripAttendanceAssign": "app.features.trip_attendance.schemas.trip_attendance",
+    "TripAttendanceBulkCreate": "app.features.trip_attendance.schemas.trip_attendance",
+    "TripAttendanceItem": "app.features.trip_attendance.schemas.trip_attendance",
+    "TripAttendanceResponse": "app.features.trip_attendance.schemas.trip_attendance",
+    "TripAttendanceUnassign": "app.features.trip_attendance.schemas.trip_attendance",
+    "TripAttendanceUpdate": "app.features.trip_attendance.schemas.trip_attendance",
+    "TripSheetResponse": "app.features.trip_attendance.schemas.trip_attendance",
+    "TripSheetRow": "app.features.trip_attendance.schemas.trip_attendance",
+    "TeacherCheckBulkCreate": "app.features.teacher_check.schemas.teacher_check",
+    "TeacherCheckCreate": "app.features.teacher_check.schemas.teacher_check",
+    "TeacherCheckItem": "app.features.teacher_check.schemas.teacher_check",
+    "TeacherCheckResponse": "app.features.teacher_check.schemas.teacher_check",
+    "TeacherCheckUpdate": "app.features.teacher_check.schemas.teacher_check",
+    "ManagedClassesUpdate": "app.features.user.schemas.user",
+    "SignupCheckRequest": "app.features.user.schemas.user",
+    "SignupCheckResponse": "app.features.user.schemas.user",
+    "SignupRequest": "app.features.user.schemas.user",
+    "Token": "app.features.user.schemas.user",
+    "UserCreate": "app.features.user.schemas.user",
+    "UserImportRow": "app.features.user.schemas.user",
+    "UserInDB": "app.features.user.schemas.user",
+    "UserResponse": "app.features.user.schemas.user",
+    "UserUpdate": "app.features.user.schemas.user",
+}
 
-Conventions
------------
-``*Create``  -> POST body; ids, timestamps and historical ``class_id``
-                snapshots are stamped by the service, never by the client.
-``*Update``  -> PATCH body; every field optional (``exclude_unset``).
-``*Response``-> the row that leaves the server; never carries a credential.
-                Fields named after an ORM property (``age``,
-                ``display_name``) are filled in automatically.
-"""
 
-from app.schemas.attend import (
-    AttendBulkCreate,
-    AttendCreate,
-    AttendItem,
-    AttendResponse,
-    AttendUpdate,
-)
-from app.schemas.base import ORMResponse
-from app.schemas.boy import BoyCreate, BoyResponse, BoyUpdate
-from app.schemas.church import ChurchCreate, ChurchResponse, ChurchUpdate
-from app.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
-from app.schemas.group import GroupAssign, GroupResponse, GroupUnassign
-from app.schemas.location import (
-    FOLLOW_UP_STATUS_OPTIONS,
-    BoyLocationResponse,
-    FollowUpPrefill,
-    LocationRecord,
-    MapHouse,
-    MapLeg,
-    MapOrigin,
-    MapRouteResponse,
-    MapScopeEnum,
-    MapSummary,
-)
-from app.schemas.school_class import (
-    CLASS_NAMES,
-    SchoolClassCreate,
-    SchoolClassResponse,
-    SchoolClassUpdate,
-)
-from app.schemas.subscription import (
-    BoyTripSummary,
-    BoyTripTotal,
-    SubscriptionCreate,
-    SubscriptionResponse,
-    SubscriptionUpdate,
-)
-from app.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
-from app.schemas.trip_attendance import (
-    TripAttendanceAssign,
-    TripAttendanceBulkCreate,
-    TripAttendanceItem,
-    TripAttendanceResponse,
-    TripAttendanceUnassign,
-    TripAttendanceUpdate,
-    TripSheetResponse,
-    TripSheetRow,
-)
-from app.schemas.teacher_check import (
-    TeacherCheckBulkCreate,
-    TeacherCheckCreate,
-    TeacherCheckItem,
-    TeacherCheckResponse,
-    TeacherCheckUpdate,
-)
-from app.schemas.user import (
-    ManagedClassesUpdate,
-    SignupCheckRequest,
-    SignupCheckResponse,
-    SignupRequest,
-    Token,
-    UserCreate,
-    UserImportRow,
-    UserInDB,
-    UserResponse,
-    UserUpdate,
-)
+def __getattr__(name: str):
+    module_name = _SCHEMA_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
 
-__all__ = [
-    "ORMResponse",
-    "CLASS_NAMES",
-    "SchoolClassCreate",
-    "SchoolClassUpdate",
-    "SchoolClassResponse",
-    "ChurchCreate",
-    "ChurchUpdate",
-    "ChurchResponse",
-    "BoyCreate",
-    "BoyUpdate",
-    "BoyResponse",
-    "AttendCreate",
-    "AttendUpdate",
-    "AttendResponse",
-    "AttendItem",
-    "AttendBulkCreate",
-    "TeacherCreate",
-    "TeacherUpdate",
-    "TeacherResponse",
-    "TeacherCheckCreate",
-    "TeacherCheckUpdate",
-    "TeacherCheckResponse",
-    "TeacherCheckItem",
-    "TeacherCheckBulkCreate",
-    "FollowUpCreate",
-    "FollowUpUpdate",
-    "FollowUpResponse",
-    "GroupAssign",
-    "GroupUnassign",
-    "GroupResponse",
-    "LocationRecord",
-    "BoyLocationResponse",
-    "MapScopeEnum",
-    "FollowUpPrefill",
-    "MapHouse",
-    "MapOrigin",
-    "MapLeg",
-    "MapSummary",
-    "MapRouteResponse",
-    "FOLLOW_UP_STATUS_OPTIONS",
-    "SubscriptionCreate",
-    "SubscriptionUpdate",
-    "SubscriptionResponse",
-    "BoyTripSummary",
-    "BoyTripTotal",
-    "TripAttendanceItem",
-    "TripAttendanceBulkCreate",
-    "TripAttendanceAssign",
-    "TripAttendanceUnassign",
-    "TripAttendanceUpdate",
-    "TripAttendanceResponse",
-    "TripSheetRow",
-    "TripSheetResponse",
-    "UserCreate",
-    "ManagedClassesUpdate",
-    "UserImportRow",
-    "UserUpdate",
-    "UserResponse",
-    "UserInDB",
-    "Token",
-    "SignupCheckRequest",
-    "SignupCheckResponse",
-    "SignupRequest",
-]
+
+__all__ = list(_SCHEMA_MODULES)

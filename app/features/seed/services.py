@@ -8,25 +8,25 @@ from fastapi import HTTPException, status
 
 from app.core.auth.security import get_password_hash
 from app.core.data.base import BaseService
-from app.models.attend import Attend
-from app.models.boy import Boy
-from app.models.church import Church
+from app.features.attendance.models.attend import Attend
+from app.features.boy.models.boy import Boy
+from app.features.church.models.church import Church
 from app.models.enums import (
     FollowEnum,
     GenderEnum,
     RoleEnum,
     SubscriptionTypeEnum,
 )
-from app.models.follow_up import FollowUp
-from app.models.group import Group
-from app.models.school_class import SchoolClass
-from app.models.subscription import Subscription
-from app.models.task import Task
-from app.models.task_value import TaskValue
-from app.models.teacher import Teacher
-from app.models.trip import Trip
-from app.models.trip_attendance import TripAttendance
-from app.models.user import User
+from app.features.follow_up.models.follow_up import FollowUp
+from app.features.group.models.group import Group
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.subscription.models.subscription import Subscription
+from app.features.task.models.task import Task
+from app.features.task_value.models.task_value import TaskValue
+from app.features.teacher.models.teacher import Teacher
+from app.features.trip.models.trip import Trip
+from app.features.trip_attendance.models.trip_attendance import TripAttendance
+from app.features.user.models.user import User
 
 
 BOY_NAMES = {

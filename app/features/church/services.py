@@ -16,9 +16,9 @@ from app.core.data.common import (
     ensure_unique,
     get_or_404,
 )
-from app.models.church import Church
+from app.features.church.models.church import Church
 from app.models.enums import RoleEnum
-from app.schemas.church import ChurchCreate, ChurchUpdate
+from app.features.church.schemas.church import ChurchCreate, ChurchUpdate
 
 
 class ChurchService(BaseService):

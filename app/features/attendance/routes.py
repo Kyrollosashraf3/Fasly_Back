@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import AttendanceService
+from app.features.attendance.services import AttendanceService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.attend import (
+from app.features.user.models.user import User
+from app.features.attendance.schemas.attend import (
     AttendBulkCreate,
     AttendCreate,
     AttendResponse,

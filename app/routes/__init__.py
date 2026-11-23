@@ -1,24 +1,24 @@
 """Every router the app mounts - one module per domain."""
 
-from app.routes.attendance import router as attendance_router
-from app.routes.auth import router as auth_router
+from app.features.attendance.routes import router as attendance_router
+from app.features.user.routes import router as auth_router
 from app.routes.base import router as base_router
-from app.routes.boys import router as boys_router
-from app.routes.churches import router as churches_router
-from app.routes.classes import router as classes_router
-from app.routes.dashboard import router as dashboard_router
-from app.routes.follow_ups import router as follow_ups_router
-from app.routes.groups import router as groups_router
-from app.routes.locations import router as locations_router
-from app.routes.notifications import router as notifications_router
-from app.routes.subscriptions import router as subscriptions_router
-from app.routes.task_values import router as task_values_router
-from app.routes.tasks import router as tasks_router
-from app.routes.teacher_checks import router as teacher_checks_router
-from app.routes.teacher_follow_ups import router as teacher_follow_ups_router
-from app.routes.teachers import router as teachers_router
-from app.routes.trip_attendance import router as trip_attendance_router
-from app.routes.trips import router as trips_router
+from app.features.boy.routes import router as boys_router
+from app.features.church.routes import router as churches_router
+from app.features.school_class.routes import router as classes_router
+from app.features.dashboard.routes import router as dashboard_router
+from app.features.follow_up.routes import router as follow_ups_router
+from app.features.group.routes import router as groups_router
+from app.features.location.routes import router as locations_router
+from app.features.notification.routes import router as notifications_router
+from app.features.subscription.routes import router as subscriptions_router
+from app.features.task_value.routes import router as task_values_router
+from app.features.task.routes import router as tasks_router
+from app.features.teacher_check.routes import router as teacher_checks_router
+from app.features.teacher_follow_up.routes import router as teacher_follow_ups_router
+from app.features.teacher.routes import router as teachers_router
+from app.features.trip_attendance.routes import router as trip_attendance_router
+from app.features.trip.routes import router as trips_router
 
 __all__ = [
     "base_router",

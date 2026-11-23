@@ -12,10 +12,11 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import ClassService, GroupsService
+from app.features.group.services import GroupsService
+from app.features.school_class.services import ClassService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.group import GroupAssign, GroupUnassign
+from app.features.user.models.user import User
+from app.features.group.schemas.group import GroupAssign, GroupUnassign
 
 router = APIRouter(prefix="/groups", tags=["Groups"])
 
@@ -65,7 +66,7 @@ def groups_template(
     columns ``/groups/import`` reads.
     """
     from app.core.EDA.templates import build_groups_template
-    from app.routes.sheets import class_labels, xlsx_response
+    from app.features.sheet.routes import class_labels, xlsx_response
 
     payload = GroupsService(db, current_user).list(class_id=class_id)
     labels = class_labels(db, current_user)
@@ -120,7 +121,7 @@ def export_groups(
 ):
     """The roster sheet as a workbook."""
     from app.core.EDA.write_groups import build_groups_workbook
-    from app.routes.sheets import xlsx_response
+    from app.features.sheet.routes import xlsx_response
 
     service = GroupsService(db, current_user)
     payload = service.list_with_stats(class_id=class_id)

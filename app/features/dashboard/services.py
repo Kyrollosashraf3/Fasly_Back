@@ -31,17 +31,17 @@ from app.core.data.common import (
     scope_follow_ups,
     scope_teachers,
 )
-from app.core.data.names import normalise
-from app.models.attend import Attend
-from app.models.boy import Boy
+from app.features.boy.names import normalise
+from app.features.attendance.models.attend import Attend
+from app.features.boy.models.boy import Boy
 from app.models.enums import GenderEnum, RoleEnum
-from app.models.follow_up import FollowUp
-from app.models.group import Group
-from app.models.school_class import SchoolClass
-from app.models.teacher import Teacher
-from app.models.teacher_check import TeacherCheck
-from app.models.task import Task
-from app.models.task_value import TaskValue
+from app.features.follow_up.models.follow_up import FollowUp
+from app.features.group.models.group import Group
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.teacher.models.teacher import Teacher
+from app.features.teacher_check.models.teacher_check import TeacherCheck
+from app.features.task.models.task import Task
+from app.features.task_value.models.task_value import TaskValue
 
 logger = get_logger(__name__)
 

@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import ChurchService
+from app.features.church.services import ChurchService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.church import ChurchCreate, ChurchResponse, ChurchUpdate
+from app.features.user.models.user import User
+from app.features.church.schemas.church import ChurchCreate, ChurchResponse, ChurchUpdate
 
 router = APIRouter(prefix="/churches", tags=["Churches"])
 

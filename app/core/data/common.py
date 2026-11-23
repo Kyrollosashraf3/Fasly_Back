@@ -47,14 +47,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session
 
 from app.config.logger import get_logger
-from app.models.boy import Boy
-from app.models.church import Church
+from app.features.boy.models.boy import Boy
+from app.features.church.models.church import Church
 from app.models.enums import RoleEnum
-from app.models.follow_up import FollowUp
-from app.models.school_class import SchoolClass
-from app.models.teacher import Teacher
-from app.models.teacher_check import TeacherCheck
-from app.models.user import User
+from app.features.follow_up.models.follow_up import FollowUp
+from app.features.school_class.models.school_class import SchoolClass
+from app.features.teacher.models.teacher import Teacher
+from app.features.teacher_check.models.teacher_check import TeacherCheck
+from app.features.user.models.user import User
 
 logger = get_logger(__name__)
 
@@ -564,7 +564,7 @@ def ensure_phone_free(
     Phones are normalised before comparison against ``User`` (the login table)
     and against the given ``model`` (Boy/Teacher).
     """
-    from app.models.user import User
+    from app.features.user.models.user import User
 
     phones: list[str] = []
     if phone:

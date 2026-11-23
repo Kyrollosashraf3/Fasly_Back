@@ -4,9 +4,9 @@ from __future__ import annotations
 from app.core.data.base import WeeklySheetService
 from app.core.data.common import deny, ensure_teacher_access, scope_checks
 from app.models.enums import RoleEnum
-from app.models.teacher import Teacher
-from app.models.teacher_check import TeacherCheck
-from app.schemas.teacher_check import (
+from app.features.teacher.models.teacher import Teacher
+from app.features.teacher_check.models.teacher_check import TeacherCheck
+from app.features.teacher_check.schemas.teacher_check import (
     TeacherCheckBulkCreate,
     TeacherCheckCreate,
     TeacherCheckUpdate,

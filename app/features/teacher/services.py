@@ -13,8 +13,8 @@ from app.core.data.common import (
     normalise_phone,
     scope_teachers,
 )
-from app.models.teacher import Teacher
-from app.schemas.teacher import TeacherCreate, TeacherUpdate
+from app.features.teacher.models.teacher import Teacher
+from app.features.teacher.schemas.teacher import TeacherCreate, TeacherUpdate
 
 
 class TeacherService(BaseService):
@@ -66,7 +66,7 @@ class TeacherService(BaseService):
     def create(self, data: TeacherCreate) -> Teacher:
         from app.core.auth.security import get_password_hash
         from app.models.enums import RoleEnum
-        from app.models.user import User
+        from app.features.user.models.user import User
 
         self.ensure_manager()
         if data.class_id is None:
@@ -163,7 +163,7 @@ class TeacherService(BaseService):
         # sync phone to linked user if changed
         try:
             from app.core.data.common import ensure_unique
-            from app.models.user import User
+            from app.features.user.models.user import User
 
             new_target = teacher.phone or teacher.phone_2
             if new_target:

@@ -15,12 +15,12 @@ from app.core.data.common import (
     my_class_ids,
     scope_church,
 )
-from app.models.boy import Boy
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum, SubscriptionTypeEnum
-from app.models.subscription import Subscription
-from app.models.trip import Trip
-from app.models.user import User
-from app.schemas.subscription import (
+from app.features.subscription.models.subscription import Subscription
+from app.features.trip.models.trip import Trip
+from app.features.user.models.user import User
+from app.features.subscription.schemas.subscription import (
     BoyTripSummary,
     BoyTripTotal,
     SubscriptionCreate,

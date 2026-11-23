@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import ClassService, TeacherService
+from app.features.school_class.services import ClassService
+from app.features.teacher.services import TeacherService
 from app.db.database import get_db
-from app.models.user import User
-from app.routes.sheets import label_for, writable_class_names, xlsx_response
-from app.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
+from app.features.user.models.user import User
+from app.features.sheet.routes import label_for, writable_class_names, xlsx_response
+from app.features.teacher.schemas.teacher import TeacherCreate, TeacherResponse, TeacherUpdate
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
 

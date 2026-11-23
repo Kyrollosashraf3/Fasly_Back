@@ -17,11 +17,11 @@ from app.core.data.common import (
     get_or_404,
     scope_follow_ups,
 )
-from app.models.boy import Boy
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
-from app.models.follow_up import FollowUp
-from app.models.teacher import Teacher
-from app.schemas.follow_up import FollowUpCreate, FollowUpUpdate
+from app.features.follow_up.models.follow_up import FollowUp
+from app.features.teacher.models.teacher import Teacher
+from app.features.follow_up.schemas.follow_up import FollowUpCreate, FollowUpUpdate
 
 
 class FollowUpService(BaseService):

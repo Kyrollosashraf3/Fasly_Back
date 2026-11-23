@@ -20,12 +20,12 @@ from app.core.data.common import (
     my_class_ids,
     scope_church,
 )
-from app.models.boy import Boy
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
-from app.models.teacher import Teacher
-from app.models.trip import Trip
-from app.models.trip_attendance import TripAttendance
-from app.schemas.trip_attendance import (
+from app.features.teacher.models.teacher import Teacher
+from app.features.trip.models.trip import Trip
+from app.features.trip_attendance.models.trip_attendance import TripAttendance
+from app.features.trip_attendance.schemas.trip_attendance import (
     TripAttendanceBulkCreate,
     TripAttendanceUpdate,
     TripSheetResponse,

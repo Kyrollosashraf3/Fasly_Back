@@ -228,7 +228,7 @@ def _rebuild_notification_dedupe() -> None:
     logger.info("Notification dedupe key is church-scoped")
 
 
-#: The CHECK expression exactly as ``app/models/user.py`` declares it.
+#: The CHECK expression exactly as ``app/features/user/models/user.py`` declares it.
 _ROLE_OWNER_CHECK = (
     "(role IN ('teacher', 'admin') AND teacher_id IS NOT NULL"
     " AND boy_id IS NULL AND church_id IS NOT NULL)"
@@ -299,10 +299,38 @@ def _rebuild_legacy_general_admin_classes() -> None:
 def create_tables() -> None:
     """Create every table the ORM declares and roll the tenant schema forward.
 
-    Importing ``app.models`` first guarantees every model is registered on
+    Importing every feature model first guarantees it is registered on
     ``Base.metadata``, no matter which module the server was started from.
     """
-    from app import models  # noqa: F401  (registers the ORM on Base.metadata)
+    from app.features.attendance.models.attend import Attend  # noqa: F401
+    from app.features.boy.models.boy import Boy  # noqa: F401
+    from app.features.church.models.church import Church  # noqa: F401
+    from app.features.follow_up.models.follow_up import FollowUp  # noqa: F401
+    from app.features.group.models.group import Group  # noqa: F401
+    from app.features.notification.models.notification_inbox import (
+        NotificationInbox,  # noqa: F401
+    )
+    from app.features.notification.models.notification_log import (
+        NotificationLog,  # noqa: F401
+    )
+    from app.features.notification.models.push_device import PushDevice  # noqa: F401
+    from app.features.school_class.models.general_admin_class import (
+        GeneralAdminClass,  # noqa: F401
+    )
+    from app.features.school_class.models.school_class import SchoolClass  # noqa: F401
+    from app.features.subscription.models.subscription import Subscription  # noqa: F401
+    from app.features.task.models.task import Task  # noqa: F401
+    from app.features.task_value.models.task_value import TaskValue  # noqa: F401
+    from app.features.teacher.models.teacher import Teacher  # noqa: F401
+    from app.features.teacher_check.models.teacher_check import TeacherCheck  # noqa: F401
+    from app.features.teacher_follow_up.models.teacher_follow_up import (
+        TeacherFollowUp,  # noqa: F401
+    )
+    from app.features.trip.models.trip import Trip  # noqa: F401
+    from app.features.trip_attendance.models.trip_attendance import (
+        TripAttendance,  # noqa: F401
+    )
+    from app.features.user.models.user import User  # noqa: F401
 
     _rebuild_legacy_general_admin_classes()
     Base.metadata.create_all(bind=engine)

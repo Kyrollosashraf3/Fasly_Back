@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import TripService
+from app.features.trip.services import TripService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.trip import TripCreate, TripResponse, TripUpdate
+from app.features.user.models.user import User
+from app.features.trip.schemas.trip import TripCreate, TripResponse, TripUpdate
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
 

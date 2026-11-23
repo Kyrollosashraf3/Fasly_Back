@@ -6,12 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.DA.dashboard import DashboardService
-from app.core.DA.follow_up_performance import FollowUpPerformanceService
+from app.features.dashboard.services import DashboardService
+from app.features.dashboard.follow_up_performance import FollowUpPerformanceService
 from app.db.database import get_db
 from app.models.enums import GenderEnum
-from app.models.user import User
-from app.routes.sheets import xlsx_response
+from app.features.user.models.user import User
+from app.features.sheet.routes import xlsx_response
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 

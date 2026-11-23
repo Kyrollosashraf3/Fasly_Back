@@ -1,0 +1,42 @@
+Fasly backend import and data-access review
+===========================================
+
+Completed in this change
+------------------------
+- Redirected moved route, service, schema, and ORM-model imports to their
+  app.features modules. Shared enums, schema base, and service foundations
+  remain in app.models.enums, app.schemas.base, and app.core.data.
+- Updated the route aggregator and database model registration. create_tables
+  now imports all 19 feature ORM models explicitly.
+- Kept package-level model and schema exports available lazily to avoid
+  circular imports while preserving existing imports such as
+  "from app.models import User".
+- No service behavior or query logic was refactored.
+
+Verification
+------------
+- Application import succeeded: 23 registered routes.
+- OpenAPI generation succeeded: 83 paths.
+- Feature ORM modules loaded and registered 19 tables.
+- GET /health returned HTTP 200 with {"status": "ok"}.
+- Python compileall and git diff --check passed.
+- No repository test suite/configuration was found. Database startup and
+  create_tables were not run because they can modify the configured database.
+
+Recommendations not implemented
+-------------------------------
+1. The dashboard service and follow-up performance module contain identical
+   _pct and _iso helpers. Consider moving them to one small shared dashboard
+   utility if both remain in use.
+2. app.features.boy.names.class_labels queries every SchoolClass row without
+   a church/class scope. Its result is currently used while matching already
+   scoped boys, and the code documents class labels as non-sensitive; review
+   whether this lookup should use the current user's accessible classes to
+   avoid cross-tenant over-fetching.
+3. class_labels also exists in app.features.sheet.routes with a user-scoped
+   signature. These functions have different access semantics, so do not
+   consolidate them without preserving the scope difference; consider clearer
+   names instead.
+4. The user schema's normalise_phone wrapper delegates to the single
+   implementation in app.core.data.common, so this is not duplicated logic.
+- No other clear data-retrieval defect was confirmed in this focused review.

@@ -21,12 +21,12 @@ from app.core.data.common import (
     scope_church,
     scope_teachers,
 )
-from app.models.attend import Attend
-from app.models.boy import Boy
+from app.features.attendance.models.attend import Attend
+from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
-from app.models.follow_up import FollowUp
-from app.models.group import Group
-from app.models.teacher import Teacher
+from app.features.follow_up.models.follow_up import FollowUp
+from app.features.group.models.group import Group
+from app.features.teacher.models.teacher import Teacher
 
 
 class GroupsService(BaseService):

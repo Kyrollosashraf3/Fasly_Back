@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import FollowUpService
+from app.features.follow_up.services import FollowUpService
 from app.db.database import get_db
-from app.models.user import User
-from app.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
+from app.features.user.models.user import User
+from app.features.follow_up.schemas.follow_up import FollowUpCreate, FollowUpResponse, FollowUpUpdate
 
 router = APIRouter(prefix="/follow-ups", tags=["Follow Ups"])
 
