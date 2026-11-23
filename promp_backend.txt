@@ -20,13 +20,14 @@
 ## 2. هيكل المجلدات (Backend)
 --------------------------------------------------------------------------------
 core/auth\: security.py (bcrypt+JWT), deps.py (get_current_user, require_admin), bootstrap.py
-core/data\: base.py, common.py, boys.py, teachers.py, trips.py, subscriptions.py, attendance.py, follow_ups.py, groups.py, teacher_checks.py, tasks.py, task_values.py, users.py, churches.py, classes.py, locations.py, map.py
+core/data\: base.py, common.py, boys.py, teachers.py, trips.py, subscriptions.py, attendance.py, follow_ups.py, groups.py, teacher_checks.py, tasks.py, task_values.py, users.py, churches.py, classes.py, locations.py, map.py, seed.py
+core/geo.py: haversine_m (المسافة بالمتر), nearest_neighbour (ترتيب المحطات الأقرب فالأقرب), walk_minutes (زمن المشي التقديري)
 core/DA\: dashboard.py, follow_up_performance.py
 core/notifications\: خدمة الإشعارات (Web Push + VAPID)
 core/EDA\: Excel import/export
 db\database.py: engine, session, create_tables(), TENANT_TABLES
 models\: boy.py, user.py, teacher.py, trip.py, subscription.py, school_class.py, church.py, group.py, follow_up.py, teacher_check.py, task.py, task_value.py, enums.py
-schemas\: boy.py, user.py, trip.py, subscription.py, teacher.py, base.py (ORMResponse)
+schemas\: boy.py, user.py, trip.py, subscription.py, teacher.py, church.py, location.py, base.py (ORMResponse)
 routes\: base.py, auth.py, boys.py, teachers.py, classes.py, churches.py, trips.py, subscriptions.py, attendance.py, follow_ups.py, groups.py, teacher_checks.py, tasks.py, task_values.py, locations.py, notifications.py, dashboard.py, sheets.py
 config\: settings.py (Pydantic Settings), logger.py
 .env: متغيرات البيئة (سري)
@@ -37,7 +38,7 @@ requirements.txt: مكتبات Python المطلوبة
 --------------------------------------------------------------------------------
 front_fasly\src\features\myTrip\: BoyAccount.jsx (معدل حالياً), myTrip.css, MyTripPage.jsx, RegisterSubscription.jsx, SubscriptionAnalysis.jsx, TripActionsPage.jsx, TripDialog.jsx, TripStatus.jsx, ServerAccountStatement.jsx
 front_fasly\src\features\boys\: BoyForm.jsx, BoyProfile.jsx, BoysPage.jsx, boys.css, boysColumns.jsx, BoyName.jsx, boyBits.jsx, BoyFormFields.jsx, boyFormModel.js, DuplicateNamesModal.jsx, useBoysList.js
-front_fasly\src\lib\: api.js (axios مع Bearer token), endpoints.js (AuthAPI, BoyAPI, TeacherAPI, SubscriptionAPI, TripAPI, DashboardAPI, NotificationAPI...), format.js (formatDate, num, initials, waLink)
+front_fasly\src\lib\: api.js (fetch مع Bearer token + هيدر X-Church-Id), endpoints.js (AuthAPI, BoyAPI, TeacherAPI, SubscriptionAPI, TripAPI, DashboardAPI, NotificationAPI, LocationAPI, ChurchAPI, SeedAPI), geo.js (GPS + روابط الخرائط), format.js (formatDate, num, initials, waLink)
 front_fasly\src\components\ui\: Badge, Icon, States (Loading, ErrorState, EmptyState)
 
 
@@ -115,13 +116,21 @@ STAFF = (TEACHER, ADMIN, GENERAL_ADMIN, ABONA, SUPER_ADMIN) - كل من لديه
 المسكات المهمة في BoyTripSummary: boy_id, boy_name, trip_id, trip_name, trip_cost, total_charged, total_recovered, total_paid, remaining, registered
 6.7 الحضور (attendance.py) - prefix /attendance: GET, POST, POST /bulk, GET /{record_id}, PATCH /{record_id}, DELETE /{record_id}
 6.8 المتابعة (follow_ups.py) - prefix /follow-ups: GET, POST, GET /{record_id}, PATCH /{record_id}, DELETE /{record_id}
+6.8ب افتقاد الخدام (teacher_follow_ups.py) - prefix /teacher-follow-ups: GET, POST, GET /{record_id}, PATCH /{record_id}, DELETE /{record_id}
 6.9 المجموعات (groups.py) - prefix /groups: GET, POST /assign, POST /unassign, GET /template, POST /import, GET /export
 6.10 تقييم الخدام (teacher_checks.py) - prefix /teacher-checks: GET, POST, POST /bulk, GET /{record_id}, PATCH /{record_id}, DELETE /{record_id}
 6.11 المهام (tasks.py) - prefix /tasks: GET, POST, GET /{task_id}, PATCH /{task_id}, DELETE /{task_id}
 6.12 علامات الاستلام (task_values.py) - prefix /task-values: GET, POST, PATCH /bulk, GET /{value_id}, PATCH /{value_id}, DELETE /{value_id}
-6.13 المواقع والخريطة (locations.py) - prefix /locations: GET /map, POST /boys/me, POST /boys/{boy_id}, GET /boys/{boy_id}/current
+6.13 المواقع والخريطة (locations.py) - prefix /locations:
+   GET /map (latitude, longitude, scope=group|class|all, teacher_id, class_id, name, zone, address, person_type=boys|teachers)
+   POST /boys/me (الولد يسجل موقعه بنفسه), POST /boys/{boy_id} (الخادم/الأمين يسجل موقع البيت)
+   GET /boys/{boy_id}/current, POST /teachers/{teacher_id} (تسجيل موقع الخادم)
 6.14 الإشعارات (notifications.py) - prefix /notifications: GET /vapid-key, PUT /subscription, GET /status, POST /send, GET /log, GET /inbox, GET /inbox/unread, PATCH /inbox/read-all, PATCH /inbox/{id}/read
 6.15 لوحة المعلومات (dashboard.py) - prefix /dashboard: GET /summary, GET /my-performance, GET /today-check/tasks, GET /today-check, GET /today-check/export, GET /teachers/export, GET /follow-up, GET /birthdays, GET /boys/{boy_id}
+6.16 الكنائس (churches.py) - prefix /churches: GET, POST, GET /{church_id}, PATCH /{church_id}, DELETE /{church_id}
+   - GET للجميع: التينانت يرى كنيسته فقط، والسوبر أدمين يرى كل الكنائس (حتى لو مختار كنيسة من الهيدر).
+   - POST/PATCH/DELETE للسوبر أدمين فقط. DELETE يرجع 409 لو الكنيسة فيها بيانات.
+6.17 بيانات تجريبية (base.py): POST /seed (SeedService) — يُستخدم من صفحة الكنائس لإنشاء كنيسة تجريبية كاملة.
 
 --------------------------------------------------------------------------------
 ## 7. طبقة الخدمات (Service Layer)
@@ -141,6 +150,12 @@ BoyTripSummary: boy_id, boy_name, trip_id, trip_name, trip_cost, total_charged, 
 TripCreate/TripUpdate/TripResponse: name, cost, class_id, created_at, status.
 UserCreate/UserUpdate/UserResponse: phone, password, role, church_id, teacher_id, boy_id, display_name, pending_signup, managed_class_ids.
 TeacherCreate/TeacherUpdate/TeacherResponse: teacher_name, birth_date, phone, phone_2, zone, address, latitude, longitude, class_id, father_name, skills.
+ChurchCreate/ChurchUpdate: name, region, address, phone, phone_2, is_active, expiry_date. ChurchResponse يضيف: id, created_at, expired, usable.
+LocationRecord: latitude, longitude, status (FollowEnum اختياري), note. حفظ الموقع + افتقاد في نفس المعاملة.
+BoyLocationResponse: boy_id, boy_name, latitude, longitude, updated_at, follow_up_id.
+TeacherLocationRecord: latitude, longitude. TeacherLocationResponse: teacher_id, teacher_name, latitude, longitude, updated_at.
+MapRouteResponse: scope, scope_label, person_type, teacher_id, class_ids, origin, houses, unlocated, legs, polyline, ordered_boy_ids, ordered_person_ids, total_distance_m/km, total_walk_minutes, summary, follow_up_status_options, generated_at.
+MapHouse: person_type, person_id, person_name, boy_id, boy_name, teacher_id, teacher_name, class_id, class_name, gender, latitude, longitude, has_coordinates, zone, address, phone, phone_2, whatsapp_url, call_url, last_follow_up_date, last_follow_up_status, follow_up_count, prefill, can_record_location, can_follow_up.
 
 --------------------------------------------------------------------------------
 ## 9. إعدادات البيئة (.env)
@@ -259,6 +274,100 @@ npm run build
 - [x] التصفية التلقائية (total_paid > 0) - مكتمل
 - [x] تصميم كارت الولد مع مبالغ دفع/باقي - مكتمل
 - [x] عرض teacher_name عبر usersMap - مكتمل
+
+--------------------------------------------------------------------------------
+## 15. تحديثات حديثة (تعدد الكنائس + خريطة الافتقاد + حفظ اللوكيشن + افتقاد الخدام)
+--------------------------------------------------------------------------------
+هذا القسم يوثّق التعديلات التي تمت بعد النسخة الأولى من هذا الملف. أي محادثة جديدة
+تق رأسه أولاً لأنها تمس كل الطلبات تقريباً.
+
+15.1 الفلتر العام للكنيسة (Global Church Filter)
+- الفكرة: السوبر أدمين (مالك المنصة) يختار كنيسة من الهيدر، فيُضيّق كل شاشة وكل قراءة
+  على تلك الكنيسة، بدون أن يعرف أي Route بذلك. التينانت (أي دور آخر) لا يستخدم الفلتر
+  أبداً: يظل مربوطاً بـ users.church_id.
+- التنفيذ في app/core/auth/deps.py:
+  * _requested_church_id(request) يقرأ church_id من الـ query string أو الهيدر X-Church-Id،
+    ويرفض القيمة غير الرقمية بـ 422.
+  * get_current_user يضع القيمة على user.selected_church_id فقط لو role == SUPER_ADMIN.
+    وهي صفة وقت التشغيل (transient attribute) وليست عموداً في قاعدة البيانات.
+  * التينانت: أي قيمة قديمة في localStorage تُتجاهل تماماً، فلا يمكن نقله لكنيسة أخرى.
+- app/core/data/common.py:
+  * my_church_ids(user): None = كل الكنائس (سوبر أدمين بلا اختيار)، أو [selected] لو مختار،
+    أو [user.church_id] للتينانت. حساب تينانت بلا church_id يرجع [] (لا يسرّب بيانات).
+  * my_class_ids(db, user): يبني قائمة الفصول من نفس الكنيسة المختارة؛ السوبر أدمين المفلتر
+    يرى فصول الكنيسة المختارة فقط. التينانت يتجاهل أي selected قديم.
+  * target_church_id(db, user, requested, class_id=, person=): يحدد كنيسة الصف الجديد.
+    التينانت لا يكتب لكنيسة غير كنيسته (403). السوبر أدمين: إن اختار كنيسة من الهيدر لا
+    يستطيع الكتابة لكنيسة أخرى، والصف الجديد بلا church_id ينزل على الكنيسة المختارة أو
+    الكنيسة الافتراضية.
+  * scope_church(query, model, user): فلتر model.church_id.in_(my_church_ids).
+  * ensure_my_church / ensure_boy_access / ensure_teacher_access: أصبحت تحترم الفلتر أيضاً،
+    فالسوبر أدمين المفلتر على كنيسة يُرفض له صف من كنيسة أخرى (403 / 404 حسب الحالة).
+  * scope_teachers / scope_follow_ups / scope_checks / scope_users: كلها تمر على نفس الفلتر.
+- app/core/data/churches.py: ChurchService.query **يتعمد** تجاهل selected_church_id:
+  السوبر أدمين يرى كل الكنائس دائماً حتى تُملأ قائمة الهيدر، والتينانت يرى كنيسته فقط.
+  الإنشاء/التعديل/الحذف للسوبر أدمين فقط (restrict على الحذف يرجع 409 لو فيه بيانات).
+- app/core/DA/dashboard.py و follow_up_performance.py: _classes() يستخدم scope_church،
+  فأرقام لوحة المعلومات تتبع الكنيسة المختارة.
+- app/core/data/map.py: استعلام أولاد النطاق group/class/all يمر على scope_church.
+- app/core/notifications/service.py: status و history يحترمان selected_church_id.
+- ملاحظة مهمة: مسارات القوائم (GET /boys, /teachers, ...) لا تعلن معامل church_id في
+  تعريفها؛ الفلتر يحدث تلقائياً من الـ dependency. لا تُضف معاملاً لكل Route.
+
+15.2 خريطة الافتقاد (Visit Map)
+- المسار الرئيسي: GET /locations/map (app/routes/locations.py) -> VisitMapService.route
+  في app/core/data/map.py.
+- المعاملات:
+  * latitude/longitude: موقع الخادم الآن (اختياري). لو غاب، يبدأ المسار من أول بيت
+    (origin.source = "first_house")، ولو حضر فالمصدر "client".
+  * scope: group (مجموعة خادم) | class (فصل) | all (كل الفصول المسموحة). الافتراضي class.
+  * teacher_id: لتضييق مجموعة خادم معين (للأمين).
+  * class_id: تضييق على فصل واحد.
+  * name / zone / address: فلاتر نصية (name و address بحث جزئي، zone مطابقة).
+  * person_type: boys (افتراضي) | teachers. خريطة الخدام مسموحة للمديرين فقط
+    (MANAGERS)، وإلا 403.
+- الاستجابة MapRouteResponse تحتوي كل ما تحتاجه الشاشة في نداء واحد:
+  * houses: مرتبة الأقرب فالأقرب (nearest_neighbour في app/core/geo.py)، وكل بيت فيه
+    person_id/person_name + boy_id/boy_name أو teacher_id/teacher_name، الإحداثيات،
+    has_coordinates، العنوان والمنطقة، الهاتف، whatsapp_url و call_url جاهزين للفتح،
+    آخر افتقاد وعدده، prefill جاهز لـ POST /follow-ups، وأعلام can_record_location /
+    can_follow_up.
+  * unlocated: نفس الشكل لكن بلا إحداثيات (يجب حفظ اللوكيشن أولاً).
+  * origin + legs + polyline: نقاط الرسم [[lat,lng],...] تبدأ من origin، وكل leg فيه
+    المسافة بالمتر/كم ودقائق المشي.
+  * summary: total_boys/total_people، located، unlocated، visited_today، coverage_percent.
+  * total_distance_m/km و total_walk_minutes و ordered_boy_ids/ordered_person_ids.
+- أرقام الهاتف تُحوَّل في map.py (_digits) إلى 20xxxxxxxxxx لبناء روابط wa.me و tel.
+- الصلاحيات: نفس scope_boys / scope_teachers + الفلتر الكنسي، فالخادم يرى مجموعته،
+  الأمين فصله/مرحلته، وأبونا كل فصول كنيسته.
+- لا يوجد جدول إحداثيات منفصل: نقطة البيت هي boys.latitude/longitude ونقطة الخادم هي
+  teachers.latitude/longitude.
+
+15.3 حفظ اللوكيشن (Location saving)
+- الخدمات: BoyLocationService و TeacherLocationService في app/core/data/locations.py.
+- نقاط البيت تُكتب مباشرة على صف الولد (boys.latitude/longitude)، وكذلك الخادم على
+  teachers.latitude/longitude. لا جدول locations منفصل.
+- POST /locations/boys/{boy_id}: أي موظف يرى الولد (ensure_boy_access). يُحدّث updated_at.
+  إن أرسل العميل status (FollowEnum) تُكتب أيضاً متابعة في follow_ups في نفس المعاملة،
+  بشرط وجود خادم للمجموعة؛ غير ذلك 400 مع رسالة عربية واضحة.
+- POST /locations/boys/me: لحساب الولد نفسه فقط (role USER و boy_id موجود)، ولا يكتب
+  متابعة أبداً.
+- GET /locations/boys/{boy_id}/current: يرجع النقطة الحالية أو null لو لم تُسجل.
+- POST /locations/teachers/{teacher_id}: لتسجيل موقع الخادم (يُستخدم في خريطة الخدام).
+- التينانت محمي: ensure_boy_access/ensure_teacher_access تمنع أي ولد أو خادم من كنيسة
+  أخرى، وكذلك تمنع السوبر أدمين المفلتر على كنيسة أخرى.
+
+15.4 افتقاد الخدام (Servant follow-up)
+- جدول teacher_follow_ups + مسارات /teacher-follow-ups (GET/POST/GET/PATCH/DELETE).
+- نفس نمط متابعة الأولاد: status من FollowEnum، action_date، note، recorded_by،
+  church_id، وclass_id كنسخة تاريخية.
+- يظهر في خريطة الافتقاد عند person_type=teachers: آخر افتقاد، عدده، visited_today،
+  وروابط الاتصال. منع الرؤية/الكتابة يمر على scope_checks/ensure_teacher_access
+  والفلتر الكنسي.
+
+15.5 بيانات تجريبية
+- POST /seed (app/routes/base.py -> SeedService في app/core/data/seed.py): ينشئ كنيسة
+  تجريبية كاملة (فصول/خدام/أولاد/بيانات) لتجربة تعدد الكنائس من صفحة الكنائس.
 
 --------------------------------------------------------------------------------
 # نهاية التوثيق
