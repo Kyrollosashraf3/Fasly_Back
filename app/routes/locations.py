@@ -4,14 +4,17 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.auth.deps import get_current_user
-from app.core.data import BoyLocationService, VisitMapService
+from app.core.data import BoyLocationService, TeacherLocationService, VisitMapService
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.location import (
     BoyLocationResponse,
     LocationRecord,
     MapRouteResponse,
+    MapPersonTypeEnum,
     MapScopeEnum,
+    TeacherLocationRecord,
+    TeacherLocationResponse,
 )
 
 router = APIRouter(prefix="/locations", tags=["Locations & Visit Map"])
@@ -27,6 +30,9 @@ def visit_map(
     name: str | None = Query(None, max_length=100, description="بحث باسم الولد"),
     zone: str | None = Query(None, max_length=255, description="تصفية بالمنطقة"),
     address: str | None = Query(None, max_length=255, description="بحث تقريبي بالعنوان"),
+    person_type: MapPersonTypeEnum = Query(
+        MapPersonTypeEnum.BOYS, description="boys | teachers"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -40,6 +46,7 @@ def visit_map(
         name=name,
         zone=zone,
         address=address,
+        person_type=person_type,
     )
 
 
@@ -70,6 +77,20 @@ def record_boy_location(
 ):
     """Anyone allowed to see this boy saves a point while standing at his house."""
     return BoyLocationService(db, current_user).record(boy_id, data)
+
+
+@router.post(
+    "/teachers/{teacher_id}",
+    response_model=TeacherLocationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_teacher_location(
+    teacher_id: int,
+    data: TeacherLocationRecord,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return TeacherLocationService(db, current_user).record(teacher_id, data)
 
 
 @router.get("/boys/{boy_id}/current", response_model=BoyLocationResponse | None)

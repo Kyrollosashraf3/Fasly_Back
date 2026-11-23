@@ -1,11 +1,11 @@
-"""Request / response bodies for saving a boy's house point and the visit map.
+"""Request / response bodies for saving house points and the visit map.
 
 The server never guesses a phone's GPS: the client reads it with
-``navigator.geolocation`` and sends ``latitude``/``longitude``. Coordinates are
-stored **on ``boys``** (the existing latitude/longitude columns). The follow-up
+``navigator.geolocation`` and sends ``latitude``/``longitude``. Boy coordinates
+are stored on ``boys`` and servant coordinates on ``teachers``. The follow-up
 type is the existing ``FollowEnum`` and belongs to ``follow_ups.status`` - if
-the client sends ``status`` while saving a point, the service writes that
-follow-up row too.
+the client sends ``status`` while saving a boy's point, the service writes
+that follow-up row too.
 """
 
 from datetime import date, datetime
@@ -47,6 +47,19 @@ class BoyLocationResponse(BaseModel):
     follow_up_id: int | None = None
 
 
+class TeacherLocationResponse(BaseModel):
+    teacher_id: int
+    teacher_name: str
+    latitude: float
+    longitude: float
+    updated_at: datetime | None = None
+
+
+class TeacherLocationRecord(BaseModel):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+
+
 class MapScopeEnum(str, Enum):
     """The two filters the UI asked for, plus an explicit "all my classes"."""
 
@@ -69,14 +82,22 @@ class FollowUpPrefill(BaseModel):
     note: str = ""
 
 
-class MapHouse(BaseModel):
-    """One house on the map - whether it has coordinates or not."""
+class MapPersonTypeEnum(str, Enum):
+    BOYS = "boys"
+    TEACHERS = "teachers"
 
-    boy_id: int
-    boy_name: str
-    gender: GenderEnum
-    class_id: int
-    class_name: str
+
+class MapHouse(BaseModel):
+    """One person on the visit map - whether they have coordinates or not."""
+
+    person_type: MapPersonTypeEnum = MapPersonTypeEnum.BOYS
+    person_id: int | None = None
+    person_name: str | None = None
+    boy_id: int | None = None
+    boy_name: str | None = None
+    gender: GenderEnum | None = None
+    class_id: int | None = None
+    class_name: str = ""
     teacher_id: int | None = None
     teacher_name: str | None = None
 
@@ -95,7 +116,7 @@ class MapHouse(BaseModel):
     last_follow_up_status: FollowEnum | None = None
     follow_up_count: int = 0
 
-    prefill: FollowUpPrefill
+    prefill: FollowUpPrefill | None = None
     can_record_location: bool = True
     can_follow_up: bool = True
 
@@ -113,9 +134,11 @@ class MapLeg(BaseModel):
 
     order: int
     from_boy_id: int | None = None   # null = from "مني" (the client's position)
+    from_person_id: int | None = None
     from_latitude: float
     from_longitude: float
-    to_boy_id: int
+    to_boy_id: int | None = None
+    to_person_id: int | None = None
     to_latitude: float
     to_longitude: float
     distance_m: int
@@ -125,6 +148,7 @@ class MapLeg(BaseModel):
 
 class MapSummary(BaseModel):
     total_boys: int
+    total_people: int
     located: int
     unlocated: int
     visited_today: int
@@ -136,6 +160,7 @@ class MapRouteResponse(BaseModel):
 
     scope: MapScopeEnum
     scope_label: str
+    person_type: MapPersonTypeEnum = MapPersonTypeEnum.BOYS
     teacher_id: int | None = None
     class_ids: list[int] | None = None   # null = كل الفصول (super admin)
     origin: MapOrigin | None = None
@@ -143,7 +168,8 @@ class MapRouteResponse(BaseModel):
     unlocated: list[MapHouse]            # لازم يسجّلوا لوكيشن أولاً
     legs: list[MapLeg]
     polyline: list[list[float]]          # [[lat, lng], ...] يبدأ من origin
-    ordered_boy_ids: list[int]
+    ordered_boy_ids: list[int] = Field(default_factory=list)
+    ordered_person_ids: list[int] = Field(default_factory=list)
     total_distance_m: int
     total_distance_km: float
     total_walk_minutes: int

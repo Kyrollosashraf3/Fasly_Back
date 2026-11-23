@@ -339,6 +339,8 @@ def ensure_teacher_access(db: Session, user: User, teacher: Teacher) -> None:
         return
     if user.role == RoleEnum.USER:
         deny("You do not have permission to view servants.")
+    if user.role == RoleEnum.ABONA and teacher.class_id is None:
+        return
     ensure_my_class(db, user, teacher.class_id)
 
 
@@ -383,6 +385,8 @@ def scope_teachers(db: Session, query: Query, user: User) -> Query:
         return query
     if user.role == RoleEnum.TEACHER:
         return query.filter(Teacher.id == user.teacher_id)
+    if user.role == RoleEnum.ABONA:
+        return query
     return query.filter(Teacher.class_id.in_(my_class_ids(db, user) or []))
 
 

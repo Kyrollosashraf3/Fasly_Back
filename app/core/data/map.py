@@ -16,12 +16,14 @@ from sqlalchemy.orm import joinedload
 
 from app.core.data.base import BaseService
 from app.core.data.common import (
+    MANAGERS,
     STAFF,
     ensure_teacher_access,
     get_or_404,
     my_class_ids,
     scope_boys,
     scope_church,
+    scope_teachers,
 )
 from app.core.geo import haversine_m, nearest_neighbour, walk_minutes
 from app.models.boy import Boy
@@ -29,12 +31,14 @@ from app.models.enums import FollowEnum, RoleEnum
 from app.models.follow_up import FollowUp
 from app.models.group import Group
 from app.models.teacher import Teacher
+from app.models.teacher_follow_up import TeacherFollowUp
 from app.schemas.location import (
     FOLLOW_UP_STATUS_OPTIONS,
     FollowUpPrefill,
     MapHouse,
     MapLeg,
     MapOrigin,
+    MapPersonTypeEnum,
     MapRouteResponse,
     MapScopeEnum,
     MapSummary,
@@ -71,28 +75,56 @@ class VisitMapService(BaseService):
         name: str | None = None,
         zone: str | None = None,
         address: str | None = None,
+        person_type: MapPersonTypeEnum = MapPersonTypeEnum.BOYS,
     ) -> MapRouteResponse:
-        boys = (
-            self._boys_query(scope, teacher_id, class_id, name, zone, address)
-            .options(
-                joinedload(Boy.class_),
-                joinedload(Boy.groups).joinedload(Group.teacher),
+        if person_type == MapPersonTypeEnum.TEACHERS:
+            if self.user.role not in MANAGERS:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only an amin can map servant visits.",
+                )
+            people = (
+                self._teachers_query(teacher_id, class_id, name, zone, address)
+                .options(joinedload(Teacher.class_))
+                .order_by(Teacher.teacher_name)
+                .all()
             )
-            .order_by(Boy.boy_name)
-            .all()
-        )
-        ids = [boy.id for boy in boys]
-        stats, visited_today = self._follow_up_stats(ids)
+            stats, visited_today = self._teacher_follow_up_stats(
+                [teacher.id for teacher in people]
+            )
+            houses = [
+                self._teacher_house(teacher, stats.get(teacher.id, {}))
+                for teacher in people
+            ]
+        else:
+            people = (
+                self._boys_query(scope, teacher_id, class_id, name, zone, address)
+                .options(
+                    joinedload(Boy.class_),
+                    joinedload(Boy.groups).joinedload(Group.teacher),
+                )
+                .order_by(Boy.boy_name)
+                .all()
+            )
+            stats, visited_today = self._follow_up_stats(
+                [boy.id for boy in people]
+            )
+            houses = [
+                self._house(boy, stats.get(boy.id, {}), teacher_id)
+                for boy in people
+            ]
 
-        houses = [self._house(boy, stats.get(boy.id, {}), teacher_id) for boy in boys]
         located = [house for house in houses if house.has_coordinates]
         unlocated = [house for house in houses if not house.has_coordinates]
 
-        origin, legs, ordered, polyline = self._route_points(latitude, longitude, located)
+        origin, legs, ordered, polyline = self._route_points(
+            latitude, longitude, located, person_type
+        )
 
         located_count = len(located)
         summary = MapSummary(
-            total_boys=len(houses),
+            total_boys=len(houses) if person_type == MapPersonTypeEnum.BOYS else 0,
+            total_people=len(houses),
             located=located_count,
             unlocated=len(unlocated),
             visited_today=visited_today,
@@ -103,6 +135,7 @@ class VisitMapService(BaseService):
         return MapRouteResponse(
             scope=scope,
             scope_label=SCOPE_LABELS[scope],
+            person_type=person_type,
             teacher_id=teacher_id or self.user.teacher_id,
             class_ids=my_class_ids(self.db, self.user),
             origin=origin,
@@ -110,7 +143,12 @@ class VisitMapService(BaseService):
             unlocated=unlocated,
             legs=legs,
             polyline=polyline,
-            ordered_boy_ids=[house.boy_id for house in ordered],
+            ordered_boy_ids=[
+                house.boy_id for house in ordered if house.boy_id is not None
+            ],
+            ordered_person_ids=[
+                house.person_id for house in ordered if house.person_id is not None
+            ],
             total_distance_m=total_m,
             total_distance_km=round(total_m / 1000, 2),
             total_walk_minutes=sum(leg.walk_minutes for leg in legs),
@@ -120,6 +158,31 @@ class VisitMapService(BaseService):
         )
 
     # -------------------------------------------------------------- internals
+    def _teachers_query(self, teacher_id, class_id, name, zone, address):
+        query = scope_teachers(self.db, self.db.query(Teacher), self.user)
+        if class_id is not None:
+            self.ensure_class(class_id)
+            query = query.filter(Teacher.class_id == class_id)
+        if teacher_id is not None:
+            query = query.filter(Teacher.id == teacher_id)
+        if name and name.strip():
+            query = query.filter(
+                Teacher.teacher_name.ilike(self._like(name.strip()), escape="!")
+            )
+        if zone and zone.strip():
+            area_pattern = self._like(zone.strip())
+            query = query.filter(
+                or_(
+                    Teacher.zone.ilike(area_pattern, escape="!"),
+                    Teacher.address.ilike(area_pattern, escape="!"),
+                )
+            )
+        if address and address.strip():
+            query = query.filter(
+                Teacher.address.ilike(self._like(address.strip()), escape="!")
+            )
+        return query
+
     def _boys_query(self, scope, teacher_id, class_id, name, zone, address):
         """The filtered boy list; scope-out never leaks another class's house."""
         if self.user.role == RoleEnum.USER:
@@ -210,6 +273,9 @@ class VisitMapService(BaseService):
         )
 
         return MapHouse(
+            person_type=MapPersonTypeEnum.BOYS,
+            person_id=boy.id,
+            person_name=boy.boy_name,
             boy_id=boy.id,
             boy_name=boy.boy_name,
             gender=boy.gender,
@@ -234,10 +300,66 @@ class VisitMapService(BaseService):
             can_follow_up=self.user.role in STAFF,
         )
 
-    def _route_points(self, latitude, longitude, located):
+    def _teacher_house(self, teacher, stat):
+        phones = [value for value in (teacher.phone, teacher.phone_2) if value]
+        number = _digits(phones[0]) if phones else ""
+        return MapHouse(
+            person_type=MapPersonTypeEnum.TEACHERS,
+            person_id=teacher.id,
+            person_name=teacher.teacher_name,
+            teacher_id=teacher.id,
+            teacher_name=teacher.teacher_name,
+            class_id=teacher.class_id,
+            class_name=teacher.class_.name if teacher.class_ else "",
+            latitude=teacher.latitude,
+            longitude=teacher.longitude,
+            has_coordinates=teacher.latitude is not None and teacher.longitude is not None,
+            zone=teacher.zone,
+            address=teacher.address,
+            phone=teacher.phone,
+            phone_2=teacher.phone_2,
+            whatsapp_url=f"https://wa.me/{number}" if number else None,
+            call_url=f"tel:+{number}" if number else None,
+            last_follow_up_date=stat.get("date"),
+            last_follow_up_status=stat.get("status"),
+            follow_up_count=stat.get("count", 0),
+            can_record_location=True,
+            can_follow_up=True,
+        )
+
+    def _teacher_follow_up_stats(self, ids: list[int]) -> tuple[dict[int, dict], int]:
+        if not ids:
+            return {}, 0
+        rows = (
+            self.db.query(
+                TeacherFollowUp.teacher_id,
+                TeacherFollowUp.action_date,
+                TeacherFollowUp.status,
+            )
+            .filter(TeacherFollowUp.teacher_id.in_(ids))
+            .order_by(
+                TeacherFollowUp.action_date.desc(), TeacherFollowUp.id.desc()
+            )
+            .all()
+        )
+        stats: dict[int, dict] = {}
+        visited_today = 0
+        today = date.today()
+        for teacher_id, action_date, status in rows:
+            item = stats.setdefault(
+                teacher_id, {"date": None, "status": None, "count": 0}
+            )
+            if item["date"] is None:
+                item["date"], item["status"] = action_date, status
+            item["count"] += 1
+            if action_date == today and status == FollowEnum.VISIT:
+                visited_today += 1
+        return stats, visited_today
+
+    def _route_points(self, latitude, longitude, located, person_type):
         """Order the houses nearest-first and build the drawable line."""
         points = [
-            (house.boy_id, house.latitude, house.longitude) for house in located
+            (house.person_id, house.latitude, house.longitude) for house in located
         ]
         if latitude is None or longitude is None:
             if not points:
@@ -251,7 +373,7 @@ class VisitMapService(BaseService):
             origin = MapOrigin(latitude=latitude, longitude=longitude, source="client")
 
         ordered_points = nearest_neighbour(start, points)
-        by_id = {house.boy_id: house for house in located}
+        by_id = {house.person_id: house for house in located}
         ordered = [by_id[boy_id] for boy_id, _, _ in ordered_points]
 
         legs = []
@@ -262,10 +384,18 @@ class VisitMapService(BaseService):
             legs.append(
                 MapLeg(
                     order=order,
-                    from_boy_id=previous_boy_id,
+                    from_boy_id=(
+                        previous_boy_id
+                        if person_type == MapPersonTypeEnum.BOYS
+                        else None
+                    ),
+                    from_person_id=previous_boy_id,
                     from_latitude=previous[0],
                     from_longitude=previous[1],
-                    to_boy_id=boy_id,
+                    to_boy_id=(
+                        boy_id if person_type == MapPersonTypeEnum.BOYS else None
+                    ),
+                    to_person_id=boy_id,
                     to_latitude=lat,
                     to_longitude=lng,
                     distance_m=round(distance),

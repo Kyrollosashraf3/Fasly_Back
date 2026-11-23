@@ -47,6 +47,8 @@ from app.core.data.subscriptions import SubscriptionService
 from app.core.data.task_values import TaskValueService
 from app.core.data.tasks import TaskService
 from app.core.data.teacher_checks import TeacherCheckService
+from app.core.data.teacher_follow_ups import TeacherFollowUpService
+from app.core.data.teacher_locations import TeacherLocationService
 from app.core.data.teachers import TeacherService
 from app.core.data.seed import SeedService
 from app.core.data.trip_attendance import TripAttendanceService
@@ -75,6 +77,8 @@ __all__ = [
     "TaskService",
     "TaskValueService",
     "TeacherCheckService",
+    "TeacherFollowUpService",
+    "TeacherLocationService",
     "TeacherService",
     "SeedService",
     "TripService",

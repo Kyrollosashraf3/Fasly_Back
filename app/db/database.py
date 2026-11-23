@@ -43,6 +43,7 @@ TENANT_TABLES = (
     "general_admin_classes",
     "attends",
     "follow_ups",
+    "teacher_follow_ups",
     "teacher_checks",
     "tasks",
     "task_values",
