@@ -1,0 +1,101 @@
+"""Class catalogue (الفصول) - the anchor every permission scope resolves to."""
+from __future__ import annotations
+
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Query
+
+from app.core.data.base import BaseService
+from app.core.data.common import (
+    CLASS_KEEPERS,
+    apply_update,
+    commit,
+    ensure_roles,
+    my_class_ids,
+    normalise_name,
+    scope_church,
+)
+from app.models.boy import Boy
+from app.models.school_class import SchoolClass
+from app.models.teacher import Teacher
+from app.schemas.school_class import SchoolClassCreate, SchoolClassUpdate
+
+
+class ClassService(BaseService):
+    """Reads are open to every login (a grade label leaks nothing); only the
+    class amin or the super admin may create / rename / retire a class - a
+    stage amin works the classes he was given.
+    """
+
+
+    def query(self) -> Query:
+        # Church first: no tenant may ever read a class of another church.
+        return scope_church(self.db.query(SchoolClass), SchoolClass, self.user)
+
+    def list(self) -> list[SchoolClass]:
+        return (
+            self.query()
+            .order_by(SchoolClass.academic_year.desc(), SchoolClass.id)
+            .all()
+        )
+
+    def get(self, class_id: int) -> SchoolClass:
+        school_class = self.query().filter(SchoolClass.id == class_id).first()
+        if school_class is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Class {class_id} not found.",
+            )
+        return school_class
+
+    def create(self, data: SchoolClassCreate) -> SchoolClass:
+        ensure_roles(self.user, *CLASS_KEEPERS)
+        church_id = self.church_for(getattr(data, "church_id", None))
+        school_class = SchoolClass(
+            name=data.name.strip(),
+            academic_year=data.academic_year,
+            church_id=church_id,
+        )
+        self.db.add(school_class)
+        commit(self.db, f"Class create name={data.name}")
+        return school_class
+
+    def update(self, class_id: int, data: SchoolClassUpdate) -> SchoolClass:
+        school_class = self.get(class_id)
+        ensure_roles(self.user, *CLASS_KEEPERS)
+        apply_update(school_class, data, strip=("name",))
+        commit(self.db, f"Class update id={class_id}")
+        return school_class
+
+    def delete(self, class_id: int) -> None:
+        school_class = self.get(class_id)
+        ensure_roles(self.user, *CLASS_KEEPERS)
+        # A class still holding servants or boys is refused by the RESTRICT
+        # foreign keys; this message says why before the driver does.
+        occupied = (
+            self.db.query(Boy.id).filter(Boy.class_id == class_id).first()
+            or self.db.query(Teacher.id)
+            .filter(Teacher.class_id == class_id)
+            .first()
+        )
+        if occupied is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Move the class's servants and boys out first.",
+            )
+        self.db.delete(school_class)
+        commit(self.db, f"Class delete id={class_id}")
+
+    def label_lookup(self) -> dict[str, int]:
+        """Normalized class label -> id, so a spreadsheet's ``class_name``
+        column can become a ``class_id``.
+
+        Only the classes this login may *write into* are offered (super admin:
+        every class, an amin: his own), so an import can never point at a class
+        the caller is not allowed to fill.
+        """
+        mine = my_class_ids(self.db, self.user)
+        return {
+            normalise_name(row.name): row.id
+            for row in self.list()
+            if mine is None or row.id in mine
+        }
