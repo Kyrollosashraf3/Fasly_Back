@@ -24,6 +24,7 @@ from app.core.data.common import (
     scope_boys,
     scope_church,
     scope_teachers,
+    scoped_team,
 )
 from app.core.geo import haversine_m, nearest_neighbour, walk_minutes
 from app.features.boy.models.boy import Boy
@@ -72,11 +73,13 @@ class VisitMapService(BaseService):
         scope: MapScopeEnum = MapScopeEnum.CLASS,
         teacher_id: int | None = None,
         class_id: int | None = None,
+        team_id: int | None = None,
         name: str | None = None,
         zone: str | None = None,
         address: str | None = None,
         person_type: MapPersonTypeEnum = MapPersonTypeEnum.BOYS,
     ) -> MapRouteResponse:
+        team = scoped_team(self.db, self.user, team_id)
         if person_type == MapPersonTypeEnum.TEACHERS:
             if self.user.role not in MANAGERS:
                 raise HTTPException(
@@ -84,7 +87,14 @@ class VisitMapService(BaseService):
                     detail="Only an amin can map servant visits.",
                 )
             people = (
-                self._teachers_query(teacher_id, class_id, name, zone, address)
+                self._teachers_query(
+                    teacher_id,
+                    class_id,
+                    name,
+                    zone,
+                    address,
+                    team.teacher_ids if team is not None else None,
+                )
                 .options(joinedload(Teacher.class_))
                 .order_by(Teacher.teacher_name)
                 .all()
@@ -98,7 +108,15 @@ class VisitMapService(BaseService):
             ]
         else:
             people = (
-                self._boys_query(scope, teacher_id, class_id, name, zone, address)
+                self._boys_query(
+                    scope,
+                    teacher_id,
+                    class_id,
+                    name,
+                    zone,
+                    address,
+                    team.boy_ids if team is not None else None,
+                )
                 .options(
                     joinedload(Boy.class_),
                     joinedload(Boy.groups).joinedload(Group.teacher),
@@ -158,7 +176,9 @@ class VisitMapService(BaseService):
         )
 
     # -------------------------------------------------------------- internals
-    def _teachers_query(self, teacher_id, class_id, name, zone, address):
+    def _teachers_query(
+        self, teacher_id, class_id, name, zone, address, team_teacher_ids=None
+    ):
         query = scope_teachers(self.db, self.db.query(Teacher), self.user)
         if class_id is not None:
             self.ensure_class(class_id)
@@ -181,9 +201,13 @@ class VisitMapService(BaseService):
             query = query.filter(
                 Teacher.address.ilike(self._like(address.strip()), escape="!")
             )
+        if team_teacher_ids is not None:
+            query = query.filter(Teacher.id.in_(team_teacher_ids))
         return query
 
-    def _boys_query(self, scope, teacher_id, class_id, name, zone, address):
+    def _boys_query(
+        self, scope, teacher_id, class_id, name, zone, address, team_boy_ids=None
+    ):
         """The filtered boy list; scope-out never leaks another class's house."""
         if self.user.role == RoleEnum.USER:
             query = self.db.query(Boy).filter(Boy.id == self.user.boy_id)
@@ -227,6 +251,8 @@ class VisitMapService(BaseService):
             )
         if address and address.strip():
             query = query.filter(Boy.address.ilike(self._like(address.strip()), escape="!"))
+        if team_boy_ids is not None:
+            query = query.filter(Boy.id.in_(team_boy_ids))
         return query
 
     @staticmethod

@@ -49,6 +49,9 @@ TENANT_TABLES = (
     "task_values",
     "trips",
     "trip_attendances",
+    "teams",
+    "team_members",
+    "team_teachers",
     "subscriptions",
     "notification_logs",
     "notification_inbox",
@@ -319,6 +322,9 @@ def create_tables() -> None:
     )
     from app.features.school_class.models.school_class import SchoolClass  # noqa: F401
     from app.features.subscription.models.subscription import Subscription  # noqa: F401
+    from app.features.team.models.team import Team  # noqa: F401
+    from app.features.team.models.team_member import TeamMember  # noqa: F401
+    from app.features.team.models.team_teacher import TeamTeacher  # noqa: F401
     from app.features.task.models.task import Task  # noqa: F401
     from app.features.task_value.models.task_value import TaskValue  # noqa: F401
     from app.features.teacher.models.teacher import Teacher  # noqa: F401

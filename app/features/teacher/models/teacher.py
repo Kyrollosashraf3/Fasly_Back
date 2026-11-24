@@ -97,6 +97,9 @@ class Teacher(Base):
     )
     teacher_checks = relationship("TeacherCheck", back_populates="teacher")
     task_values = relationship("TaskValue", back_populates="teacher")
+    team_assignments = relationship(
+        "TeamTeacher", back_populates="teacher", cascade="all, delete-orphan"
+    )
     managed_classes = relationship(
         "GeneralAdminClass", back_populates="teacher", cascade="all, delete-orphan"
     )

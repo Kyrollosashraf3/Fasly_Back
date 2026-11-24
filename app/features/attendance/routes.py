@@ -23,11 +23,12 @@ router = APIRouter(prefix="/attendance", tags=["Attendance"])
 def list_attendance(
     class_id: int | None = None,
     action_date: date | None = None,
+    team_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     return AttendanceService(db, current_user).list(
-        class_id=class_id, action_date=action_date
+        class_id=class_id, action_date=action_date, team_id=team_id
     )
 
 

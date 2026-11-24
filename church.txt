@@ -110,6 +110,52 @@ CREATE INDEX IF NOT EXISTS ix_trip_attendances_trip_id_teacher_id ON trip_attend
 
 
 -- ---------------------------------------------------------------------------
+-- 2c. Teams (الفرق). A team is a named group inside one class and one church.
+--     Names are unique per (church, class), not globally. Membership lives in
+--     two link tables so the same boy/servant can be linked to more than one
+--     team without rewriting the team row. Both links carry church_id so the
+--     normal tenant rules apply to them too.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS teams (
+    id         SERIAL PRIMARY KEY,
+    church_id  INTEGER NOT NULL REFERENCES churches(id) ON DELETE RESTRICT,
+    class_id   INTEGER NOT NULL REFERENCES classes(id)  ON DELETE RESTRICT,
+    team_name  VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT uq_teams_church_id_class_id_team_name UNIQUE (church_id, class_id, team_name)
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+    id         SERIAL PRIMARY KEY,
+    church_id  INTEGER NOT NULL REFERENCES churches(id) ON DELETE RESTRICT,
+    team_id    INTEGER NOT NULL REFERENCES teams(id)    ON DELETE CASCADE,
+    boy_id     INTEGER NOT NULL REFERENCES boys(id)     ON DELETE CASCADE,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT uq_team_members_team_id_boy_id UNIQUE (team_id, boy_id)
+);
+
+CREATE TABLE IF NOT EXISTS team_teachers (
+    id          SERIAL PRIMARY KEY,
+    church_id   INTEGER NOT NULL REFERENCES churches(id) ON DELETE RESTRICT,
+    team_id     INTEGER NOT NULL REFERENCES teams(id)    ON DELETE CASCADE,
+    teacher_id  INTEGER NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+    created_at  TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT uq_team_teachers_team_id_teacher_id UNIQUE (team_id, teacher_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_teams_church_id           ON teams (church_id);
+CREATE INDEX IF NOT EXISTS ix_teams_class_id            ON teams (class_id);
+CREATE INDEX IF NOT EXISTS ix_teams_church_id_class_id  ON teams (church_id, class_id);
+CREATE INDEX IF NOT EXISTS ix_teams_team_name           ON teams (team_name);
+CREATE INDEX IF NOT EXISTS ix_team_members_church_id    ON team_members (church_id);
+CREATE INDEX IF NOT EXISTS ix_team_members_team_id      ON team_members (team_id);
+CREATE INDEX IF NOT EXISTS ix_team_members_boy_id       ON team_members (boy_id);
+CREATE INDEX IF NOT EXISTS ix_team_teachers_church_id   ON team_teachers (church_id);
+CREATE INDEX IF NOT EXISTS ix_team_teachers_team_id     ON team_teachers (team_id);
+CREATE INDEX IF NOT EXISTS ix_team_teachers_teacher_id  ON team_teachers (teacher_id);
+
+
+-- ---------------------------------------------------------------------------
 -- 3. Add the church_id column (nullable at first) to every tenant table.
 --    Same list as TENANT_TABLES in app/db/database.py.
 -- ---------------------------------------------------------------------------
@@ -126,6 +172,9 @@ ALTER TABLE tasks                  ADD COLUMN IF NOT EXISTS church_id INTEGER;
 ALTER TABLE task_values            ADD COLUMN IF NOT EXISTS church_id INTEGER;
 ALTER TABLE trips                  ADD COLUMN IF NOT EXISTS church_id INTEGER;
 ALTER TABLE trip_attendances       ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE teams                  ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE team_members           ADD COLUMN IF NOT EXISTS church_id INTEGER;
+ALTER TABLE team_teachers          ADD COLUMN IF NOT EXISTS church_id INTEGER;
 ALTER TABLE subscriptions          ADD COLUMN IF NOT EXISTS church_id INTEGER;
 ALTER TABLE notification_logs      ADD COLUMN IF NOT EXISTS church_id INTEGER;
 ALTER TABLE notification_inbox     ADD COLUMN IF NOT EXISTS church_id INTEGER;
@@ -165,6 +214,9 @@ UPDATE tasks                 SET church_id = (SELECT id FROM churches WHERE name
 UPDATE task_values           SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
 UPDATE trips                 SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
 UPDATE trip_attendances      SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE teams                 SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE team_members          SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
+UPDATE team_teachers         SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
 UPDATE subscriptions         SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
 UPDATE notification_logs     SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
 UPDATE notification_inbox    SET church_id = (SELECT id FROM churches WHERE name = 'الكنيسة الافتراضية' ORDER BY id LIMIT 1) WHERE church_id IS NULL;
@@ -182,7 +234,8 @@ BEGIN
     FOREACH t IN ARRAY ARRAY[
         'users', 'teachers', 'boys', 'classes', 'groups',
         'general_admin_classes', 'attends', 'follow_ups', 'teacher_checks',
-        'tasks', 'task_values', 'trips', 'trip_attendances', 'subscriptions',
+        'tasks', 'task_values', 'trips', 'trip_attendances',
+        'teams', 'team_members', 'team_teachers', 'subscriptions',
         'notification_logs', 'notification_inbox', 'push_devices'
     ]
     LOOP
@@ -218,6 +271,9 @@ ALTER TABLE tasks                 ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE task_values           ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE trips                 ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE trip_attendances      ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE teams                 ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE team_members          ALTER COLUMN church_id SET NOT NULL;
+ALTER TABLE team_teachers         ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE subscriptions         ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE notification_logs     ALTER COLUMN church_id SET NOT NULL;
 ALTER TABLE notification_inbox    ALTER COLUMN church_id SET NOT NULL;
@@ -313,5 +369,31 @@ SELECT 'trip_attendance_wrong_church' AS check_name, COUNT(*) AS rows
   FROM trip_attendances a JOIN trips t ON t.id = a.trip_id
  WHERE a.church_id <> t.church_id;
 -- Both counts should be 0.
+
+-- Team sanity: no duplicate names inside one church/class, every link lives in
+-- its team's church, and the linked people belong to that church and class.
+-- Servants with no class (church-wide amin) are allowed on any team of their
+-- church. All counts should be 0.
+SELECT 'duplicate_team_names' AS check_name, COUNT(*) AS rows
+  FROM (
+    SELECT church_id, class_id, lower(btrim(team_name)) AS name
+      FROM teams GROUP BY church_id, class_id, lower(btrim(team_name))
+    HAVING COUNT(*) > 1
+  ) d;
+SELECT 'team_members_wrong_church' AS check_name, COUNT(*) AS rows
+  FROM team_members m JOIN teams t ON t.id = m.team_id
+ WHERE m.church_id <> t.church_id;
+SELECT 'team_teachers_wrong_church' AS check_name, COUNT(*) AS rows
+  FROM team_teachers tt JOIN teams t ON t.id = tt.team_id
+ WHERE tt.church_id <> t.church_id;
+SELECT 'team_boys_outside_class' AS check_name, COUNT(*) AS rows
+  FROM team_members m JOIN teams t ON t.id = m.team_id
+  JOIN boys b ON b.id = m.boy_id
+ WHERE b.church_id <> t.church_id OR b.class_id <> t.class_id;
+SELECT 'team_servants_outside_class' AS check_name, COUNT(*) AS rows
+  FROM team_teachers tt JOIN teams t ON t.id = tt.team_id
+  JOIN teachers s ON s.id = tt.teacher_id
+ WHERE s.church_id <> t.church_id
+    OR (s.class_id IS NOT NULL AND s.class_id <> t.class_id);
 
 done

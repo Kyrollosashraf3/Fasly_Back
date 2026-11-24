@@ -25,10 +25,13 @@ router = APIRouter(prefix="/boys", tags=["Boys"])
 def list_boys(
     class_id: int | None = None,
     issue_flag: bool | None = None,
+    team_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return BoyService(db, current_user).list(class_id=class_id, issue_flag=issue_flag)
+    return BoyService(db, current_user).list(
+        class_id=class_id, issue_flag=issue_flag, team_id=team_id
+    )
 
 
 @router.post("", response_model=BoyResponse, status_code=status.HTTP_201_CREATED)

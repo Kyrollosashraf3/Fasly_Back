@@ -13,6 +13,7 @@ from app.core.data.common import (
     ensure_teacher_access,
     get_or_404,
     scope_boys,
+    scoped_team,
 )
 from app.features.boy.names import ensure_full_name, ensure_name_addable
 from app.features.boy.models.boy import Boy
@@ -39,7 +40,10 @@ class BoyService(BaseService):
         return scope_boys(self.db, self.db.query(Boy), Boy, self.user, Boy.id)
 
     def list(
-        self, class_id: int | None = None, issue_flag: bool | None = None
+        self,
+        class_id: int | None = None,
+        issue_flag: bool | None = None,
+        team_id: int | None = None,
     ) -> list[Boy]:
         query = self.query()
         if class_id is not None:
@@ -47,6 +51,9 @@ class BoyService(BaseService):
             query = query.filter(Boy.class_id == class_id)
         if issue_flag is not None:
             query = query.filter(Boy.issue_flag == issue_flag)
+        team = scoped_team(self.db, self.user, team_id)
+        if team is not None:
+            query = query.filter(Boy.id.in_(team.boy_ids))
         return query.order_by(Boy.boy_name).all()
 
     def get(self, boy_id: int) -> Boy:

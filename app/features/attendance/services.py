@@ -1,6 +1,7 @@
 """Friday attendance sheet - one row per (boy, date)."""
 from __future__ import annotations
 
+from datetime import date
 
 from app.core.data.base import WeeklySheetService
 from app.core.data.common import (
@@ -9,6 +10,7 @@ from app.core.data.common import (
     ensure_boy_access,
     ensure_roles,
     scope_boys,
+    scoped_team,
 )
 from app.features.attendance.models.attend import Attend
 from app.features.boy.models.boy import Boy
@@ -34,6 +36,24 @@ class AttendanceService(WeeklySheetService):
         return scope_boys(
             self.db, self.db.query(Attend), Attend, self.user, Attend.boy_id
         )
+
+    def list(
+        self,
+        class_id: int | None = None,
+        action_date: date | None = None,
+        team_id: int | None = None,
+    ) -> list:
+        """Same sheet as the base service, with an optional team filter."""
+        query = self.query()
+        if class_id is not None:
+            self.ensure_class(class_id)
+            query = query.filter(Attend.class_id == class_id)
+        if action_date is not None:
+            query = query.filter(Attend.date == action_date)
+        team = scoped_team(self.db, self.user, team_id)
+        if team is not None:
+            query = query.filter(Attend.boy_id.in_(team.boy_ids))
+        return query.order_by(Attend.date.desc(), Attend.id.desc()).all()
 
     def can_read(self, boy: Boy) -> None:
         ensure_boy_access(self.db, self.user, boy)

@@ -41,6 +41,7 @@ class SchoolClass(Base):
     trips = relationship("Trip", back_populates="class_")
     tasks = relationship("Task", back_populates="class_")
     task_values = relationship("TaskValue", back_populates="class_")
+    teams = relationship("Team", back_populates="class_")
 
     def __repr__(self) -> str:
         return (

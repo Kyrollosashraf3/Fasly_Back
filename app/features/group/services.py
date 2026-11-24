@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from fastapi import HTTPException, status
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 
 from app.core.data.base import BaseService
 from app.core.data.common import (
@@ -20,6 +20,7 @@ from app.core.data.common import (
     scope_boys,
     scope_church,
     scope_teachers,
+    scoped_team,
 )
 from app.features.attendance.models.attend import Attend
 from app.features.boy.models.boy import Boy
@@ -63,20 +64,26 @@ class GroupsService(BaseService):
 
     # ------------------------------------------------------------------ read
     def list(
-        self, class_id: int | None = None, teacher_id: int | None = None
+        self,
+        class_id: int | None = None,
+        teacher_id: int | None = None,
+        team_id: int | None = None,
     ) -> dict:
         """Servants with their boy rosters, plus the boys nobody has yet."""
+        team = scoped_team(self.db, self.user, team_id)
+
         servants_query = self.visible_servants()
         if class_id is not None:
             self.ensure_class(class_id)
             servants_query = servants_query.filter(Teacher.class_id == class_id)
         if teacher_id is not None:
             servants_query = servants_query.filter(Teacher.id == teacher_id)
-        servants = servants_query.order_by(Teacher.teacher_name).all()
 
         boys_query = self.visible_boys()
         if class_id is not None:
             boys_query = boys_query.filter(Boy.class_id == class_id)
+        if team is not None:
+            boys_query = boys_query.filter(Boy.id.in_(team.boy_ids))
         boys_by_id = {boy.id: boy for boy in boys_query.all()}
 
         rows_query = self.visible_rows()
@@ -84,12 +91,26 @@ class GroupsService(BaseService):
             rows_query = rows_query.filter(Teacher.class_id == class_id)
         if teacher_id is not None:
             rows_query = rows_query.filter(Group.teacher_id == teacher_id)
+        if team is not None:
+            rows_query = rows_query.filter(
+                or_(
+                    Group.boy_id.in_(team.boy_ids),
+                    Group.teacher_id.in_(team.teacher_ids),
+                )
+            )
 
         members: dict[int, list[dict]] = {}
         for row in rows_query.all():
             boy = boys_by_id.get(row.boy_id)  # a servant's own roster
             if boy is not None:
                 members.setdefault(row.teacher_id, []).append(_boy_row(boy))
+
+        if team is not None:
+            # Keep the boys' current servants even when they are not in the
+            # team, plus any servant explicitly assigned to it.
+            relevant_ids = list(set(members) | set(team.teacher_ids))
+            servants_query = servants_query.filter(Teacher.id.in_(relevant_ids))
+        servants = servants_query.order_by(Teacher.teacher_name).all()
 
         groups = [
             {
@@ -114,12 +135,17 @@ class GroupsService(BaseService):
         }
 
     def list_with_stats(
-        self, class_id: int | None = None, teacher_id: int | None = None
+        self,
+        class_id: int | None = None,
+        teacher_id: int | None = None,
+        team_id: int | None = None,
     ) -> dict:
         """:meth:`list` plus the two columns the roster sheet prints - each
         boy's attendance % and his last follow-up. Computed for the whole sheet
         in two bulk queries, never row by row."""
-        payload = self.list(class_id=class_id, teacher_id=teacher_id)
+        payload = self.list(
+            class_id=class_id, teacher_id=teacher_id, team_id=team_id
+        )
         boy_ids = [row["boy_id"] for g in payload["groups"] for row in g["boys"]]
         stats = _attendance_stats(self.db, boy_ids)
         lasts = _last_followups(self.db, boy_ids)

@@ -497,8 +497,8 @@ common.py:
       /locations/boys/{boy_id} (الخادم/الأمين)، .../current، /locations/map.
 
 
-13) الـ Routes  -  app/routes/  (79 مسار)
------------------------------------------
+13) الـ Routes  -  app/routes/  (93 مسار OpenAPI)
+-----------------------------------------------
     prefix                المحتوى المختصر
     --------------------  -------------------------------------------------------
     / (base)              / و /health (liveness بدون تسجيل دخول)
@@ -509,6 +509,9 @@ common.py:
     /teachers             دليل الخدام + template/import/export + /me
     /boys                 دليل الأولاد + duplicate-names + template/import/export
     /groups               تعيين/إلغاء + template/import/export
+    /teams                CRUD الفرق (قسم 13b)
+    /team-members         أولاد الفريق: CRUD + bulk + unassign (قسم 13b)
+    /team-teachers        خدام الفريق: CRUD + bulk + unassign (قسم 13b)
     /attendance           كشف الجمعة (فردي + bulk)
     /follow-ups           سجل الافتقاد
     /locations            البيت + الخريطة (قسم 12)
@@ -526,6 +529,39 @@ common.py:
 
 كل router في app/routes/__init__.py ومُثبّت في core/app.py:_register_routers().
 مفيش منطق في الـ routes - لو لقيت قرار صلاحية في route، انقله لـ common.py.
+
+
+13b) الفرق  -  app/features/team  (feature module جديد)
+-------------------------------------------------------
+    * ثلاث جداول، كل واحد في ملف لوحده تحت models/ وschemas/ وservices/ وroutes/:
+        teams        (church_id + class_id + team_name)  -> /teams
+        team_members (team_id + boy_id    + church_id)    -> /team-members
+        team_teachers(team_id + teacher_id + church_id)   -> /team-teachers
+      الاسم فريد داخل (الكنيسة، الفصل) بس - فصلين أو كنيستين ممكن يسمّوا
+      فريق بنفس الاسم. الخدمة كمان بترفض النسخة نفسها بحالة/مسافات مختلفة (409).
+    * الروابط مش حصرية: نفس الولد أو الخادم ممكن يكون في أكتر من فريق.
+      الصلاحية: القراءة لكل staff داخل النطاق، والكتابة لأي amin (manager).
+      ربط ولد/خادم بالفريق بيتأكد إنه من كنيسة الفريق، والولد من فصله،
+      والخادم إما من فصله أو خادم كنيسة بلا فصل (class_id = NULL).
+    * لو الفريق فيه أولاد/خدام، تغيير كنيسته أو فصله ممنوع (409) لحد ما
+      تخرجهم منه. حذف الفريق بيشيل روابطه تلقائيًا (ON DELETE CASCADE).
+    * Endpoints:
+        GET/POST /teams · GET/PATCH/DELETE /teams/{team_id}
+        GET/POST /team-members · POST /team-members/bulk ·
+        POST /team-members/unassign · GET/PATCH/DELETE /team-members/{row_id}
+        GET/POST /team-teachers · POST /team-teachers/bulk ·
+        POST /team-teachers/unassign · GET/PATCH/DELETE /team-teachers/{row_id}
+    * team_id فلتر جديد (query param) على خمس شاشات:
+        GET /follow-ups   أولاد الفريق أو خدامه (OR)
+        GET /groups       أولاد الفريق أو خدامه (OR)
+        GET /locations/map      بيوت الفريق، ول person_type=teachers خدامه
+        GET /boys         أولاد الفريق فقط
+        GET /attendance   أولاد الفريق فقط
+      كل فلتر بيمرّ على scoped_team() في core/data/common.py: كنيسة أولًا
+      ثم نطاق الفصل، وID بتاع الكنيسة التانية بيرجع 403/404 قبل ما يفلتر.
+    * التسجيل: app/models/__init__.py و app/db/database.py (TENANT_TABLES +
+      create_tables)، والrouters في app/routes/__init__.py و core/app.py.
+    * church.txt فيه الـ CREATE TABLE/INDEX والـ ALTER/BACKFILL والفحوصات.
 
 
 14) الإعدادات والتشغيل  -  config/settings.py + main.py
@@ -590,6 +626,9 @@ common.py:
     * trip_attendances مفيهاش class_id: الفصل هو trip.class_id (snapshot).
       هوية الصف (trip_id, boy_id) فريدة، فالحفظ دايمًا upsert مش insert أعمى؛
       unassign بيشيل الـ teacher_id بس ويخلي علامة الحضور.
+    * team_name مش فريد globally: الفردية بـ (church_id, class_id) فقط.
+      الولد/الخادم مش ملك فريق واحد - العضوية أكتر من صف في الجداول الوسيطة.
+      نقل فريق غير فاضي لفصل/كنيسة تانية بيرجع 409 (افصل أعضاءه الأول).
 
     لغة الكود: تعليقات بالعربية في مجالات المسابقات والاشتراكات، وبالإنجليزية في
     الباقي. فضّل نفس نمط الملف اللي بتعدّل عليه.
@@ -601,12 +640,14 @@ common.py:
 
     $env:DATABASE_URL='sqlite:///./_smoke.db'
     python -c "import app.core.app as a; a=a.create_app(); print(len(a.openapi()['paths']))"
-        -> 79 path
+        -> 93 path (من ضمنهم /teams و/team-members و/team-teachers)
 
     $env:PYTHONIOENCODING='utf-8'; $env:DATABASE_URL='sqlite:///./_smoke.db'
     python <temp>/smoke_tenancy.py          -> ALL TENANCY SMOKE CHECKS PASSED
     python <temp>/smoke_location.py         -> geo OK
     python <temp>/smoke_trip_attendance.py  -> ALL TRIP ATTENDANCE SMOKE CHECKS PASSED
+    python <temp>/smoke_team.py             -> ALL TEAM SMOKE CHECKS PASSED
+        (CRUD + tenancy + الفلاتر الخمسة: follow-ups/groups/boys/attendance/map)
 
     على PostgreSQL الحقيقي:
     $env:DATABASE_URL='postgresql://postgres:postgres@localhost:5432/fasly_db'
@@ -615,5 +656,5 @@ common.py:
 الملفات المرجعية للنشر: church.txt (SQL الكنائس) و location.txt (SQL الموقع).
 
 ================================================================================
-آخر تحديث: 17 نوفمبر 2026  -  كل التغييرات لسه مش committed (بناءً على طلبك).
+آخر تحديث: 24 نوفمبر 2026  -  كل التغييرات لسه مش committed (بناءً على طلبك).
 ================================================================================

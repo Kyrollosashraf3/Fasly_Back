@@ -38,6 +38,7 @@ by guessing it.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Callable, Iterable
 
@@ -52,6 +53,9 @@ from app.features.church.models.church import Church
 from app.models.enums import RoleEnum
 from app.features.follow_up.models.follow_up import FollowUp
 from app.features.school_class.models.school_class import SchoolClass
+from app.features.team.models.team import Team
+from app.features.team.models.team_member import TeamMember
+from app.features.team.models.team_teacher import TeamTeacher
 from app.features.teacher.models.teacher import Teacher
 from app.features.teacher_check.models.teacher_check import TeacherCheck
 from app.features.user.models.user import User
@@ -388,6 +392,65 @@ def scope_teachers(db: Session, query: Query, user: User) -> Query:
     if user.role == RoleEnum.ABONA:
         return query
     return query.filter(Teacher.class_id.in_(my_class_ids(db, user) or []))
+
+
+@dataclass(frozen=True)
+class TeamScope:
+    """The people a ``team_id`` filter stands for, resolved once per request."""
+
+    team_id: int
+    church_id: int
+    class_id: int
+    boy_ids: list[int]
+    teacher_ids: list[int]
+
+
+def scoped_team(db: Session, user: User, team_id: int | None) -> TeamScope | None:
+    """Resolve a team filter to scoped boy/servant ids, or ``None`` if not asked.
+
+    The team itself is checked with the same church-first, then class-scope
+    rule as every other row: a team of another church is refused by
+    ``ensure_my_church`` (403), and a class-scoped caller gets a 404 for a team
+    he cannot see. The two id lists are taken from the link tables filtered by
+    the team's church, so a mis-keyed row from another tenant can never widen
+    the result.
+    """
+    if team_id is None:
+        return None
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Team {team_id} not found.",
+        )
+    ensure_my_church(db, user, team.church_id)
+    mine = my_class_ids(db, user)
+    if mine is not None and team.class_id not in mine:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Team {team_id} not found.",
+        )
+    boy_ids = [
+        row[0]
+        for row in db.query(TeamMember.boy_id).filter(
+            TeamMember.team_id == team.id,
+            TeamMember.church_id == team.church_id,
+        )
+    ]
+    teacher_ids = [
+        row[0]
+        for row in db.query(TeamTeacher.teacher_id).filter(
+            TeamTeacher.team_id == team.id,
+            TeamTeacher.church_id == team.church_id,
+        )
+    ]
+    return TeamScope(
+        team_id=team.id,
+        church_id=team.church_id,
+        class_id=team.class_id,
+        boy_ids=boy_ids,
+        teacher_ids=teacher_ids,
+    )
 
 
 def scope_follow_ups(db: Session, query: Query, user: User) -> Query:

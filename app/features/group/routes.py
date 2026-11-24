@@ -25,13 +25,14 @@ router = APIRouter(prefix="/groups", tags=["Groups"])
 def list_groups(
     class_id: int | None = None,
     teacher_id: int | None = None,
+    team_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Roster plus each boy's attendance % and last follow-up - the sheet the
     UI renders needs those two columns."""
     return GroupsService(db, current_user).list_with_stats(
-        class_id=class_id, teacher_id=teacher_id
+        class_id=class_id, teacher_id=teacher_id, team_id=team_id
     )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Query
 
 from app.core.data.base import BaseService
@@ -16,6 +17,7 @@ from app.core.data.common import (
     ensure_teacher_access,
     get_or_404,
     scope_follow_ups,
+    scoped_team,
 )
 from app.features.boy.models.boy import Boy
 from app.models.enums import RoleEnum
@@ -51,6 +53,7 @@ class FollowUpService(BaseService):
         class_id: int | None = None,
         teacher_id: int | None = None,
         boy_id: int | None = None,
+        team_id: int | None = None,
         action_date: date | None = None,
     ) -> list[FollowUp]:
         query = self.query()
@@ -61,6 +64,14 @@ class FollowUpService(BaseService):
             query = query.filter(FollowUp.teacher_id == teacher_id)
         if boy_id is not None:
             query = query.filter(FollowUp.boy_id == boy_id)
+        team = scoped_team(self.db, self.user, team_id)
+        if team is not None:
+            query = query.filter(
+                or_(
+                    FollowUp.boy_id.in_(team.boy_ids),
+                    FollowUp.teacher_id.in_(team.teacher_ids),
+                )
+            )
         if action_date is not None:
             query = query.filter(FollowUp.action_date == action_date)
         return query.order_by(FollowUp.action_date.desc(), FollowUp.id.desc()).all()

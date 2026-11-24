@@ -19,6 +19,7 @@ def list_follow_ups(
     class_id: int | None = None,
     teacher_id: int | None = None,
     boy_id: int | None = None,
+    team_id: int | None = None,
     action_date: date | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -27,6 +28,7 @@ def list_follow_ups(
         class_id=class_id,
         teacher_id=teacher_id,
         boy_id=boy_id,
+        team_id=team_id,
         action_date=action_date,
     )
 
