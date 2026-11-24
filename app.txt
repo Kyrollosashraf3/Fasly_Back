@@ -574,8 +574,9 @@ common.py:
         APP_NAME / APP_VERSION / APP_DESCRIPTION / CORS_ORIGINS / HOST / PORT
         SECRET_KEY / ALGORITHM / ACCESS_TOKEN_EXPIRE_MINUTES   (JWT)
         DEFAULT_CHURCH_NAME/REGION/ADDRESS/PHONE/PHONE_2       (المستأجر الافتراضي)
-        ADMIN_PHONE / ADMIN_PASSWORD                          (أول super_admin)
+        ADMIN_PHONE / ADMIN_PASSWORD                          (صاحب المنصة super_admin)
         SEED_SUPER_ADMINS_JSON        أبوناات إضافية: [{"name","phone","church"|"church_id"}]
+                                      أي رقم يساوي ADMIN_PHONE يتجاهل هنا عشان يفضل super_admin
         VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_CLAIMS_EMAIL
         PUSH_TIMEZONE / FOLLOW_UP_REMINDER_HOUR / BIRTHDAY_REMINDER_HOUR /
         WEDNESDAY_REMINDER_HOUR
@@ -585,9 +586,11 @@ common.py:
         -> ensure_seeded_super_admins() -> notification_loop()
 
     ensure_default_classes: ست فصول افتراضية في قاعدة فارغة بس.
-    ensure_bootstrap_admin: ADMIN_PHONE يبقى super_admin (صاحب المنصة) لو مش موجود.
+    ensure_bootstrap_admin: ADMIN_PHONE يبقى super_admin (صاحب المنصة)، وبيتصلح
+                    لو ديبلوي قديم حوّله لـ abona أو لصق بيه servant/كنيسة.
     ensure_seeded_super_admins: كل مدخل في JSON يبقى خادم + حساب abona على
-                    كنيسته (الاسم التاريخي احتفظنا بيه للتوافق مع الـ caller).
+                    كنيسته (الاسم التاريخي احتفظنا بيه للتوافق مع الـ caller)،
+                    ما عدا رقم ADMIN_PHONE: بيتجاهل عشان ما يحصلش downgrade.
 
 
 15) إزاي تضيف موديول جديد  -  How-to
@@ -620,6 +623,9 @@ common.py:
     * مفيش LocationSourceEnum / has_whatsapp / جدول location - لا تضيفهم.
     * dedupe_key لازم يتضمن church_id، وإلا كنيستين هيقطعوا إشعارات بعض.
     * الأرقام فريدة globally - ما تعملش unique (church_id, phone).
+    * لو رقم صاحب المنصة (ADMIN_PHONE) موجود كمان في SEED_SUPER_ADMINS_JSON،
+      الـ seed يتجاهله والـ bootstrap يصلّح الدور كل startup - ما تحذفوش من
+      ADMIN_PHONE عشان يفضل super_admin.
     * حذف كنيسة فيه بيانات بيرجع 409 (ON DELETE RESTRICT) - ده سلوك مقصود.
     * smoke tests على SQLite محتاجة تستبدل ARRAY بـ JSON في boys.skills و
       teachers.skills (الـ ARRAY نوع PostgreSQL).

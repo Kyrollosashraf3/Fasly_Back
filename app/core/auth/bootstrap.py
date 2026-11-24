@@ -1,5 +1,9 @@
 """Seeds the first super admin, the default classes and the curated list of
-church admins (أبونا) on startup."""
+church admins (أبونا) on startup.
+
+``ADMIN_PHONE`` always wins: the platform owner is never downgraded to a
+church admin, even when the same number appears in ``SEED_SUPER_ADMINS_JSON``.
+"""
 
 import json
 from datetime import date
@@ -64,26 +68,62 @@ def ensure_default_classes() -> None:
         db.close()
 
 
-def ensure_bootstrap_admin() -> None:
-    """Create the first super admin if it does not exist.
+def _bootstrap_phone() -> str | None:
+    """Normalised ``ADMIN_PHONE``, or ``None`` when unset / not a phone."""
+    raw = settings.ADMIN_PHONE
+    if not raw:
+        return None
+    phone = str(normalise_phone(str(raw).strip()))
+    return phone if re.fullmatch(PHONE_PATTERN, phone) else None
 
-    Controlled by ADMIN_PHONE / ADMIN_PASSWORD in the environment. The account
-    is the platform owner: it stays a ``super_admin`` with no church so it can
-    see every tenant. Safe to call on every startup.
+
+def ensure_bootstrap_admin() -> None:
+    """Create - and repair - the platform owner on every startup.
+
+    Controlled by ADMIN_PHONE in the environment (ADMIN_PASSWORD is only needed
+    the first time, to create the account). The account is the platform owner:
+    it stays a ``super_admin`` with no church and no owner row so it can see
+    every tenant. A legacy church-admin seed may have downgraded it (or
+    attached a servant row); that is undone here, which makes repeated deploys
+    idempotent instead of silently flipping the role back.
     """
-    if not settings.ADMIN_PHONE or not settings.ADMIN_PASSWORD:
-        logger.info("Bootstrap admin skipped (ADMIN_PHONE/ADMIN_PASSWORD not set)")
+    if not settings.ADMIN_PHONE:
+        logger.info("Bootstrap admin skipped (ADMIN_PHONE not set)")
         return
 
-    phone = str(normalise_phone(settings.ADMIN_PHONE.strip()))
-    if not re.fullmatch(PHONE_PATTERN, phone):
-        logger.warning("Bootstrap admin skipped (ADMIN_PHONE '%s' is not a phone)", phone)
+    phone = _bootstrap_phone()
+    if phone is None:
+        logger.warning(
+            "Bootstrap admin skipped (ADMIN_PHONE '%s' is not a phone)",
+            settings.ADMIN_PHONE,
+        )
         return
 
     db = SessionLocal()
     try:
         existing = db.query(User).filter(User.phone == phone).first()
         if existing is not None:
+            changed = False
+            if existing.role != RoleEnum.SUPER_ADMIN:
+                existing.role = RoleEnum.SUPER_ADMIN
+                changed = True
+            # super_admin owns no church and no person - clear any leftovers
+            # the church-admin seed attached so the role and the row agree.
+            for field in ("church_id", "teacher_id", "boy_id"):
+                if getattr(existing, field) is not None:
+                    setattr(existing, field, None)
+                    changed = True
+            if changed:
+                db.commit()
+                logger.info(
+                    "Bootstrap admin restored to super_admin: %s (id=%d)",
+                    phone,
+                    existing.id,
+                )
+            return
+
+        if not settings.ADMIN_PASSWORD:
+            logger.info("Bootstrap admin creation skipped (ADMIN_PASSWORD not set)")
             return
 
         admin = User(
@@ -132,8 +172,9 @@ def ensure_seeded_super_admins() -> None:
 
     Idempotent: a phone is never duplicated. A legacy ``super_admin`` that was
     seeded here (it has a servant row) is converted to ``abona`` and assigned
-    its church; the ``ADMIN_PHONE`` bootstrap account has no servant row and is
-    left platform-wide.
+    its church. The one exception is ``ADMIN_PHONE``: that is the platform
+    owner, so the entry is skipped entirely and he stays ``super_admin`` even
+    when the same number is listed here by mistake.
     """
     raw = settings.SEED_SUPER_ADMINS_JSON
     if not raw:
@@ -151,6 +192,7 @@ def ensure_seeded_super_admins() -> None:
         return
 
     db = SessionLocal()
+    owner_phone = _bootstrap_phone()
     try:
         for entry in entries:
             name = str(entry.get("name") or "").strip()
@@ -163,6 +205,13 @@ def ensure_seeded_super_admins() -> None:
             phone = str(normalise_phone(phone))
             if not re.fullmatch(PHONE_PATTERN, phone):
                 logger.warning("Church-admin seed: skipped bad phone %r", phone)
+                continue
+
+            if owner_phone is not None and phone == owner_phone:
+                logger.info(
+                    "Church-admin seed: skipped platform owner %s (kept super_admin)",
+                    phone,
+                )
                 continue
 
             church_id = _seed_church_id(db, entry)

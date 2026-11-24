@@ -43,7 +43,9 @@ class Settings(BaseSettings):
     # Extra church admins (أبونا), seeded on startup from a JSON array
     # (idempotent). Each entry becomes a servant and an ``abona`` login scoped
     # to one church. ``church_id`` (or ``church`` by name) picks the tenant;
-    # missing values fall back to the default church above.
+    # missing values fall back to the default church above. An entry whose
+    # phone equals ADMIN_PHONE is ignored - the platform owner is never
+    # downgraded to abona, even if he is listed here by mistake.
     #   [
     #     {"name": "كيرلس اشرف فخري", "phone": "01281875199",
     #      "church": "كنيسة الشهيد مار جرجس"},
