@@ -91,6 +91,9 @@ class Teacher(Base):
     )
     groups = relationship("Group", back_populates="teacher", cascade="all, delete-orphan")
     trip_attendances = relationship("TripAttendance", back_populates="teacher")
+    servant_trip_subscriptions = relationship(
+        "ServantTripSubscription", back_populates="teacher"
+    )
     follow_ups = relationship("FollowUp", back_populates="teacher")
     teacher_follow_ups = relationship(
         "TeacherFollowUp", back_populates="teacher"

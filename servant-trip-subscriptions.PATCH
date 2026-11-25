@@ -1,0 +1,939 @@
+﻿diff --git a/app/core/app.py b/app/core/app.py
+index 6909fef539d779da1b663191eeeec92fb71d5179..c699de40c92d156d077f479db0572459026b0fc2 100644
+--- a/app/core/app.py
++++ b/app/core/app.py
+@@ -35,6 +35,8 @@ from app.routes import (
+     locations_router,
+     notifications_router,
+     subscriptions_router,
++    servant_trip_subscriptions_router,
++    servant_trips_router,
+     team_members_router,
+     team_teachers_router,
+     teams_router,
+@@ -130,6 +132,8 @@ class FaslyApplication:
+             trips_router,
+             trip_attendance_router,
+             subscriptions_router,
++            servant_trips_router,
++            servant_trip_subscriptions_router,
+             notifications_router,
+             tasks_router,
+             task_values_router,
+diff --git a/app/db/database.py b/app/db/database.py
+index 699b3fc284504f46b3ad85ffe905bcce0f1dae3b..0e24d585bc7e108de9ed3f2cbd60bab1f3c04f3a 100644
+--- a/app/db/database.py
++++ b/app/db/database.py
+@@ -48,11 +48,13 @@ TENANT_TABLES = (
+     "tasks",
+     "task_values",
+     "trips",
++    "servant_trips",
+     "trip_attendances",
+     "teams",
+     "team_members",
+     "team_teachers",
+     "subscriptions",
++    "servant_trip_subscriptions",
+     "notification_logs",
+     "notification_inbox",
+     "push_devices",
+@@ -322,6 +324,10 @@ def create_tables() -> None:
+     )
+     from app.features.school_class.models.school_class import SchoolClass  # noqa: F401
+     from app.features.subscription.models.subscription import Subscription  # noqa: F401
++    from app.features.servant_trip.models.servant_trip import ServantTrip  # noqa: F401
++    from app.features.servant_trip.models.servant_trip_subscription import (
++        ServantTripSubscription,  # noqa: F401
++    )
+     from app.features.team.models.team import Team  # noqa: F401
+     from app.features.team.models.team_member import TeamMember  # noqa: F401
+     from app.features.team.models.team_teacher import TeamTeacher  # noqa: F401
+diff --git a/app/features/servant_trip/models/servant_trip.py b/app/features/servant_trip/models/servant_trip.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c09d5feb3d9f5590515102e0ad064b7b48aeb71
+--- /dev/null
++++ b/app/features/servant_trip/models/servant_trip.py
+@@ -0,0 +1,42 @@
++from datetime import date
++
++from sqlalchemy import Column, Date, ForeignKey, Integer, String
++from sqlalchemy.orm import relationship
++
++from app.db.database import Base
++
++
++class ServantTrip(Base):
++    """Church-wide trip for servants, independent of any school class."""
++
++    __tablename__ = "servant_trips"
++
++    id = Column(Integer, primary_key=True, index=True)
++    church_id = Column(
++        Integer,
++        ForeignKey("churches.id", ondelete="RESTRICT"),
++        nullable=False,
++        index=True,
++    )
++    name = Column(String(200), nullable=False, index=True)
++    cost = Column(Integer, nullable=False, default=0)
++    created_at = Column(Date, nullable=False, default=date.today, index=True)
++    status = Column(String(20), nullable=False, default="active", index=True)
++    recorded_by = Column(
++        Integer,
++        ForeignKey("users.id", ondelete="SET NULL"),
++        nullable=True,
++        index=True,
++    )
++
++    church = relationship("Church")
++    recorder = relationship("User", back_populates="servant_trips")
++    subscriptions = relationship(
++        "ServantTripSubscription", back_populates="trip"
++    )
++
++    def __repr__(self) -> str:
++        return (
++            f"<ServantTrip id={self.id} name={self.name!r} "
++            f"church_id={self.church_id} date={self.created_at} cost={self.cost}>"
++        )
+diff --git a/app/features/servant_trip/models/servant_trip_subscription.py b/app/features/servant_trip/models/servant_trip_subscription.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..07d47150cad6abc4bcc3586d7daa344c8c1c1af7
+--- /dev/null
++++ b/app/features/servant_trip/models/servant_trip_subscription.py
+@@ -0,0 +1,98 @@
++from datetime import datetime
++
++from sqlalchemy import (
++    Column,
++    Date,
++    DateTime,
++    Enum,
++    ForeignKey,
++    Index,
++    Integer,
++    String,
++)
++from sqlalchemy.orm import relationship
++
++from app.db.database import Base
++from app.models.enums import SUBSCRIPTION_TYPE_ENUM_NAME, SubscriptionTypeEnum
++
++
++class ServantTripSubscription(Base):
++    """Payment or refund recorded for one servant on a church-wide trip."""
++
++    __tablename__ = "servant_trip_subscriptions"
++    __table_args__ = (
++        Index(
++            "ix_servant_trip_subscriptions_trip_teacher",
++            "trip_id",
++            "teacher_id",
++        ),
++        Index(
++            "ix_servant_trip_subscriptions_teacher_created_at",
++            "teacher_id",
++            "created_at",
++        ),
++    )
++
++    id = Column(Integer, primary_key=True, index=True)
++    church_id = Column(
++        Integer,
++        ForeignKey("churches.id", ondelete="RESTRICT"),
++        nullable=False,
++        index=True,
++    )
++    teacher_id = Column(
++        Integer,
++        ForeignKey("teachers.id", ondelete="RESTRICT"),
++        nullable=False,
++        index=True,
++    )
++    trip_id = Column(
++        Integer,
++        ForeignKey("servant_trips.id", ondelete="RESTRICT"),
++        nullable=False,
++        index=True,
++    )
++    type = Column(
++        Enum(
++            SubscriptionTypeEnum,
++            name=SUBSCRIPTION_TYPE_ENUM_NAME,
++            values_callable=lambda enum: [member.value for member in enum],
++        ),
++        nullable=False,
++        index=True,
++    )
++    value = Column(Integer, nullable=False, default=0)
++    note = Column(String, nullable=True)
++    date = Column(Date, nullable=True)
++    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
++    created_by = Column(
++        Integer,
++        ForeignKey("users.id", ondelete="SET NULL"),
++        nullable=True,
++        index=True,
++    )
++
++    church = relationship("Church")
++    teacher = relationship("Teacher", back_populates="servant_trip_subscriptions")
++    trip = relationship("ServantTrip", back_populates="subscriptions")
++    creator = relationship("User", back_populates="servant_trip_subscriptions")
++
++    @property
++    def teacher_name(self) -> str | None:
++        return self.teacher.teacher_name if self.teacher else None
++
++    @property
++    def trip_name(self) -> str | None:
++        return self.trip.name if self.trip else None
++
++    @property
++    def created_by_name(self) -> str | None:
++        if self.creator is None:
++            return None
++        return self.creator.display_name or self.creator.phone
++
++    def __repr__(self) -> str:
++        return (
++            f"<ServantTripSubscription id={self.id} teacher_id={self.teacher_id} "
++            f"trip_id={self.trip_id} type={self.type} value={self.value}>"
++        )
+diff --git a/app/features/servant_trip/routes.py b/app/features/servant_trip/routes.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e73aa9a1de7c9267c88ce46a58c4350600b3c308
+--- /dev/null
++++ b/app/features/servant_trip/routes.py
+@@ -0,0 +1,174 @@
++"""Church-wide servant trip routes."""
++from fastapi import APIRouter, Depends, Query, Response, status
++from sqlalchemy.orm import Session
++
++from app.core.auth.deps import get_current_user
++from app.db.database import get_db
++from app.features.servant_trip.schemas.servant_trip import (
++    ServantTripCreate,
++    ServantTripResponse,
++    ServantTripUpdate,
++)
++from app.features.servant_trip.schemas.servant_trip_subscription import (
++    ServantTripSubscriptionCreate,
++    ServantTripSubscriptionResponse,
++    ServantTripSubscriptionUpdate,
++    ServantTripSummary,
++    ServantTripTotal,
++)
++from app.features.servant_trip.services import (
++    ServantTripService,
++    ServantTripSubscriptionService,
++)
++from app.features.user.models.user import User
++
++trips_router = APIRouter(prefix="/servant-trips", tags=["Servant trips"])
++subscriptions_router = APIRouter(
++    prefix="/servant-trip-subscriptions", tags=["Servant trip subscriptions"]
++)
++
++
++@trips_router.get("", response_model=list[ServantTripResponse])
++def list_servant_trips(
++    status_filter: str | None = Query("active", alias="status"),
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripService(db, current_user).list(status_filter)
++
++
++@trips_router.post(
++    "", response_model=ServantTripResponse, status_code=status.HTTP_201_CREATED
++)
++def create_servant_trip(
++    data: ServantTripCreate,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripService(db, current_user).create(data)
++
++
++@trips_router.get("/{trip_id}", response_model=ServantTripResponse)
++def get_servant_trip(
++    trip_id: int,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripService(db, current_user).get(trip_id)
++
++
++@trips_router.patch("/{trip_id}", response_model=ServantTripResponse)
++def update_servant_trip(
++    trip_id: int,
++    data: ServantTripUpdate,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripService(db, current_user).update(trip_id, data)
++
++
++@trips_router.delete("/{trip_id}", status_code=status.HTTP_204_NO_CONTENT)
++def delete_servant_trip(
++    trip_id: int,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    ServantTripService(db, current_user).delete(trip_id)
++    return Response(status_code=status.HTTP_204_NO_CONTENT)
++
++
++@subscriptions_router.get(
++    "", response_model=list[ServantTripSubscriptionResponse]
++)
++def list_servant_trip_subscriptions(
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripSubscriptionService(db, current_user).list()
++
++
++@subscriptions_router.get(
++    "/trip/{trip_id}", response_model=list[ServantTripSubscriptionResponse]
++)
++def list_subscriptions_for_servant_trip(
++    trip_id: int,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripSubscriptionService(db, current_user).get_for_trip(trip_id)
++
++
++@subscriptions_router.get(
++    "/trip/{trip_id}/summary", response_model=list[ServantTripSummary]
++)
++def servant_trip_summary(
++    trip_id: int,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripSubscriptionService(db, current_user).get_trip_summary(trip_id)
++
++
++@subscriptions_router.get(
++    "/trip/{trip_id}/servants", response_model=list[ServantTripTotal]
++)
++def servant_trip_totals(
++    trip_id: int,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripSubscriptionService(db, current_user).get_totals(trip_id)
++
++
++@subscriptions_router.get(
++    "/trip/{trip_id}/servant/{teacher_id}/summary",
++    response_model=ServantTripSummary,
++)
++def servant_trip_servant_summary(
++    trip_id: int,
++    teacher_id: int,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripSubscriptionService(db, current_user).get_servant_summary(
++        trip_id, teacher_id
++    )
++
++
++@subscriptions_router.post(
++    "",
++    response_model=ServantTripSubscriptionResponse,
++    status_code=status.HTTP_201_CREATED,
++)
++def create_servant_trip_subscription(
++    data: ServantTripSubscriptionCreate,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripSubscriptionService(db, current_user).create(data)
++
++
++@subscriptions_router.patch(
++    "/{subscription_id}", response_model=ServantTripSubscriptionResponse
++)
++def update_servant_trip_subscription(
++    subscription_id: int,
++    data: ServantTripSubscriptionUpdate,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    return ServantTripSubscriptionService(db, current_user).update(
++        subscription_id, data
++    )
++
++
++@subscriptions_router.delete(
++    "/{subscription_id}", status_code=status.HTTP_204_NO_CONTENT
++)
++def delete_servant_trip_subscription(
++    subscription_id: int,
++    db: Session = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    ServantTripSubscriptionService(db, current_user).delete(subscription_id)
++    return Response(status_code=status.HTTP_204_NO_CONTENT)
+diff --git a/app/features/servant_trip/schemas/servant_trip.py b/app/features/servant_trip/schemas/servant_trip.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ead46675d11c40f92e929c3005e21624795b78ca
+--- /dev/null
++++ b/app/features/servant_trip/schemas/servant_trip.py
+@@ -0,0 +1,63 @@
++from datetime import date
++
++from pydantic import BaseModel, Field, field_validator
++
++from app.schemas.base import ORMResponse
++
++
++class ServantTripCreate(BaseModel):
++    name: str = Field(..., max_length=200)
++    cost: int = Field(..., ge=0, description="قيمة الاشتراك لكل خادم بالجنيه")
++    created_at: date | None = None
++    status: str | None = "active"
++
++    @field_validator("status", mode="before")
++    @classmethod
++    def _validate_status(cls, value: object) -> object:
++        if value is None:
++            return "active"
++        status_value = str(value).strip().lower()
++        if status_value not in ("active", "inactive"):
++            return "active"
++        return status_value
++
++    @field_validator("name", mode="before")
++    @classmethod
++    def _strip_name(cls, value: object) -> object:
++        if isinstance(value, str):
++            return value.strip() or value
++        return value
++
++
++class ServantTripUpdate(BaseModel):
++    name: str | None = Field(None, max_length=200)
++    cost: int | None = Field(None, ge=0)
++    created_at: date | None = None
++    status: str | None = None
++
++    @field_validator("name", mode="before")
++    @classmethod
++    def _strip_name(cls, value: object) -> object:
++        if isinstance(value, str):
++            return value.strip() or value
++        return value
++
++    @field_validator("status", mode="before")
++    @classmethod
++    def _validate_status(cls, value: object) -> object:
++        if value is None:
++            return value
++        status_value = str(value).strip().lower()
++        if status_value not in ("active", "inactive"):
++            return value
++        return status_value
++
++
++class ServantTripResponse(ORMResponse):
++    id: int
++    church_id: int
++    name: str
++    cost: int
++    created_at: date
++    status: str
++    recorded_by: int | None = None
+diff --git a/app/features/servant_trip/schemas/servant_trip_subscription.py b/app/features/servant_trip/schemas/servant_trip_subscription.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..5006aee9c1ff435ae1dd6a640e2e35820a03b9e7
+--- /dev/null
++++ b/app/features/servant_trip/schemas/servant_trip_subscription.py
+@@ -0,0 +1,60 @@
++from datetime import date as Date, datetime
++from typing import Literal
++
++from pydantic import BaseModel, Field
++
++from app.models.enums import SubscriptionTypeEnum
++from app.schemas.base import ORMResponse
++
++ServantSubscriptionType = Literal["charge", "recover"]
++
++
++class ServantTripSubscriptionCreate(BaseModel):
++    teacher_id: int = Field(..., description="معرف الخادم")
++    trip_id: int = Field(..., description="معرف رحلة الخدام")
++    type: ServantSubscriptionType = "charge"
++    value: int = Field(..., ge=0, description="المبلغ بالجنيه")
++    note: str | None = None
++    date: Date | None = None
++    created_at: datetime | None = None
++
++
++class ServantTripSubscriptionUpdate(BaseModel):
++    type: ServantSubscriptionType | None = None
++    value: int | None = Field(None, ge=0)
++    note: str | None = None
++    date: Date | None = None
++    created_at: datetime | None = None
++
++
++class ServantTripSubscriptionResponse(ORMResponse):
++    id: int
++    teacher_id: int
++    teacher_name: str | None = None
++    trip_id: int
++    trip_name: str | None = None
++    type: SubscriptionTypeEnum
++    value: int
++    created_at: datetime
++    created_by: int | None = None
++    created_by_name: str | None = None
++    note: str | None = None
++
++
++class ServantTripTotal(BaseModel):
++    teacher_id: int
++    teacher_name: str
++    total_paid: int
++
++
++class ServantTripSummary(BaseModel):
++    teacher_id: int
++    teacher_name: str
++    trip_id: int
++    trip_name: str
++    trip_cost: int
++    total_charged: int
++    total_recovered: int
++    total_paid: int
++    remaining: int
++    registered: bool = False
+diff --git a/app/features/servant_trip/services.py b/app/features/servant_trip/services.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7f48929523327610b5e610efeaec2ad513fafa60
+--- /dev/null
++++ b/app/features/servant_trip/services.py
+@@ -0,0 +1,362 @@
++"""Church-wide servant trips and their payment ledger."""
++from __future__ import annotations
++
++from datetime import date, datetime, timedelta
++
++from fastapi import HTTPException, status
++from sqlalchemy.orm import Query, joinedload
++
++from app.core.data.base import BaseService
++from app.core.data.common import (
++    apply_update,
++    commit,
++    ensure_my_church,
++    ensure_roles,
++    get_or_404,
++    scope_church,
++    MANAGERS,
++)
++from app.features.servant_trip.models.servant_trip import ServantTrip
++from app.features.servant_trip.models.servant_trip_subscription import (
++    ServantTripSubscription,
++)
++from app.features.servant_trip.schemas.servant_trip import (
++    ServantTripCreate,
++    ServantTripUpdate,
++)
++from app.features.servant_trip.schemas.servant_trip_subscription import (
++    ServantTripSubscriptionCreate,
++    ServantTripSubscriptionUpdate,
++    ServantTripSummary,
++    ServantTripTotal,
++)
++from app.features.teacher.models.teacher import Teacher
++from app.features.user.models.user import User
++from app.models.enums import SubscriptionTypeEnum
++
++
++class ServantTripService(BaseService):
++    """Manage trips visible to all managers in a church, not one class."""
++
++    def _require_manager(self) -> None:
++        ensure_roles(self.user, *MANAGERS)
++
++    def query(self) -> Query:
++        return scope_church(
++            self.db.query(ServantTrip), ServantTrip, self.user
++        )
++
++    def list(self, status_filter: str | None = "active") -> list[ServantTrip]:
++        self._require_manager()
++        query = self.query()
++        if status_filter in ("active", "inactive"):
++            query = query.filter(ServantTrip.status == status_filter)
++        return query.order_by(
++            ServantTrip.created_at.desc(), ServantTrip.id.desc()
++        ).all()
++
++    def get(self, trip_id: int) -> ServantTrip:
++        self._require_manager()
++        trip = self.query().filter(ServantTrip.id == trip_id).first()
++        if trip is None:
++            raise HTTPException(
++                status_code=status.HTTP_404_NOT_FOUND,
++                detail="رحلة الخدام غير موجودة.",
++            )
++        return trip
++
++    def create(self, data: ServantTripCreate) -> ServantTrip:
++        self._require_manager()
++        church_id = self.church_for()
++        created_at = data.created_at or date.today()
++        self._ensure_no_duplicate(data.name, created_at, church_id)
++        trip = ServantTrip(
++            church_id=church_id,
++            name=data.name,
++            cost=data.cost,
++            created_at=created_at,
++            status=data.status or "active",
++            recorded_by=self.user_id,
++        )
++        self.db.add(trip)
++        commit(self.db, f"Servant trip create name={data.name}")
++        return trip
++
++    def update(self, trip_id: int, data: ServantTripUpdate) -> ServantTrip:
++        trip = self.get(trip_id)
++        new_name = (data.name or "").strip() or trip.name
++        new_date = data.created_at if data.created_at is not None else trip.created_at
++        if (new_name, new_date) != (trip.name, trip.created_at):
++            self._ensure_no_duplicate(
++                new_name, new_date, trip.church_id, exclude_id=trip.id
++            )
++        apply_update(trip, data, strip=("name",))
++        commit(self.db, f"Servant trip update id={trip_id}")
++        return trip
++
++    def delete(self, trip_id: int) -> None:
++        trip = self.get(trip_id)
++        self.db.delete(trip)
++        commit(self.db, f"Servant trip delete id={trip_id}")
++
++    def _ensure_no_duplicate(
++        self,
++        name: str,
++        created_at: date,
++        church_id: int,
++        exclude_id: int | None = None,
++    ) -> None:
++        query = self.db.query(ServantTrip).filter(
++            ServantTrip.church_id == church_id,
++            ServantTrip.name == name,
++            ServantTrip.created_at == created_at,
++        )
++        if exclude_id is not None:
++            query = query.filter(ServantTrip.id != exclude_id)
++        if query.first() is not None:
++            raise HTTPException(
++                status_code=status.HTTP_409_CONFLICT,
++                detail="رحلة للخدام بهذا الاسم والتاريخ موجودة بالفعل.",
++            )
++
++
++class ServantTripSubscriptionService(BaseService):
++    """Manage church-wide servant payment records and summaries."""
++
++    def _require_manager(self) -> None:
++        ensure_roles(self.user, *MANAGERS)
++
++    def query(self) -> Query:
++        return scope_church(
++            self.db.query(ServantTripSubscription),
++            ServantTripSubscription,
++            self.user,
++        )
++
++    @staticmethod
++    def _with_names(query: Query) -> Query:
++        return query.options(
++            joinedload(ServantTripSubscription.teacher),
++            joinedload(ServantTripSubscription.trip),
++            joinedload(ServantTripSubscription.creator).joinedload(User.teacher),
++        )
++
++    def list(self) -> list[ServantTripSubscription]:
++        self._require_manager()
++        return (
++            self._with_names(self.query())
++            .order_by(
++                ServantTripSubscription.created_at.desc(),
++                ServantTripSubscription.id.desc(),
++            )
++            .all()
++        )
++
++    def get(self, subscription_id: int) -> ServantTripSubscription:
++        self._require_manager()
++        subscription = (
++            self._with_names(self.query())
++            .filter(ServantTripSubscription.id == subscription_id)
++            .first()
++        )
++        if subscription is None:
++            raise HTTPException(
++                status_code=status.HTTP_404_NOT_FOUND,
++                detail="اشتراك الخادم في الرحلة غير موجود.",
++            )
++        return subscription
++
++    def get_for_trip(self, trip_id: int) -> list[ServantTripSubscription]:
++        self._trip(trip_id)
++        return (
++            self._with_names(self.query())
++            .filter(ServantTripSubscription.trip_id == trip_id)
++            .order_by(
++                ServantTripSubscription.created_at.desc(),
++                ServantTripSubscription.id.desc(),
++            )
++            .all()
++        )
++
++    def create(
++        self, data: ServantTripSubscriptionCreate
++    ) -> ServantTripSubscription:
++        self._require_manager()
++        trip = self._trip(data.trip_id)
++        teacher = get_or_404(self.db, Teacher, data.teacher_id, "Servant")
++        ensure_my_church(self.db, self.user, teacher.church_id)
++        if teacher.church_id != trip.church_id:
++            raise HTTPException(
++                status_code=status.HTTP_403_FORBIDDEN,
++                detail="الخادم والرحلة يجب أن يكونا في نفس الكنيسة.",
++            )
++
++        created_at = data.created_at or datetime.utcnow()
++        duplicate = (
++            self.db.query(ServantTripSubscription)
++            .filter(
++                ServantTripSubscription.teacher_id == teacher.id,
++                ServantTripSubscription.trip_id == trip.id,
++                ServantTripSubscription.value == data.value,
++                ServantTripSubscription.created_at
++                >= created_at - timedelta(minutes=2),
++                ServantTripSubscription.created_at
++                <= created_at + timedelta(minutes=2),
++            )
++            .first()
++        )
++        if duplicate is not None:
++            raise HTTPException(
++                status_code=status.HTTP_409_CONFLICT,
++                detail="تم تسجيل هذا المبلغ للخادم في الرحلة خلال الدقيقتين الماضيتين.",
++            )
++
++        summary = self._summary_for(trip, teacher)
++        if data.type == SubscriptionTypeEnum.CHARGE:
++            if data.value > summary.remaining:
++                raise HTTPException(
++                    status_code=status.HTTP_400_BAD_REQUEST,
++                    detail=f"المبلغ أكبر من الباقي عليه ({summary.remaining} جنيه).",
++                )
++        elif data.value > summary.total_charged:
++            raise HTTPException(
++                status_code=status.HTTP_400_BAD_REQUEST,
++                detail=(
++                    "لا يمكن استرداد أكثر مما دفعه الخادم مسبقاً "
++                    f"({summary.total_charged} جنيه)."
++                ),
++            )
++
++        subscription = ServantTripSubscription(
++            church_id=trip.church_id,
++            teacher_id=teacher.id,
++            trip_id=trip.id,
++            type=SubscriptionTypeEnum(data.type),
++            value=data.value,
++            note=data.note,
++            date=data.date or date.today(),
++            created_at=created_at,
++            created_by=self.user_id,
++        )
++        self.db.add(subscription)
++        commit(
++            self.db,
++            f"Servant trip subscription create teacher={teacher.id} trip={trip.id}",
++        )
++        return self.get(subscription.id)
++
++    def update(
++        self, subscription_id: int, data: ServantTripSubscriptionUpdate
++    ) -> ServantTripSubscription:
++        subscription = self.get(subscription_id)
++        apply_update(subscription, data)
++        if data.type is not None:
++            subscription.type = SubscriptionTypeEnum(data.type)
++        commit(self.db, f"Servant trip subscription update id={subscription_id}")
++        return subscription
++
++    def delete(self, subscription_id: int) -> None:
++        subscription = self.get(subscription_id)
++        self.db.delete(subscription)
++        commit(self.db, f"Servant trip subscription delete id={subscription_id}")
++
++    def get_totals(self, trip_id: int) -> list[ServantTripTotal]:
++        trip = self._trip(trip_id)
++        summaries = self._trip_summaries(trip)
++        return [
++            ServantTripTotal(
++                teacher_id=item.teacher_id,
++                teacher_name=item.teacher_name,
++                total_paid=item.total_paid,
++            )
++            for item in summaries
++            if item.total_paid > 0
++        ]
++
++    def get_trip_summary(self, trip_id: int) -> list[ServantTripSummary]:
++        return self._trip_summaries(self._trip(trip_id))
++
++    def get_servant_summary(
++        self, trip_id: int, teacher_id: int
++    ) -> ServantTripSummary:
++        trip = self._trip(trip_id)
++        teacher = get_or_404(self.db, Teacher, teacher_id, "Servant")
++        ensure_my_church(self.db, self.user, teacher.church_id)
++        if teacher.church_id != trip.church_id:
++            raise HTTPException(
++                status_code=status.HTTP_404_NOT_FOUND,
++                detail="الخادم غير موجود في نطاق الرحلة.",
++            )
++        return self._summary_for(trip, teacher)
++
++    def _trip(self, trip_id: int) -> ServantTrip:
++        self._require_manager()
++        trip = self.query().filter(ServantTrip.id == trip_id).first()
++        if trip is None:
++            raise HTTPException(
++                status_code=status.HTTP_404_NOT_FOUND,
++                detail="رحلة الخدام غير موجودة.",
++            )
++        return trip
++
++    def _trip_summaries(self, trip: ServantTrip) -> list[ServantTripSummary]:
++        teachers = (
++            self.db.query(Teacher)
++            .filter(Teacher.church_id == trip.church_id)
++            .order_by(Teacher.teacher_name)
++            .all()
++        )
++        subscriptions = (
++            self.db.query(ServantTripSubscription)
++            .filter(ServantTripSubscription.trip_id == trip.id)
++            .all()
++        )
++        by_teacher: dict[int, list[ServantTripSubscription]] = {}
++        for subscription in subscriptions:
++            by_teacher.setdefault(subscription.teacher_id, []).append(subscription)
++        return [
++            self._summary_for(trip, teacher, by_teacher.get(teacher.id, []))
++            for teacher in teachers
++        ]
++
++    def _summary_for(
++        self,
++        trip: ServantTrip,
++        teacher: Teacher,
++        subscriptions: list[ServantTripSubscription] | None = None,
++    ) -> ServantTripSummary:
++        if subscriptions is None:
++            subscriptions = (
++                self.db.query(ServantTripSubscription)
++                .filter(
++                    ServantTripSubscription.trip_id == trip.id,
++                    ServantTripSubscription.teacher_id == teacher.id,
++                )
++                .all()
++            )
++        total_charged = sum(
++            row.value
++            for row in subscriptions
++            if row.type == SubscriptionTypeEnum.CHARGE
++        )
++        total_recovered = sum(
++            row.value
++            for row in subscriptions
++            if row.type == SubscriptionTypeEnum.RECOVER
++        )
++        total_paid = total_charged - total_recovered
++        return ServantTripSummary(
++            teacher_id=teacher.id,
++            teacher_name=teacher.teacher_name,
++            trip_id=trip.id,
++            trip_name=trip.name,
++            trip_cost=trip.cost,
++            total_charged=total_charged,
++            total_recovered=total_recovered,
++            total_paid=total_paid,
++            remaining=trip.cost - total_paid,
++            registered=total_charged > 0
++            or any(
++                row.type == SubscriptionTypeEnum.CHARGE for row in subscriptions
++            ),
++        )
+diff --git a/app/features/teacher/models/teacher.py b/app/features/teacher/models/teacher.py
+index db7c4e2af34713483bfb2812b29d210b9ea57074..0dec3eb81b7b93a1b0a57ec71e6d9ccb643a6ec5 100644
+--- a/app/features/teacher/models/teacher.py
++++ b/app/features/teacher/models/teacher.py
+@@ -91,6 +91,9 @@ class Teacher(Base):
+     )
+     groups = relationship("Group", back_populates="teacher", cascade="all, delete-orphan")
+     trip_attendances = relationship("TripAttendance", back_populates="teacher")
++    servant_trip_subscriptions = relationship(
++        "ServantTripSubscription", back_populates="teacher"
++    )
+     follow_ups = relationship("FollowUp", back_populates="teacher")
+     teacher_follow_ups = relationship(
+         "TeacherFollowUp", back_populates="teacher"
+diff --git a/app/features/user/models/user.py b/app/features/user/models/user.py
+index 477484f2d1c1707c1549c1ba3a02c7b386a65557..09c70c9c8174da79fea301320e10c53e6e1f9c97 100644
+--- a/app/features/user/models/user.py
++++ b/app/features/user/models/user.py
+@@ -104,6 +104,10 @@ class User(Base):
+     follow_ups = relationship("FollowUp", back_populates="recorder")
+     trips = relationship("Trip", back_populates="recorder")
+     subscriptions = relationship("Subscription", back_populates="creator")
++    servant_trips = relationship("ServantTrip", back_populates="recorder")
++    servant_trip_subscriptions = relationship(
++        "ServantTripSubscription", back_populates="creator"
++    )
+ 
+     @property
+     def managed_class_ids(self) -> list[int]:
+diff --git a/app/routes/__init__.py b/app/routes/__init__.py
+index 2f126942445f158317f8395281a31c821e3bd4c1..eb69dda5e3ddd78dbd93cbc83a84f23335900a3b 100644
+--- a/app/routes/__init__.py
++++ b/app/routes/__init__.py
+@@ -12,6 +12,10 @@ from app.features.group.routes import router as groups_router
+ from app.features.location.routes import router as locations_router
+ from app.features.notification.routes import router as notifications_router
+ from app.features.subscription.routes import router as subscriptions_router
++from app.features.servant_trip.routes import (
++    subscriptions_router as servant_trip_subscriptions_router,
++    trips_router as servant_trips_router,
++)
+ from app.features.team.routes.team import router as teams_router
+ from app.features.team.routes.team_member import router as team_members_router
+ from app.features.team.routes.team_teacher import router as team_teachers_router
+@@ -35,6 +39,8 @@ __all__ = [
+     "groups_router",
+     "locations_router",
+     "subscriptions_router",
++    "servant_trips_router",
++    "servant_trip_subscriptions_router",
+     "teams_router",
+     "team_members_router",
+     "team_teachers_router",

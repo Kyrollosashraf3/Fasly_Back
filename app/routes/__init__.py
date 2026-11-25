@@ -12,6 +12,10 @@ from app.features.group.routes import router as groups_router
 from app.features.location.routes import router as locations_router
 from app.features.notification.routes import router as notifications_router
 from app.features.subscription.routes import router as subscriptions_router
+from app.features.servant_trip.routes import (
+    subscriptions_router as servant_trip_subscriptions_router,
+    trips_router as servant_trips_router,
+)
 from app.features.team.routes.team import router as teams_router
 from app.features.team.routes.team_member import router as team_members_router
 from app.features.team.routes.team_teacher import router as team_teachers_router
@@ -35,6 +39,8 @@ __all__ = [
     "groups_router",
     "locations_router",
     "subscriptions_router",
+    "servant_trips_router",
+    "servant_trip_subscriptions_router",
     "teams_router",
     "team_members_router",
     "team_teachers_router",

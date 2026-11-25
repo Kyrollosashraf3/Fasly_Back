@@ -104,6 +104,10 @@ class User(Base):
     follow_ups = relationship("FollowUp", back_populates="recorder")
     trips = relationship("Trip", back_populates="recorder")
     subscriptions = relationship("Subscription", back_populates="creator")
+    servant_trips = relationship("ServantTrip", back_populates="recorder")
+    servant_trip_subscriptions = relationship(
+        "ServantTripSubscription", back_populates="creator"
+    )
 
     @property
     def managed_class_ids(self) -> list[int]:
