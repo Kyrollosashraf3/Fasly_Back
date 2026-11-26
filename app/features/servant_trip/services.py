@@ -290,14 +290,7 @@ class ServantTripSubscriptionService(BaseService):
         return self._summary_for(trip, teacher)
 
     def _trip(self, trip_id: int) -> ServantTrip:
-        self._require_manager()
-        trip = self.query().filter(ServantTrip.id == trip_id).first()
-        if trip is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="رحلة الخدام غير موجودة.",
-            )
-        return trip
+        return ServantTripService(self.db, self.user).get(trip_id)
 
     def _trip_summaries(self, trip: ServantTrip) -> list[ServantTripSummary]:
         teachers = (
