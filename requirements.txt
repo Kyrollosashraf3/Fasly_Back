@@ -20,3 +20,4 @@ openpyxl
 
 # web push (notifications to the servants' phones)
 pywebpush
+
